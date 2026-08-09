@@ -8,3 +8,6 @@ out/
 !.env.local.example
 !.env.prod.example
 *.pem
+
+# IDE / Gradle local config
+local.properties
