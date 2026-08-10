@@ -2,6 +2,7 @@ package com.momentory.user.me.application;
 
 import com.momentory.user.domain.Gender;
 import com.momentory.user.domain.InterestArea;
+import com.momentory.user.domain.RestMethod;
 import com.momentory.user.domain.UserRole;
 
 import java.time.LocalTime;
@@ -25,8 +26,12 @@ public record UserMeResult(
             Integer age,
             Gender gender,
             Set<InterestArea> interestAreas,
+            String otherInterestDetail,
+            Set<RestMethod> restMethods,
+            String otherRestMethodDetail,
             LocalTime reflectionTime,
-            boolean calendarIntegrationEnabled
+            boolean calendarIntegrationEnabled,
+            boolean notificationEnabled
     ) {
     }
 }

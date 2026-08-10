@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.momentory.user.domain.Gender;
 import com.momentory.user.domain.InterestArea;
+import com.momentory.user.domain.RestMethod;
 import com.momentory.user.me.application.UserMeResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -31,9 +32,16 @@ public record UserMeResponse(
             @Schema(description = "성별", example = "FEMALE") Gender gender,
             @Schema(description = "관심 분야", example = "[\"CAREER\", \"RELATIONSHIP\"]")
             Set<InterestArea> interestAreas,
+            @Schema(description = "관심 분야 기타 직접 입력", example = "에세이 글쓰기", nullable = true)
+            String otherInterestDetail,
+            @Schema(description = "쉬는 방법", example = "[\"READING\", \"WALKING\"]")
+            Set<RestMethod> restMethods,
+            @Schema(description = "쉬는 방법 기타 직접 입력", example = "따뜻한 차 마시기", nullable = true)
+            String otherRestMethodDetail,
             @Schema(description = "회고 시간", example = "21:30")
             @JsonFormat(pattern = "HH:mm") LocalTime reflectionTime,
-            @Schema(description = "캘린더 연동 여부", example = "true") boolean calendarIntegrationEnabled
+            @Schema(description = "캘린더 연동 여부", example = "true") boolean calendarIntegrationEnabled,
+            @Schema(description = "푸시 알림 수신 선호 여부", example = "true") boolean notificationEnabled
     ) {
 
         static Profile from(UserMeResult.Profile profile) {
@@ -42,8 +50,12 @@ public record UserMeResponse(
                     profile.age(),
                     profile.gender(),
                     profile.interestAreas(),
+                    profile.otherInterestDetail(),
+                    profile.restMethods(),
+                    profile.otherRestMethodDetail(),
                     profile.reflectionTime(),
-                    profile.calendarIntegrationEnabled()
+                    profile.calendarIntegrationEnabled(),
+                    profile.notificationEnabled()
             );
         }
     }

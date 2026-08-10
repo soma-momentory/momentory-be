@@ -4,6 +4,7 @@ import com.momentory.auth.token.application.AccessTokenIssuer;
 import com.momentory.common.time.TimeZonePolicy;
 import com.momentory.user.domain.Gender;
 import com.momentory.user.domain.InterestArea;
+import com.momentory.user.domain.RestMethod;
 import com.momentory.user.domain.User;
 import com.momentory.user.domain.UserProfile;
 import com.momentory.user.infrastructure.UserProfileRepository;
@@ -135,6 +136,44 @@ class UserOnboardingControllerIntegrationTest {
     }
 
     @Test
+    void savesOtherDetailsRestMethodsAndNotificationPreference() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(onboarding(user, """
+                {"nickname":"모리","age":25,"gender":"FEMALE",
+                 "interestAreas":["CAREER","OTHER"],"otherInterestDetail":"에세이 글쓰기",
+                 "restMethods":["READING","OTHER","READING"],"otherRestMethodDetail":"따뜻한 차 마시기",
+                 "reflectionTime":"21:30","calendarIntegrationEnabled":true,"notificationEnabled":true}
+                """))
+                .andExpect(status().isOk());
+
+        UserProfile profile = findProfileWithCollections(user.getId());
+        assertThat(profile.getInterestAreas()).containsExactlyInAnyOrder(InterestArea.CAREER, InterestArea.OTHER);
+        assertThat(profile.getOtherInterestDetail()).isEqualTo("에세이 글쓰기");
+        assertThat(profile.getRestMethods()).containsExactlyInAnyOrder(RestMethod.READING, RestMethod.OTHER);
+        assertThat(profile.getOtherRestMethodDetail()).isEqualTo("따뜻한 차 마시기");
+        assertThat(profile.isNotificationEnabled()).isTrue();
+    }
+
+    @Test
+    void preservesOptionalPreferencesWhenOlderClientOmitsThem() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(onboarding(user, """
+                {"nickname":"모리","age":25,"gender":"FEMALE",
+                 "interestAreas":["SELF"],"restMethods":["READING"],
+                 "reflectionTime":"21:30","calendarIntegrationEnabled":true,"notificationEnabled":true}
+                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(onboarding(user, requestBody("새모리", "25", "FEMALE", "[\"SELF\"]", "21:30", false)))
+                .andExpect(status().isOk());
+
+        UserProfile profile = findProfileWithCollections(user.getId());
+        assertThat(profile.getRestMethods()).containsExactly(RestMethod.READING);
+        assertThat(profile.isNotificationEnabled()).isTrue();
+    }
+
+    @Test
     void replacesProfileAndInterestAreasWhenCalledAgain() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
 
@@ -221,6 +260,39 @@ class UserOnboardingControllerIntegrationTest {
     }
 
     @Test
+    void rejectsInconsistentOtherDetailsAndInvalidRestMethods() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(onboarding(user, """
+                {"nickname":"모리","age":25,"gender":"FEMALE","interestAreas":["OTHER"],
+                 "restMethods":["READING"],"reflectionTime":"21:30","calendarIntegrationEnabled":true}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("otherInterestDetail은 interestAreas에 OTHER가 포함된 경우에만 필수입니다."));
+        mockMvc.perform(onboarding(user, """
+                {"nickname":"모리","age":25,"gender":"FEMALE","interestAreas":["SELF"],
+                 "restMethods":["OTHER"],"reflectionTime":"21:30","calendarIntegrationEnabled":true}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("otherRestMethodDetail은 restMethods에 OTHER가 포함된 경우에만 필수입니다."));
+        mockMvc.perform(onboarding(user, """
+                {"nickname":"모리","age":25,"gender":"FEMALE","interestAreas":["SELF"],
+                 "restMethods":[],"reflectionTime":"21:30","calendarIntegrationEnabled":true}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(onboarding(user, """
+                {"nickname":"모리","age":25,"gender":"FEMALE","interestAreas":["SELF"],
+                 "restMethods":[null],"reflectionTime":"21:30","calendarIntegrationEnabled":true}
+        """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("잘못된 요청입니다."));
+    }
+
+    @Test
     void rejectsNullBlankOrTooLongNicknameAndInvalidAgeOrCalendarIntegration() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
 
@@ -297,6 +369,7 @@ class UserOnboardingControllerIntegrationTest {
                 .andExpect(jsonPath("$.nickname.duplicateAllowed").value(true))
                 .andExpect(jsonPath("$.genders.length()").value(Gender.values().length))
                 .andExpect(jsonPath("$.interestAreas.length()").value(InterestArea.values().length))
+                .andExpect(jsonPath("$.restMethods.length()").value(RestMethod.values().length))
                 .andExpect(jsonPath("$.reflectionTimeFormat").value("HH:mm"))
                 .andExpect(jsonPath("$.defaultTimeZone").value("Asia/Seoul"))
                 .andReturn();
@@ -310,6 +383,17 @@ class UserOnboardingControllerIntegrationTest {
                 .containsExactly("STUDY", "CAREER", "WORK", "RELATIONSHIP", "FAMILY", "SELF", "HEALTH", "OTHER");
         assertThat(optionValues(response.get("interestAreas"), "label"))
                 .containsExactly("학업", "취업·진로", "일·직장생활", "인간관계", "가족", "내 자신", "건강", "기타");
+        assertThat(optionValues(response.get("restMethods"), "code"))
+                .containsExactly(
+                        "SLEEP", "MEDITATION", "ENJOYING_FOOD", "LISTENING_TO_MUSIC", "WATCHING_MOVIES_OR_DRAMAS",
+                        "READING", "WRITING", "VISITING_A_CAFE", "WALKING", "TALKING_WITH_CLOSE_PEOPLE", "EXERCISE",
+                        "GAMING", "VARIES_BY_DAY", "IDLE_REST", "OTHER"
+                );
+        assertThat(optionValues(response.get("restMethods"), "label"))
+                .containsExactly(
+                        "잠자기", "명상하기", "맛있는 음식 먹기", "음악 듣기", "영화, 드라마 보기", "독서하기", "글쓰기",
+                        "카페가기", "산책하기", "가까운 사람과 대화하기", "운동하기", "게임하기", "그때마다 달라요", "멍하니 쉬기", "기타"
+                );
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder onboarding(User user, String body) {
@@ -333,12 +417,17 @@ class UserOnboardingControllerIntegrationTest {
     }
 
     private UserProfile findProfileWithInterestAreas(Long userId) {
+        return findProfileWithCollections(userId);
+    }
+
+    private UserProfile findProfileWithCollections(Long userId) {
         EntityManager entityManager = entityManagerFactory.createEntityManager();
         try {
             return entityManager.createQuery("""
                     select distinct userProfile
                     from UserProfile userProfile
                     left join fetch userProfile.interestAreas
+                    left join fetch userProfile.restMethods
                     where userProfile.userId = :userId
                     """, UserProfile.class)
                     .setParameter("userId", userId)

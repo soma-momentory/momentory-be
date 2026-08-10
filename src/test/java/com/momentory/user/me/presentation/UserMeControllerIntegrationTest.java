@@ -130,8 +130,9 @@ class UserMeControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"nickname":"지은","age":25,"gender":"FEMALE",
-                                 "interestAreas":["CAREER","RELATIONSHIP"],
-                                 "reflectionTime":"21:30","calendarIntegrationEnabled":true}
+                                 "interestAreas":["CAREER","OTHER"],"otherInterestDetail":"에세이 글쓰기",
+                                 "restMethods":["READING","OTHER"],"otherRestMethodDetail":"따뜻한 차 마시기",
+                                 "reflectionTime":"21:30","calendarIntegrationEnabled":true,"notificationEnabled":true}
                                 """))
                 .andExpect(status().isOk());
 
@@ -142,9 +143,13 @@ class UserMeControllerIntegrationTest {
                 .andExpect(jsonPath("$.profile.nickname").value("지은"))
                 .andExpect(jsonPath("$.profile.age").value(25))
                 .andExpect(jsonPath("$.profile.gender").value("FEMALE"))
-                .andExpect(jsonPath("$.profile.interestAreas", containsInAnyOrder("CAREER", "RELATIONSHIP")))
+                .andExpect(jsonPath("$.profile.interestAreas", containsInAnyOrder("CAREER", "OTHER")))
+                .andExpect(jsonPath("$.profile.otherInterestDetail").value("에세이 글쓰기"))
+                .andExpect(jsonPath("$.profile.restMethods", containsInAnyOrder("READING", "OTHER")))
+                .andExpect(jsonPath("$.profile.otherRestMethodDetail").value("따뜻한 차 마시기"))
                 .andExpect(jsonPath("$.profile.reflectionTime").value("21:30"))
-                .andExpect(jsonPath("$.profile.calendarIntegrationEnabled").value(true));
+                .andExpect(jsonPath("$.profile.calendarIntegrationEnabled").value(true))
+                .andExpect(jsonPath("$.profile.notificationEnabled").value(true));
     }
 
     @Test
