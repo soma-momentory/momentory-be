@@ -40,8 +40,9 @@ gemini:
     temperature: ${GEMINI_TEMPERATURE:0.7}
     connect-timeout: ${GEMINI_CONNECT_TIMEOUT:3s}
     read-timeout: ${GEMINI_READ_TIMEOUT:30s}
-    # 행동 카드 '상황' 임베딩 모델 — 768차원(action_cards.situation_embedding vector(768) 와 맞춤)
-    embedding-model: ${GEMINI_EMBEDDING_MODEL:text-embedding-004}
+    # 행동 카드 '상황' 임베딩 모델. gemini-embedding-001 을 outputDimensionality=768 로 잘라
+    # action_cards.situation_embedding vector(768) 에 맞춘다(GeminiSituationEmbedder).
+    embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
 
 momentory:
   gate:

@@ -24,6 +24,8 @@ public class GeminiSituationEmbedder implements SituationEmbedder {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiSituationEmbedder.class);
     private static final String EMBED_PATH = "/v1beta/models/{model}:embedContent";
+    /** action_cards.situation_embedding vector(768) 와 맞춘 출력 차원. 모델은 이 값으로 잘라준다. */
+    private static final int EMBEDDING_DIMENSIONS = 768;
 
     private final RestClient restClient;
     private final GeminiApiProperties properties;
@@ -48,7 +50,8 @@ public class GeminiSituationEmbedder implements SituationEmbedder {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
                             "model", "models/" + model,
-                            "content", Map.of("parts", List.of(Map.of("text", text)))))
+                            "content", Map.of("parts", List.of(Map.of("text", text))),
+                            "outputDimensionality", EMBEDDING_DIMENSIONS))
                     .retrieve()
                     .body(EmbeddingResponse.class);
 
