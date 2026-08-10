@@ -30,9 +30,18 @@ public record ReplyDto(
 
     /**
      * 선택지 버튼 하나. {@code id} 는 1-base 번호 문자열 — 턴 요청의 {@code optionId} 로 돌려보낸다.
+     *
+     * <p>{@code hint} 는 화면 배지용 맥락 한 줄(예: "지난 비슷한 상황에서 정한 행동"), {@code input}
+     * 이 true 면 "직접 입력" 옵션이라 프론트가 텍스트 필드를 연다. 둘 다 없으면(NON_NULL) 생략된다.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record OptionDto(String id, String label, String description) {
+    public record OptionDto(String id, String label, String description, String hint,
+            Boolean input) {
+
+        /** 배지·직접입력이 없는 보통 옵션용 — 방향·일정·감정 선택지 등. */
+        public OptionDto(String id, String label, String description) {
+            this(id, label, description, null, null);
+        }
     }
 
     /** 슬라이더 하나. {@code id} 는 {@link MeasureField} 키 — 턴 요청의 measures 키로 돌려보낸다. */

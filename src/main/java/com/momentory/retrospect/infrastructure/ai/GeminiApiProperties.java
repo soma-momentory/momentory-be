@@ -23,6 +23,7 @@ public record GeminiApiProperties(
         @NotBlank String model,
         @NotNull Double temperature,
         @NotNull Duration connectTimeout,
-        @NotNull Duration readTimeout
+        @NotNull Duration readTimeout,
+        @NotBlank String embeddingModel
 ) {
 }

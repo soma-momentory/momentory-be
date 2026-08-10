@@ -105,7 +105,7 @@ class GeminiApiClientTest {
     private GeminiApiClient client() {
         GeminiApiProperties properties = new GeminiApiProperties(
                 server.url("/").toString(), "test-key", "gemini-flash-lite-latest",
-                0.7, Duration.ofSeconds(1), Duration.ofSeconds(5));
+                0.7, Duration.ofSeconds(1), Duration.ofSeconds(5), "text-embedding-004");
         RestClient restClient = new GeminiApiClientConfiguration().geminiRestClient(properties);
         return new GeminiApiClient(restClient, mapper, events::add, properties);
     }

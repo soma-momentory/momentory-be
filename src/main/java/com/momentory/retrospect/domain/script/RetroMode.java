@@ -8,7 +8,7 @@ package com.momentory.retrospect.domain.script;
  */
 public enum RetroMode {
 
-    EMOTION_SORTING("emotion_sorting", "감정 정리형", false, true,
+    EMOTION_SORTING("emotion_sorting", "감정 정리형", true, true,
             "감정을 충분히 알아주는 회고였다. 리프레이밍 일기는 '오늘 힘들었던 마음을 먼저 알아주자'는 "
                     + "자기 위로와 사용자가 자신에게 남긴 말을 중심으로 쓴다."),
     REFRAME("reframe", "인지 재구성형", true, true,

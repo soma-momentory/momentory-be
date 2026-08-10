@@ -22,6 +22,7 @@ import com.momentory.retrospect.domain.assistant.UnderstandingChecker;
 import com.momentory.retrospect.domain.AnswerGate;
 import com.momentory.retrospect.domain.Message;
 import com.momentory.retrospect.domain.Phase;
+import com.momentory.retrospect.domain.PriorActionCard;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.ScheduleItem;
 import com.momentory.retrospect.domain.SchedulePicker;
@@ -298,20 +299,49 @@ public class RetrospectEngine {
         return presentNext(state, null);
     }
 
+    /** 행동 카드로 굳는 직접 입력 행동의 방어 상한(글자) — 한 줄 행동이라 짧게 받는다. */
+    private static final int CUSTOM_ACTION_MAX_LENGTH = 100;
+
     private ReplyDto handleChoiceAnswer(RetrospectState state, ScriptStep step,
             TurnCommand command) {
+        // 행동 추천 스텝에서만 자유 텍스트를 '직접 입력한 행동'으로 받는다("직접 입력" 옵션의 결과).
+        // 다른 선택 스텝(방향·목적 등)에서는 자유 텍스트를 받지 않고 아래에서 되묻는다.
+        if (step.actionStep() && !command.hasOption() && command.hasContent()) {
+            return handleCustomAction(state, step, command.content().strip());
+        }
         Optional<OptionItem> chosen = command.hasOption()
                 ? state.resolveOption(command.optionId())
                 : Optional.empty();
-        if (chosen.isEmpty()) {
-            return ReplyDto.choices("보기 중 하나를 골라주세요.", Phase.SCRIPT,
-                    toOptionDtos(state.lastOptions()), state.safety().level());
+        // "직접 입력" 옵션은 optionId 로 확정하지 않는다 — 프론트가 텍스트를 받아 content 로 보낸다.
+        if (chosen.isEmpty() || chosen.get().isInput()) {
+            String ask = chosen.isPresent() && chosen.get().isInput()
+                    ? "어떤 행동을 해볼지 한 줄로 적어주세요."
+                    : "보기 중 하나를 골라주세요.";
+            return ReplyDto.choices(ask, Phase.SCRIPT, toOptionDtos(state.lastOptions()),
+                    state.safety().level());
         }
         state.recordAnswer(step.id(), chosen.get().toLine());
         if (step.actionStep()) {
             state.chooseAction(chosen.get());
         }
         state.addUserMessage(chosen.get().label());
+        return presentNext(state, null);
+    }
+
+    /** 사용자가 직접 적은 행동을 그 턴의 행동으로 굳힌다 — 비거나 너무 길면 되묻는다. */
+    private ReplyDto handleCustomAction(RetrospectState state, ScriptStep step, String custom) {
+        if (custom.isBlank()) {
+            return ReplyDto.choices("어떤 행동을 해볼지 한 줄로 적어주세요.", Phase.SCRIPT,
+                    toOptionDtos(state.lastOptions()), state.safety().level());
+        }
+        if (custom.length() > CUSTOM_ACTION_MAX_LENGTH) {
+            return ReplyDto.choices("한 줄로 짧게 적어주세요.", Phase.SCRIPT,
+                    toOptionDtos(state.lastOptions()), state.safety().level());
+        }
+        OptionItem action = new OptionItem(custom, null);
+        state.recordAnswer(step.id(), action.toLine());
+        state.chooseAction(action);
+        state.addUserMessage(custom);
         return presentNext(state, null);
     }
 
@@ -434,6 +464,11 @@ public class RetrospectEngine {
         }
 
         if (step.isChoice()) {
+            // 행동 추천 스텝이면 (비슷한 상황의 이전 카드 맨 앞 + 직접 입력 맨 뒤)를 덧붙인다.
+            // AI/폴백이 낸 원래 개수(optionCount) 뒤에 붙으므로 G2 크기 검증엔 영향 없다.
+            if (step.actionStep()) {
+                options = augmentActionOptions(state, options);
+            }
             state.lastOptions(options);
             // 대화 로그에는 보기까지 남긴다 — 다음 턴 프롬프트가 이 로그를 그대로 본다.
             state.addAssistantMessage(text + "\n" + optionLines(toOptionDtos(options)));
@@ -595,11 +630,43 @@ public class RetrospectEngine {
         return out;
     }
 
+    /** "직접 입력" 옵션 문구 — 사용자가 자기 행동을 직접 적는 선지. */
+    private static final String CUSTOM_ACTION_LABEL = "내가 직접 정할래요";
+    private static final String CUSTOM_ACTION_HINT = "원하는 행동을 직접 적을게요";
+
+    /**
+     * 행동 추천 옵션을 덧붙인다: (비슷한 상황의 이전 카드 맨 앞) + AI/폴백 추천 + (직접 입력 맨 뒤).
+     *
+     * <p>이전 카드는 {@code situationSummary}(AI 요약)가 있을 때만, 조회기가 찾아냈을 때만 붙는다.
+     * 조회기 기본값은 아무것도 찾지 않으므로(NONE) 서비스가 설정하지 않으면 이전 카드는 빠진다.
+     */
+    private static List<OptionItem> augmentActionOptions(RetrospectState state,
+            List<OptionItem> base) {
+        List<OptionItem> out = new ArrayList<>();
+        String situation = state.situationSummary();
+        if (situation != null && !situation.isBlank()) {
+            state.priorCardFinder().findSimilar(situation)
+                    .map(RetrospectEngine::priorActionOption)
+                    .ifPresent(out::add);
+        }
+        out.addAll(base);
+        out.add(OptionItem.input(CUSTOM_ACTION_LABEL, CUSTOM_ACTION_HINT));
+        return out;
+    }
+
+    /** 이전 카드 → 옵션. label·description 은 그대로 새 카드로 굳고, 맥락은 hint 로만 붙는다. */
+    private static OptionItem priorActionOption(PriorActionCard card) {
+        return new OptionItem(card.action(), card.detail(), "지난 비슷한 상황에서 정한 행동이에요",
+                false);
+    }
+
     private static List<ReplyDto.OptionDto> toOptionDtos(List<OptionItem> options) {
         List<ReplyDto.OptionDto> out = new ArrayList<>();
         for (int i = 0; i < options.size(); i++) {
             OptionItem o = options.get(i);
-            out.add(new ReplyDto.OptionDto(String.valueOf(i + 1), o.label(), o.description()));
+            // input=false 는 null 로 보내 NON_NULL 로 생략한다 — "직접 입력" 옵션에만 실린다
+            out.add(new ReplyDto.OptionDto(String.valueOf(i + 1), o.label(), o.description(),
+                    o.hint(), o.isInput() ? Boolean.TRUE : null));
         }
         return out;
     }
