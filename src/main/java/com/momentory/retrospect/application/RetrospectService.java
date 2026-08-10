@@ -6,8 +6,6 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.momentory.retrospect.application.metering.UsageRecorder;
-import com.momentory.retrospect.application.metering.UsageSummary;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.RetrospectStatus;
@@ -31,15 +29,13 @@ public class RetrospectService {
     private final RetrospectRepository retrospectRepository;
     private final RetrospectStateCodec codec;
     private final UserRepository userRepository;
-    private final UsageRecorder usage;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
-            RetrospectStateCodec codec, UserRepository userRepository, UsageRecorder usage) {
+            RetrospectStateCodec codec, UserRepository userRepository) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.codec = codec;
         this.userRepository = userRepository;
-        this.usage = usage;
     }
 
     /** 회고 시작 — 세션을 만들고 첫 메시지(공감 + 1턴 질문)를 낸다. */
@@ -68,15 +64,6 @@ public class RetrospectService {
         sync(entity, state, reply);
 
         return reply;
-    }
-
-    /** 이번 세션의 LLM 사용량 요약(계측). 계측은 인메모리라 서버 재시작 시 사라진다. */
-    @Transactional(readOnly = true)
-    public UsageSummary usage(Long userId, Long id) {
-        Retrospect entity = requireSession(userId, id);
-        // 계측 키는 세션의 내부 id(스냅샷 안의 UUID)다 — 그걸 꺼내 요약을 조회한다.
-        String sessionKey = codec.deserialize(entity.getStateJson()).id();
-        return usage.summarize(sessionKey);
     }
 
     private void sync(Retrospect entity, RetrospectState state, ReplyDto reply) {

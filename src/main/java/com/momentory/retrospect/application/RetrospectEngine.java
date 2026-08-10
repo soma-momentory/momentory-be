@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
-import com.momentory.retrospect.application.metering.UsageRecorder;
+import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.application.event.CrisisDetected;
 import com.momentory.retrospect.application.event.RetrospectCompleted;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
@@ -61,7 +61,7 @@ public class RetrospectEngine {
     private final UnderstandingChecker understandingChecker;
     private final TurnScripter turnScripter;
     private final DiaryWriter diaryWriter;
-    private final UsageRecorder usage;
+    private final LlmUsageLogger usage;
     private final ApplicationEventPublisher events;
 
     /**
@@ -72,7 +72,7 @@ public class RetrospectEngine {
     private final int reaskCap;
 
     public RetrospectEngine(SafetyPolicy safetyPolicy, UnderstandingChecker understandingChecker,
-            TurnScripter turnScripter, DiaryWriter diaryWriter, UsageRecorder usage,
+            TurnScripter turnScripter, DiaryWriter diaryWriter, LlmUsageLogger usage,
             ApplicationEventPublisher events,
             @Value("${momentory.gate.reask-cap:1}") int reaskCap) {
         this.safetyPolicy = safetyPolicy;
