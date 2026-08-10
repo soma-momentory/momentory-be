@@ -7,6 +7,7 @@ import com.momentory.auth.token.infrastructure.RefreshTokenRepository;
 import com.momentory.auth.security.JwtProperties;
 import com.momentory.user.domain.User;
 import com.momentory.user.domain.UserRole;
+import com.momentory.user.infrastructure.UserProfileRepository;
 import com.momentory.user.infrastructure.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,9 +39,11 @@ import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -64,6 +67,7 @@ class UserMeControllerIntegrationTest {
 
     @Autowired WebApplicationContext webApplicationContext;
     @Autowired UserRepository userRepository;
+    @Autowired UserProfileRepository userProfileRepository;
     @Autowired RefreshTokenRepository refreshTokenRepository;
     @Autowired AccessTokenIssuer accessTokenIssuer;
     @Autowired RefreshTokenIssuer refreshTokenIssuer;
@@ -83,6 +87,8 @@ class UserMeControllerIntegrationTest {
     @AfterEach
     void cleanUp() {
         refreshTokenRepository.deleteAllInBatch();
+        // 프로필이 사용자를 참조한다 — 먼저 지우지 않으면 FK 로 막힌다
+        userProfileRepository.deleteAll();
         userRepository.deleteAllInBatch();
     }
 
@@ -107,6 +113,38 @@ class UserMeControllerIntegrationTest {
         mockMvc.perform(me(accessTokenIssuer.issueAccessToken(user.getId(), user.getRole())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.onboardingRequired").value(false));
+    }
+
+    @Test
+    void returnsOnboardingProfileSoClientCanRestoreItAfterRestart() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        String token = accessTokenIssuer.issueAccessToken(user.getId(), user.getRole());
+
+        // 온보딩 전에는 프로필 자리가 아예 없다 — 빈 값을 지어내지 않는다
+        mockMvc.perform(me(token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profile").doesNotExist());
+
+        mockMvc.perform(put("/api/v1/users/me/onboarding")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"nickname":"지은","age":25,"gender":"FEMALE",
+                                 "interestAreas":["CAREER","RELATIONSHIP"],
+                                 "reflectionTime":"21:30","calendarIntegrationEnabled":true}
+                                """))
+                .andExpect(status().isOk());
+
+        // 보낸 그대로 돌아온다 — 특히 시각은 보낸 형식(HH:mm)과 같아야 왕복에 어긋나지 않는다
+        mockMvc.perform(me(token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.onboardingRequired").value(false))
+                .andExpect(jsonPath("$.profile.nickname").value("지은"))
+                .andExpect(jsonPath("$.profile.age").value(25))
+                .andExpect(jsonPath("$.profile.gender").value("FEMALE"))
+                .andExpect(jsonPath("$.profile.interestAreas", containsInAnyOrder("CAREER", "RELATIONSHIP")))
+                .andExpect(jsonPath("$.profile.reflectionTime").value("21:30"))
+                .andExpect(jsonPath("$.profile.calendarIntegrationEnabled").value(true));
     }
 
     @Test
