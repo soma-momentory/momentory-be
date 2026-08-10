@@ -148,6 +148,19 @@ class OpenApiContractIntegrationTest {
         assertNoResponseContent(apiDocs, "/api/v1/memos/{date}", "delete", "204");
         assertErrorExample(apiDocs, "/api/v1/memos/{date}", "delete", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/memos/{date}", "delete", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/retrospect", "post", "201", "StartRetrospectResponse");
+        assertErrorExample(apiDocs, "/api/v1/retrospect", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "currentEmotion은 필수입니다.");
+        assertErrorExample(apiDocs, "/api/v1/retrospect", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "200", "ReplyDto");
+        assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "404", "ApiErrorResponse", "RETROSPECT_SESSION_NOT_FOUND", "RETROSPECT_SESSION_NOT_FOUND", "회고 세션을 찾을 수 없습니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/retrospect/{id}/usage", "get", "200", "UsageSummary");
+        assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/usage", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/usage", "get", "404", "ApiErrorResponse", "RETROSPECT_SESSION_NOT_FOUND", "RETROSPECT_SESSION_NOT_FOUND", "회고 세션을 찾을 수 없습니다.");
     }
 
     @Test
@@ -300,7 +313,10 @@ class OpenApiContractIntegrationTest {
         SCHEDULES_ORDER("/api/v1/schedules/order", "patch"),
         DAILY_MEMO_GET("/api/v1/memos/{date}", "get"),
         DAILY_MEMO_PUT("/api/v1/memos/{date}", "put"),
-        DAILY_MEMO_DELETE("/api/v1/memos/{date}", "delete");
+        DAILY_MEMO_DELETE("/api/v1/memos/{date}", "delete"),
+        RETROSPECT_START("/api/v1/retrospect", "post"),
+        RETROSPECT_MESSAGE("/api/v1/retrospect/{id}/messages", "post"),
+        RETROSPECT_USAGE("/api/v1/retrospect/{id}/usage", "get");
 
         private final String path;
         private final String method;
@@ -323,7 +339,9 @@ class OpenApiContractIntegrationTest {
                     || this == SCHEDULES_DELETE
                     || this == SCHEDULES_COMPLETION
                     || this == SCHEDULES_ORDER
-                    || this == DAILY_MEMO_GET;
+                    || this == DAILY_MEMO_GET
+                    || this == RETROSPECT_MESSAGE
+                    || this == RETROSPECT_USAGE;
         }
     }
 }

@@ -32,6 +32,24 @@ kakao:
     connect-timeout: ${KAKAO_CONNECT_TIMEOUT:3s}
     read-timeout: ${KAKAO_READ_TIMEOUT:5s}
 
+gemini:
+  api:
+    base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com}
+    api-key: ${GEMINI_API_KEY}
+    model: ${GEMINI_MODEL:gemini-flash-lite-latest}
+    temperature: ${GEMINI_TEMPERATURE:0.7}
+    connect-timeout: ${GEMINI_CONNECT_TIMEOUT:3s}
+    read-timeout: ${GEMINI_READ_TIMEOUT:30s}
+
+momentory:
+  gate:
+    reask-cap: ${RETRO_REASK_CAP:1}
+  prompt:
+    history-char-budget: ${RETRO_HISTORY_CHAR_BUDGET:1200}
+  price:
+    in-per-million: ${RETRO_PRICE_IN_PER_MILLION:0.10}
+    out-per-million: ${RETRO_PRICE_OUT_PER_MILLION:0.40}
+
 springdoc:
   api-docs:
     enabled: ${SWAGGER_ENABLED:true}

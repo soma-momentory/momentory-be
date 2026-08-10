@@ -31,6 +31,8 @@ services:
       KAKAO_API_BASE_URL: ${KAKAO_API_BASE_URL:-https://kapi.kakao.com}
       KAKAO_CONNECT_TIMEOUT: ${KAKAO_CONNECT_TIMEOUT:-3s}
       KAKAO_READ_TIMEOUT: ${KAKAO_READ_TIMEOUT:-5s}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY must be set}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-lite-latest}
     depends_on:
       postgres:
         condition: service_healthy
