@@ -58,6 +58,12 @@ public class RetrospectState {
     /** 행동 선택 턴에서 고른 행동 — 행동 카드의 '목표 행동'. */
     private OptionItem chosenAction;
 
+    /**
+     * "비슷한 상황의 이전 카드" 조회기 — <b>직렬화하지 않는다</b>(스냅샷에 없음). 서비스가 매 턴
+     * 세션을 불러온 뒤 userId 를 묶어 넣어준다. 엔진은 행동 추천을 낼 때만 부른다.
+     */
+    private transient PriorActionCardFinder priorCardFinder = PriorActionCardFinder.NONE;
+
     private int messageSeq;
 
     public RetrospectState(String id) {
@@ -135,6 +141,11 @@ public class RetrospectState {
 
     public OptionItem chosenAction() {
         return chosenAction;
+    }
+
+    /** "비슷한 상황의 이전 카드" 조회기 — 서비스가 매 턴 설정한다(미설정 시 {@link PriorActionCardFinder#NONE}). */
+    public PriorActionCardFinder priorCardFinder() {
+        return priorCardFinder;
     }
 
     /** 인지 재구성형의 자동적 사고 (믿음 슬라이더 라벨·일기 프롬프트용). */
@@ -271,6 +282,10 @@ public class RetrospectState {
         } catch (RuntimeException e) {
             return Optional.empty();
         }
+    }
+
+    public void priorCardFinder(PriorActionCardFinder finder) {
+        this.priorCardFinder = finder == null ? PriorActionCardFinder.NONE : finder;
     }
 
     public void chooseAction(OptionItem option) {

@@ -25,11 +25,14 @@ class ScriptsTest {
                 StepKind.MEASURE, StepKind.CHOICE);
         assertThat(byId(steps, "need_now").optionCount()).isEqualTo(3);
         assertThat(byId(steps, "care_action").optionCount()).isEqualTo(2);
-        // 감정 정리형은 행동 카드를 만들지 않는다(PDF 산출물: 일기 2종만).
-        assertThat(steps).noneMatch(ScriptStep::actionStep);
+        // 마지막 돌봄 행동(care_action)이 행동 카드가 된다 — 감정 정리형도 카드를 남긴다.
+        // need_now(필요한 것 3택)는 행동 스텝이 아니다(정리용 선택).
+        assertThat(byId(steps, "care_action").actionStep()).isTrue();
+        assertThat(byId(steps, "care_action").describedOptions()).isTrue();
+        assertThat(byId(steps, "need_now").actionStep()).isFalse();
         assertThat(byId(steps, "after_intensity").measures()).containsExactly(
                 MeasureField.SCHEDULE_EMOTION, MeasureField.CURRENT_EMOTION);
-        assertThat(RetroMode.EMOTION_SORTING.hasActionCard()).isFalse();
+        assertThat(RetroMode.EMOTION_SORTING.hasActionCard()).isTrue();
         assertThat(RetroMode.EMOTION_SORTING.hasReframedDiary()).isTrue();
     }
 

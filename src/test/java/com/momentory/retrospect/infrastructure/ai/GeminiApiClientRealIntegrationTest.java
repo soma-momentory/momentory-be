@@ -27,7 +27,7 @@ class GeminiApiClientRealIntegrationTest {
                 "https://generativelanguage.googleapis.com",
                 System.getenv("GEMINI_API_KEY"),
                 "gemini-flash-lite-latest",
-                0.7, Duration.ofSeconds(3), Duration.ofSeconds(30));
+                0.7, Duration.ofSeconds(3), Duration.ofSeconds(30), "text-embedding-004");
         RestClient restClient = new GeminiApiClientConfiguration().geminiRestClient(properties);
         GeminiApiClient client = new GeminiApiClient(restClient, JsonMapper.builder().build(),
                 event -> { }, properties);

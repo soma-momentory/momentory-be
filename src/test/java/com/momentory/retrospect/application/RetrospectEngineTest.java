@@ -2,8 +2,10 @@ package com.momentory.retrospect.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.Phase;
+import com.momentory.retrospect.domain.PriorActionCard;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.ScheduleItem;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
@@ -187,7 +190,7 @@ class RetrospectEngineTest {
     class EmotionSortingFlow {
 
         @Test
-        @DisplayName("감정 정리형 풀 코스 — 텍스트3 → 3택 → 텍스트 → 슬라이더2 → 2택 → 일기 2종(카드 없음)")
+        @DisplayName("감정 정리형 풀 코스 — 텍스트3 → 3택 → 텍스트 → 슬라이더2 → 행동 2택+직접입력 → 일기 2종 + 행동 카드")
         void fullPath() {
             answerIntro();
             ReplyDto r = service.handle(state, TurnCommand.option("1")); // 감정 정리형
@@ -213,14 +216,17 @@ class RetrospectEngineTest {
             r = service.handle(state, TurnCommand.measures(
                     Map.of("schedule_emotion", 4, "current_emotion", 5)));
 
-            // 행동 2택 → 종료
-            assertThat(r.options()).hasSize(2);
+            // 행동 2택 + 직접 입력 → 종료. 감정 정리형도 이제 돌봄 행동을 카드로 남긴다
+            assertThat(r.options()).hasSize(3);
+            assertThat(r.options().get(2).input()).isTrue();
             r = service.handle(state, TurnCommand.option("2"));
 
             assertThat(r.done()).isTrue();
             assertThat(r.diary().diary()).isEqualTo("오늘의 그냥 일기.");
             assertThat(r.diary().reframedDiary()).isEqualTo("오늘의 리프레이밍 일기.");
-            assertThat(r.actionCard()).isNull(); // 감정 정리형은 행동 카드 없음
+            assertThat(r.actionCard()).isNotNull(); // 감정 정리형도 행동 카드가 남는다
+            assertThat(r.actionCard().action()).isEqualTo("[care_action] 보기2");
+            assertThat(r.actionCard().detail()).isEqualTo("보기2 설명");
             assertThat(fake.diaryCalls).isEqualTo(1);
         }
     }
@@ -259,9 +265,12 @@ class RetrospectEngineTest {
             r = service.handle(state, TurnCommand.measures(
                     Map.of("belief", 5, "schedule_emotion", 5, "current_emotion", 4)));
 
-            // 행동 2택(제목+설명) → 카드
-            assertThat(r.options()).hasSize(2);
+            // 행동 2택(제목+설명) + "직접 입력" → 카드. 이전 카드 매칭은 없음(finder 미설정)
+            assertThat(r.options()).hasSize(3);
             assertThat(r.options().get(0).description()).isNotBlank();
+            // 마지막은 직접 입력 옵션 — 고르면 프론트가 텍스트 필드를 연다
+            assertThat(r.options().get(2).input()).isTrue();
+            assertThat(r.options().get(2).label()).isEqualTo("내가 직접 정할래요");
             r = service.handle(state, TurnCommand.option("1"));
 
             assertThat(r.done()).isTrue();
@@ -315,9 +324,9 @@ class RetrospectEngineTest {
             r = service.handle(state, TurnCommand.text("답변 정리가 안 되는 문제요."));
             r = service.handle(state, TurnCommand.text("핵심을 먼저 말하고 싶어요."));
             r = service.handle(state, TurnCommand.text("답변 정리와 소리 내어 연습이요."));
-            assertThat(r.options()).hasSize(3); // 행동 목적 3택
+            assertThat(r.options()).hasSize(3); // 행동 목적 3택(행동 스텝 아님 — 덧붙이지 않음)
             r = service.handle(state, TurnCommand.option("2"));
-            assertThat(r.options()).hasSize(2); // 행동 2택
+            assertThat(r.options()).hasSize(3); // 행동 2택 + 직접 입력
             r = service.handle(state, TurnCommand.option("1"));
 
             assertThat(r.ui()).isEqualTo("measure"); // 마지막: 감정 확인
@@ -327,6 +336,73 @@ class RetrospectEngineTest {
             assertThat(r.done()).isTrue();
             assertThat(r.actionCard()).isNotNull();
             assertThat(r.actionCard().detail()).isEqualTo("보기1 설명");
+        }
+    }
+
+    @Nested
+    class ActionRecommendation {
+
+        /** 문제 해결형으로 행동 추천 스텝까지 진행하고 그 응답을 돌려준다. */
+        private ReplyDto toActionStep() {
+            answerIntro();
+            service.handle(state, TurnCommand.option("3"));
+            service.handle(state, TurnCommand.text("답변 정리가 안 되는 문제요."));
+            service.handle(state, TurnCommand.text("핵심을 먼저 말하고 싶어요."));
+            service.handle(state, TurnCommand.text("답변 정리와 소리 내어 연습이요."));
+            return service.handle(state, TurnCommand.option("2")); // 행동 스텝 진입
+        }
+
+        private ReplyDto finishMeasure() {
+            return service.handle(state,
+                    TurnCommand.measures(Map.of("schedule_emotion", 5, "current_emotion", 4)));
+        }
+
+        @Test
+        @DisplayName("직접 입력 — 마지막 옵션은 input 이고, 자유 텍스트가 그대로 행동 카드가 된다")
+        void customActionFromFreeText() {
+            ReplyDto atAction = toActionStep();
+            assertThat(atAction.options()).hasSize(3); // 행동 2택 + 직접 입력
+            assertThat(atAction.options().get(2).input()).isTrue();
+
+            // "직접 입력" 을 고른 뒤 자유 텍스트를 보낸다(optionId 대신 content)
+            service.handle(state, TurnCommand.text("자기 전에 오늘 답변 한 줄 적어보기"));
+            ReplyDto r = finishMeasure();
+
+            assertThat(r.done()).isTrue();
+            assertThat(r.actionCard()).isNotNull();
+            assertThat(r.actionCard().action()).isEqualTo("자기 전에 오늘 답변 한 줄 적어보기");
+        }
+
+        @Test
+        @DisplayName("직접 입력 — 너무 길면 되묻고 진행하지 않는다")
+        void tooLongCustomActionReprompts() {
+            toActionStep();
+            ReplyDto r = service.handle(state, TurnCommand.text("가".repeat(101)));
+
+            assertThat(r.done()).isFalse();
+            assertThat(r.options()).isNotNull(); // 같은 보기로 되묻는다
+        }
+
+        @Test
+        @DisplayName("비슷한 상황의 이전 카드가 있으면 추천 첫 줄에 붙고, 고르면 그 행동이 카드가 된다")
+        void priorCardPrependedFirst() {
+            state.priorCardFinder(situation -> Optional.of(new PriorActionCard(
+                    "예상 질문 하나 소리 내어 답해보기", "결론부터 30초로", "면접에서 말문이 막힘",
+                    LocalDate.of(2026, 7, 20))));
+
+            ReplyDto atAction = toActionStep();
+
+            // 이전 카드(맨 앞) + 행동 2택 + 직접 입력 = 4
+            assertThat(atAction.options()).hasSize(4);
+            assertThat(atAction.options().get(0).label()).isEqualTo("예상 질문 하나 소리 내어 답해보기");
+            assertThat(atAction.options().get(0).hint()).isNotBlank(); // 배지로 맥락을 준다
+
+            service.handle(state, TurnCommand.option("1")); // 이전 카드 선택
+            ReplyDto r = finishMeasure();
+
+            // hint 는 카드에 들어가지 않는다 — label·description 만 굳는다
+            assertThat(r.actionCard().action()).isEqualTo("예상 질문 하나 소리 내어 답해보기");
+            assertThat(r.actionCard().detail()).isEqualTo("결론부터 30초로");
         }
     }
 

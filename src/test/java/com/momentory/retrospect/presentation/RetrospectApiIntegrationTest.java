@@ -5,11 +5,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,7 +46,12 @@ import com.momentory.retrospect.domain.assistant.TurnScript;
 import com.momentory.retrospect.domain.assistant.TurnScripter;
 import com.momentory.retrospect.domain.assistant.UnderstandingCheck;
 import com.momentory.retrospect.domain.assistant.UnderstandingChecker;
+import com.momentory.retrospect.domain.Emotion;
+import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.script.OptionItem;
+import com.momentory.retrospect.domain.script.RetroMode;
+import com.momentory.retrospect.infrastructure.persistence.ActionCard;
+import com.momentory.retrospect.infrastructure.persistence.ActionCardRepository;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;
@@ -75,6 +83,7 @@ class RetrospectApiIntegrationTest {
     @Autowired WebApplicationContext webApplicationContext;
     @Autowired UserRepository userRepository;
     @Autowired RetrospectRepository retrospectRepository;
+    @Autowired ActionCardRepository actionCardRepository;
     @Autowired AccessTokenIssuer accessTokenIssuer;
 
     @MockitoBean UnderstandingChecker understandingChecker;
@@ -103,6 +112,8 @@ class RetrospectApiIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        // 행동 카드가 회고를 FK 로 참조하므로 카드부터 지운다
+        actionCardRepository.deleteAllInBatch();
         retrospectRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
     }
@@ -233,6 +244,67 @@ class RetrospectApiIntegrationTest {
                                 {"currentEmotion":"depressed"}"""))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    @DisplayName("일기 조회 — 완주한 회고의 일기 본문을 돌려준다(카드 없는 짧은 기록형)")
+    void getDiaryReturnsBodyWithoutCard() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(user);
+
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"답변을 제대로 못 했어요.\"}"));
+        mockMvc.perform(message(user, sessionId, "{\"optionId\":\"4\"}"));
+        mockMvc.perform(message(user, sessionId, """
+                {"measures":{"schedule_emotion":8,"current_emotion":6}}"""));
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"불안했고 우울해졌다.\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/retrospect/{id}/diary", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.diary").value("그냥 일기."))
+                // 짧은 기록형은 리프레임 일기도, 행동 카드도 없다
+                .andExpect(jsonPath("$.reframedDiary").doesNotExist())
+                .andExpect(jsonPath("$.actionCard").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("일기 조회 — 저장된 행동 카드가 상황/목표 행동/느낀 점 계약대로 함께 온다")
+    void getDiaryReturnsPersistedActionCard() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        Retrospect entity = Retrospect.start(user.getId(), RetrospectStatus.IN_PROGRESS,
+                RetroMode.REFRAME, "면접 스터디", Emotion.ANXIOUS, Emotion.DEPRESSED, "{}");
+        entity.sync(RetrospectStatus.COMPLETED, RetroMode.REFRAME, "{}", "리프레임한 일기 본문",
+                "다시 본 오늘", Instant.now());
+        retrospectRepository.saveAndFlush(entity);
+        actionCardRepository.saveAndFlush(ActionCard.create(user.getId(), entity.getId(),
+                "발표를 앞두고 긴장했던 상황", "심호흡을 세 번 하고 시작하기", "떨리는 건 준비를 잘했다는 신호",
+                LocalDate.of(2026, 8, 10)));
+
+        mockMvc.perform(get("/api/v1/retrospect/{id}/diary", entity.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.diary").value("리프레임한 일기 본문"))
+                .andExpect(jsonPath("$.reframedDiary").value("다시 본 오늘"))
+                .andExpect(jsonPath("$.actionCard.situation").value("발표를 앞두고 긴장했던 상황"))
+                .andExpect(jsonPath("$.actionCard.targetAction").value("심호흡을 세 번 하고 시작하기"))
+                .andExpect(jsonPath("$.actionCard.detail").value("떨리는 건 준비를 잘했다는 신호"))
+                .andExpect(jsonPath("$.actionCard.createdDate").value("2026-08-10"))
+                .andExpect(jsonPath("$.actionCard.done").value(false));
+    }
+
+    @Test
+    @DisplayName("일기 조회 — 남의 세션은 404")
+    void getDiaryOfAnotherUserIs404() throws Exception {
+        User owner = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(owner);
+
+        mockMvc.perform(get("/api/v1/retrospect/{id}/diary", sessionId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(other)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RETROSPECT_SESSION_NOT_FOUND"));
     }
 
     // ── 도우미 ───────────────────────────────────────────────────────────
