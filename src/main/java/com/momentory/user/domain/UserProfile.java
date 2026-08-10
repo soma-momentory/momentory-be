@@ -26,6 +26,7 @@ import java.util.Set;
 public class UserProfile extends BaseTimeEntity {
 
     public static final int NICKNAME_MAX_LENGTH = 10;
+    public static final int OTHER_DETAIL_MAX_LENGTH = 50;
     public static final String DEFAULT_TIME_ZONE = TimeZonePolicy.DEFAULT_TIME_ZONE_ID;
 
     @Id
@@ -63,6 +64,25 @@ public class UserProfile extends BaseTimeEntity {
     @Column(name = "interest_area", nullable = false, length = 30)
     private Set<InterestArea> interestAreas = new HashSet<>();
 
+    @Column(name = "other_interest_detail", length = OTHER_DETAIL_MAX_LENGTH)
+    private String otherInterestDetail;
+
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "user_rest_methods",
+            joinColumns = @JoinColumn(
+                    name = "user_id",
+                    nullable = false,
+                    foreignKey = @ForeignKey(name = "fk_user_rest_methods_user")
+            )
+    )
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rest_method", nullable = false, length = 50)
+    private Set<RestMethod> restMethods = new HashSet<>();
+
+    @Column(name = "other_rest_method_detail", length = OTHER_DETAIL_MAX_LENGTH)
+    private String otherRestMethodDetail;
+
     @Column(name = "reflection_time", nullable = false)
     private LocalTime reflectionTime;
 
@@ -71,6 +91,9 @@ public class UserProfile extends BaseTimeEntity {
 
     @Column(name = "calendar_integration_enabled", nullable = false)
     private boolean calendarIntegrationEnabled;
+
+    @Column(name = "notification_enabled", nullable = false)
+    private boolean notificationEnabled;
 
     protected UserProfile() {
     }
@@ -81,11 +104,26 @@ public class UserProfile extends BaseTimeEntity {
             Integer age,
             Gender gender,
             Set<InterestArea> interestAreas,
+            String otherInterestDetail,
+            Set<RestMethod> restMethods,
+            String otherRestMethodDetail,
             LocalTime reflectionTime,
-            boolean calendarIntegrationEnabled
+            boolean calendarIntegrationEnabled,
+            Boolean notificationEnabled
     ) {
         this.user = Objects.requireNonNull(user);
-        update(nickname, age, gender, interestAreas, reflectionTime, calendarIntegrationEnabled);
+        update(
+                nickname,
+                age,
+                gender,
+                interestAreas,
+                otherInterestDetail,
+                restMethods,
+                otherRestMethodDetail,
+                reflectionTime,
+                calendarIntegrationEnabled,
+                notificationEnabled
+        );
     }
 
     public static UserProfile create(
@@ -94,10 +132,26 @@ public class UserProfile extends BaseTimeEntity {
             Integer age,
             Gender gender,
             Set<InterestArea> interestAreas,
+            String otherInterestDetail,
+            Set<RestMethod> restMethods,
+            String otherRestMethodDetail,
             LocalTime reflectionTime,
-            boolean calendarIntegrationEnabled
+            boolean calendarIntegrationEnabled,
+            Boolean notificationEnabled
     ) {
-        return new UserProfile(user, nickname, age, gender, interestAreas, reflectionTime, calendarIntegrationEnabled);
+        return new UserProfile(
+                user,
+                nickname,
+                age,
+                gender,
+                interestAreas,
+                otherInterestDetail,
+                restMethods,
+                otherRestMethodDetail,
+                reflectionTime,
+                calendarIntegrationEnabled,
+                notificationEnabled
+        );
     }
 
     public void update(
@@ -105,16 +159,25 @@ public class UserProfile extends BaseTimeEntity {
             Integer age,
             Gender gender,
             Set<InterestArea> interestAreas,
+            String otherInterestDetail,
+            Set<RestMethod> restMethods,
+            String otherRestMethodDetail,
             LocalTime reflectionTime,
-            boolean calendarIntegrationEnabled
+            boolean calendarIntegrationEnabled,
+            Boolean notificationEnabled
     ) {
         this.nickname = requireNickname(nickname);
         this.age = requireValidAge(age);
         this.gender = Objects.requireNonNull(gender);
         replaceInterestAreas(interestAreas);
+        this.otherInterestDetail = requireOtherDetail(interestAreas.contains(InterestArea.OTHER), otherInterestDetail, "interest area");
+        updateRestMethods(restMethods, otherRestMethodDetail);
         this.reflectionTime = Objects.requireNonNull(reflectionTime);
         this.timeZone = DEFAULT_TIME_ZONE;
         this.calendarIntegrationEnabled = calendarIntegrationEnabled;
+        if (notificationEnabled != null) {
+            this.notificationEnabled = notificationEnabled;
+        }
     }
 
     private String requireNickname(String nickname) {
@@ -140,6 +203,35 @@ public class UserProfile extends BaseTimeEntity {
         this.interestAreas.addAll(interestAreas);
     }
 
+    private void updateRestMethods(Set<RestMethod> restMethods, String otherRestMethodDetail) {
+        if (restMethods == null) {
+            if (otherRestMethodDetail != null) {
+                throw new IllegalArgumentException("Other rest method detail requires OTHER.");
+            }
+            return;
+        }
+        if (restMethods.isEmpty()) {
+            throw new IllegalArgumentException("At least one rest method is required when provided.");
+        }
+        this.restMethods.clear();
+        this.restMethods.addAll(restMethods);
+        this.otherRestMethodDetail = requireOtherDetail(restMethods.contains(RestMethod.OTHER), otherRestMethodDetail, "rest method");
+    }
+
+    private String requireOtherDetail(boolean otherSelected, String detail, String type) {
+        String normalized = detail == null ? null : detail.strip();
+        if (otherSelected) {
+            if (normalized == null || normalized.isBlank() || normalized.length() > OTHER_DETAIL_MAX_LENGTH) {
+                throw new IllegalArgumentException("Other " + type + " detail must be between 1 and 50 characters.");
+            }
+            return normalized;
+        }
+        if (normalized != null) {
+            throw new IllegalArgumentException("Other " + type + " detail is only allowed with OTHER.");
+        }
+        return null;
+    }
+
     public Long getUserId() {
         return userId;
     }
@@ -160,6 +252,18 @@ public class UserProfile extends BaseTimeEntity {
         return Set.copyOf(interestAreas);
     }
 
+    public String getOtherInterestDetail() {
+        return otherInterestDetail;
+    }
+
+    public Set<RestMethod> getRestMethods() {
+        return Set.copyOf(restMethods);
+    }
+
+    public String getOtherRestMethodDetail() {
+        return otherRestMethodDetail;
+    }
+
     public LocalTime getReflectionTime() {
         return reflectionTime;
     }
@@ -170,5 +274,9 @@ public class UserProfile extends BaseTimeEntity {
 
     public boolean isCalendarIntegrationEnabled() {
         return calendarIntegrationEnabled;
+    }
+
+    public boolean isNotificationEnabled() {
+        return notificationEnabled;
     }
 }
