@@ -8,10 +8,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - momentory-postgres-data:/var/lib/postgresql/data
-
     ports:
       - "127.0.0.1:5432:5432"
-
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -44,6 +42,21 @@ services:
       - "${APP_PORT:-8080}:8080"
     restart: unless-stopped
 
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    container_name: momentory-cloudbeaver
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8978:8978"
+    volumes:
+      - momentory-cloudbeaver-workspace:/opt/cloudbeaver/workspace
+    restart: unless-stopped
+
 volumes:
   momentory-postgres-data:
     name: momentory-postgres-data
+
+  momentory-cloudbeaver-workspace:
+    name: momentory-cloudbeaver-workspace
