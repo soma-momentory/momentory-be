@@ -2,6 +2,7 @@ package com.momentory.user.onboarding.application;
 
 import com.momentory.user.domain.Gender;
 import com.momentory.user.domain.InterestArea;
+import com.momentory.user.domain.RestMethod;
 import com.momentory.user.domain.User;
 import com.momentory.user.domain.UserProfile;
 import com.momentory.user.application.AuthenticatedUserNotFoundException;
@@ -31,15 +32,30 @@ public class CompleteOnboardingService {
             Integer age,
             Gender gender,
             Set<InterestArea> interestAreas,
+            String otherInterestDetail,
+            Set<RestMethod> restMethods,
+            String otherRestMethodDetail,
             LocalTime reflectionTime,
-            boolean calendarIntegrationEnabled
+            boolean calendarIntegrationEnabled,
+            Boolean notificationEnabled
     ) {
         User user = userRepository.findById(userId)
                 .orElseThrow(AuthenticatedUserNotFoundException::new);
 
         UserProfile userProfile = userProfileRepository.findById(userId)
                 .map(profile -> {
-                    profile.update(nickname, age, gender, interestAreas, reflectionTime, calendarIntegrationEnabled);
+                    profile.update(
+                            nickname,
+                            age,
+                            gender,
+                            interestAreas,
+                            otherInterestDetail,
+                            restMethods,
+                            otherRestMethodDetail,
+                            reflectionTime,
+                            calendarIntegrationEnabled,
+                            notificationEnabled
+                    );
                     return profile;
                 })
                 .orElseGet(() -> UserProfile.create(
@@ -48,8 +64,12 @@ public class CompleteOnboardingService {
                         age,
                         gender,
                         interestAreas,
+                        otherInterestDetail,
+                        restMethods,
+                        otherRestMethodDetail,
                         reflectionTime,
-                        calendarIntegrationEnabled
+                        calendarIntegrationEnabled,
+                        notificationEnabled
                 ));
 
         user.completeOnboarding();

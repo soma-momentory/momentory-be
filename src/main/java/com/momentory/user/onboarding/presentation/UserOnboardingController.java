@@ -98,8 +98,12 @@ public class UserOnboardingController {
                 request.age(),
                 request.gender(),
                 request.interestAreas(),
+                request.otherInterestDetail(),
+                request.restMethods(),
+                request.otherRestMethodDetail(),
                 request.toReflectionTime(),
-                request.calendarIntegrationEnabled()
+                request.calendarIntegrationEnabled(),
+                request.notificationEnabled()
         ));
     }
 }

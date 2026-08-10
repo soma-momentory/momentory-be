@@ -3,6 +3,7 @@ package com.momentory.config;
 import com.momentory.MomentoryApplication;
 import com.momentory.schedule.domain.ScheduleEmotion;
 import com.momentory.schedule.presentation.ScheduleCompletionRequest;
+import com.momentory.user.onboarding.presentation.CompleteOnboardingRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -99,6 +100,7 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/users/me", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
         assertResponseSchema(apiDocs, "/api/v1/users/me/onboarding", "put", "200", "CompleteOnboardingResponse");
+        assertOnboardingRequestProperties(apiDocs);
         assertErrorExample(apiDocs, "/api/v1/users/me/onboarding", "put", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "nickname은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/users/me/onboarding", "put", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/users/me/onboarding", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
@@ -178,6 +180,14 @@ class OpenApiContractIntegrationTest {
         assertThat(serialized.has("completed")).isTrue();
         assertThat(serialized.has("emotion")).isTrue();
         assertThat(serialized.has("completionEmotionValid")).isFalse();
+
+        CompleteOnboardingRequest onboardingRequest = objectMapper.readValue("""
+                {"nickname":"모리","age":25,"gender":"FEMALE","interestAreas":["SELF"],
+                 "restMethods":["READING"],"reflectionTime":"21:30","calendarIntegrationEnabled":true}
+                """, CompleteOnboardingRequest.class);
+        JsonNode onboardingSerialized = objectMapper.readTree(objectMapper.writeValueAsString(onboardingRequest));
+        assertThat(onboardingSerialized.has("otherInterestDetailValid")).isFalse();
+        assertThat(onboardingSerialized.has("otherRestMethodDetailValid")).isFalse();
     }
 
     @Test
@@ -276,6 +286,16 @@ class OpenApiContractIntegrationTest {
         assertThat(properties.has("completed")).isTrue();
         assertThat(properties.has("emotion")).isTrue();
         assertThat(properties.has("completionEmotionValid")).isFalse();
+    }
+
+    private void assertOnboardingRequestProperties(JsonNode apiDocs) {
+        JsonNode properties = apiDocs.at("/components/schemas/CompleteOnboardingRequest/properties");
+        assertThat(properties.has("otherInterestDetail")).isTrue();
+        assertThat(properties.has("restMethods")).isTrue();
+        assertThat(properties.has("otherRestMethodDetail")).isTrue();
+        assertThat(properties.has("notificationEnabled")).isTrue();
+        assertThat(properties.has("otherInterestDetailValid")).isFalse();
+        assertThat(properties.has("otherRestMethodDetailValid")).isFalse();
     }
 
     private JsonNode response(JsonNode apiDocs, String path, String method, String responseCode) {

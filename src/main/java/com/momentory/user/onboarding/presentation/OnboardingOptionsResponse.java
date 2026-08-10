@@ -11,6 +11,7 @@ public record OnboardingOptionsResponse(
         NicknamePolicyResponse nickname,
         List<OptionResponse> genders,
         List<OptionResponse> interestAreas,
+        List<OptionResponse> restMethods,
         @Schema(description = "회고 시간 형식", example = "HH:mm") String reflectionTimeFormat,
         @Schema(description = "기본 시간대", example = "Asia/Seoul") String defaultTimeZone
 ) {
@@ -20,6 +21,7 @@ public record OnboardingOptionsResponse(
                 NicknamePolicyResponse.from(result.nickname()),
                 result.genders().stream().map(OptionResponse::from).toList(),
                 result.interestAreas().stream().map(OptionResponse::from).toList(),
+                result.restMethods().stream().map(OptionResponse::from).toList(),
                 result.reflectionTimeFormat(),
                 result.defaultTimeZone()
         );
