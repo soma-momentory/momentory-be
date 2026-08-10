@@ -36,8 +36,12 @@ public class UserMeService {
                 profile.getAge(),
                 profile.getGender(),
                 profile.getInterestAreas(),
+                profile.getOtherInterestDetail(),
+                profile.getRestMethods(),
+                profile.getOtherRestMethodDetail(),
                 profile.getReflectionTime(),
-                profile.isCalendarIntegrationEnabled()
+                profile.isCalendarIntegrationEnabled(),
+                profile.isNotificationEnabled()
         );
     }
 }
