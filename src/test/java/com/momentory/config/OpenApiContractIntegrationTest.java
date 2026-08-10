@@ -157,10 +157,6 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "404", "ApiErrorResponse", "RETROSPECT_SESSION_NOT_FOUND", "RETROSPECT_SESSION_NOT_FOUND", "회고 세션을 찾을 수 없습니다.");
-
-        assertResponseSchema(apiDocs, "/api/v1/retrospect/{id}/usage", "get", "200", "UsageSummary");
-        assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/usage", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
-        assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/usage", "get", "404", "ApiErrorResponse", "RETROSPECT_SESSION_NOT_FOUND", "RETROSPECT_SESSION_NOT_FOUND", "회고 세션을 찾을 수 없습니다.");
     }
 
     @Test
@@ -315,8 +311,7 @@ class OpenApiContractIntegrationTest {
         DAILY_MEMO_PUT("/api/v1/memos/{date}", "put"),
         DAILY_MEMO_DELETE("/api/v1/memos/{date}", "delete"),
         RETROSPECT_START("/api/v1/retrospect", "post"),
-        RETROSPECT_MESSAGE("/api/v1/retrospect/{id}/messages", "post"),
-        RETROSPECT_USAGE("/api/v1/retrospect/{id}/usage", "get");
+        RETROSPECT_MESSAGE("/api/v1/retrospect/{id}/messages", "post");
 
         private final String path;
         private final String method;
@@ -340,8 +335,7 @@ class OpenApiContractIntegrationTest {
                     || this == SCHEDULES_COMPLETION
                     || this == SCHEDULES_ORDER
                     || this == DAILY_MEMO_GET
-                    || this == RETROSPECT_MESSAGE
-                    || this == RETROSPECT_USAGE;
+                    || this == RETROSPECT_MESSAGE;
         }
     }
 }

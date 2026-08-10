@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -213,10 +212,6 @@ class RetrospectApiIntegrationTest {
         mockMvc.perform(message(other, sessionId, "{\"content\":\"안녕\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RETROSPECT_SESSION_NOT_FOUND"));
-        mockMvc.perform(get("/api/v1/retrospect/{id}/usage", sessionId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(other)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RETROSPECT_SESSION_NOT_FOUND"));
     }
 
     @Test
@@ -238,19 +233,6 @@ class RetrospectApiIntegrationTest {
                                 {"currentEmotion":"depressed"}"""))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
-    }
-
-    @Test
-    @DisplayName("usage — 시작 턴은 스크립트 대체(무료)로 집계된다")
-    void usageCountsPoolSubstitution() throws Exception {
-        User user = userRepository.saveAndFlush(User.create());
-        long sessionId = startSession(user);
-
-        mockMvc.perform(get("/api/v1/retrospect/{id}/usage", sessionId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.paidCalls").value(0))
-                .andExpect(jsonPath("$.poolSubstitutions").value(1));
     }
 
     // ── 도우미 ───────────────────────────────────────────────────────────

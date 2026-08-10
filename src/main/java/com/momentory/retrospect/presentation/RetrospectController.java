@@ -2,7 +2,6 @@ package com.momentory.retrospect.presentation;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,7 +14,6 @@ import com.momentory.auth.security.LoginPrincipal;
 import com.momentory.common.presentation.ApiErrorResponse;
 import com.momentory.retrospect.application.ReplyDto;
 import com.momentory.retrospect.application.RetrospectService;
-import com.momentory.retrospect.application.metering.UsageSummary;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -111,33 +109,5 @@ public class RetrospectController {
             @Parameter(example = "1") @PathVariable Long id,
             @Valid @RequestBody TurnRequest request) {
         return retrospectService.handle(principal.userId(), id, request.toDomain());
-    }
-
-    @Operation(summary = "회고 세션 LLM 사용량 요약", description = "이번 세션의 유료 호출·토큰·추정 비용.")
-    @SecurityRequirement(name = "bearerAuth")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "사용량 조회 성공", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = UsageSummary.class))),
-            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
-                    name = "AUTHENTICATION_REQUIRED",
-                    value = """
-                            {
-                              "code": "AUTHENTICATION_REQUIRED",
-                              "message": "인증이 필요합니다."
-                            }
-                            """))),
-            @ApiResponse(responseCode = "404", description = "세션을 찾을 수 없음", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
-                    name = "RETROSPECT_SESSION_NOT_FOUND",
-                    value = """
-                            {
-                              "code": "RETROSPECT_SESSION_NOT_FOUND",
-                              "message": "회고 세션을 찾을 수 없습니다."
-                            }
-                            """)))
-    })
-    @GetMapping(value = "/{id}/usage", produces = MediaType.APPLICATION_JSON_VALUE)
-    public UsageSummary usage(
-            @Login LoginPrincipal principal,
-            @Parameter(example = "1") @PathVariable Long id) {
-        return retrospectService.usage(principal.userId(), id);
     }
 }

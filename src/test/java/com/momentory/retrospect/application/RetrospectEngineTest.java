@@ -10,7 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import com.momentory.retrospect.application.metering.UsageRecorder;
+import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
@@ -25,14 +25,14 @@ import com.momentory.retrospect.domain.safety.SafetyPolicy;
 class RetrospectEngineTest {
 
     private FakeAssistant fake;
-    private UsageRecorder usage;
+    private LlmUsageLogger usage;
     private RetrospectEngine service;
     private RetrospectState state;
 
     @BeforeEach
     void setUp() {
         fake = new FakeAssistant();
-        usage = new UsageRecorder("test-model", 0.10, 0.40);
+        usage = new LlmUsageLogger(0.10, 0.40);
         service = new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, usage, e -> { }, 1);
         state = new RetrospectState("s1");
     }
@@ -60,7 +60,6 @@ class RetrospectEngineTest {
                         + "면접 스터디 중 어떤 일이 있었을 때부터 마음이 무거워지기 시작했나요?");
         assertThat(reply.phase()).isEqualTo("intro");
         assertThat(fake.understandingCalls).isZero();
-        assertThat(usage.summarize("s1").paidCalls()).isZero();
     }
 
     @Test
@@ -113,7 +112,6 @@ class RetrospectEngineTest {
         // description 에 그 일정의 감정 라벨을 보여준다.
         assertThat(reply.options()).extracting(ReplyDto.OptionDto::description)
                 .containsExactly("뿌듯함", "불안함");
-        assertThat(usage.summarize("s1").paidCalls()).isZero();
 
         // 선택하면 그 일정으로 1턴 질문이 나간다.
         ReplyDto first = service.handle(state, TurnCommand.option("2"));
@@ -481,7 +479,6 @@ class RetrospectEngineTest {
             assertThat(hold.options()).isNull();
             assertThat(hold.text()).contains("정답은 없어요");
             assertThat(fake.understandingCalls).isZero(); // 규칙 층 — AI 미호출
-            assertThat(usage.summarize("s1").paidCalls()).isZero();
 
             // 진짜 답을 하면 이해 확인이 돌고 방향 4택으로 넘어간다.
             ReplyDto ok = service.handle(state,
@@ -565,7 +562,6 @@ class RetrospectEngineTest {
             assertThat(hold.text()).contains("가볍게 말해볼까요");   // 발판 멘트
             assertThat(hold.text()).doesNotContain("정답은 없어요"); // 비답변 멘트와 구분
             assertThat(fake.understandingCalls).isZero();          // 규칙 층 — AI 미호출
-            assertThat(usage.summarize("s1").paidCalls()).isZero();
 
             // 캡(1) 도달 후 또 얼버무리면 갇히지 않고 전진한다.
             ReplyDto forced = service.handle(state, TurnCommand.text("대답하기 어려운데"));
@@ -622,7 +618,6 @@ class RetrospectEngineTest {
             assertThat(reply.text()).contains("오늘 하루");
             assertThat(reply.text()).contains("취업");
             assertThat(fake.understandingCalls).isZero();
-            assertThat(usage.summarize("s1").paidCalls()).isZero();
         }
 
         @Test
@@ -699,7 +694,6 @@ class RetrospectEngineTest {
 
             assertThat(deflect.phase()).isEqualTo("intro");
             assertThat(fake.understandingCalls).isZero();
-            assertThat(usage.summarize("s1").paidCalls()).isZero();
         }
 
         @Test
