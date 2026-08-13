@@ -62,6 +62,12 @@ public class GeminiSituationEmbedder implements SituationEmbedder {
                 log.warn("Gemini 임베딩 응답에 값이 없음");
                 return Optional.empty();
             }
+            // 컬럼은 vector(768) 로 고정이라, 차원이 어긋난 벡터는 저장 시 CAST 가 터진다.
+            // 저장 근처까지 가기 전에 여기서 거른다(모델이 outputDimensionality 를 안 지킨 경우 방어).
+            if (values.size() != EMBEDDING_DIMENSIONS) {
+                log.warn("Gemini 임베딩 차원 불일치: {} (기대 {})", values.size(), EMBEDDING_DIMENSIONS);
+                return Optional.empty();
+            }
             float[] vector = new float[values.size()];
             for (int i = 0; i < values.size(); i++) {
                 vector[i] = values.get(i).floatValue();
