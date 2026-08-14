@@ -52,6 +52,8 @@ import com.momentory.retrospect.domain.script.OptionItem;
 import com.momentory.retrospect.domain.script.RetroMode;
 import com.momentory.retrospect.infrastructure.persistence.ActionCard;
 import com.momentory.retrospect.infrastructure.persistence.ActionCardRepository;
+import com.momentory.retrospect.infrastructure.persistence.Diary;
+import com.momentory.retrospect.infrastructure.persistence.DiaryRepository;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;
@@ -83,6 +85,7 @@ class RetrospectApiIntegrationTest {
     @Autowired WebApplicationContext webApplicationContext;
     @Autowired UserRepository userRepository;
     @Autowired RetrospectRepository retrospectRepository;
+    @Autowired DiaryRepository diaryRepository;
     @Autowired ActionCardRepository actionCardRepository;
     @Autowired AccessTokenIssuer accessTokenIssuer;
 
@@ -112,7 +115,8 @@ class RetrospectApiIntegrationTest {
 
     @AfterEach
     void cleanUp() {
-        // 행동 카드가 회고를 FK 로 참조하므로 카드부터 지운다
+        // 일기·행동 카드가 회고를 FK 로 참조하므로 그것부터 지운다
+        diaryRepository.deleteAllInBatch();
         actionCardRepository.deleteAllInBatch();
         retrospectRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
@@ -209,8 +213,15 @@ class RetrospectApiIntegrationTest {
 
         Retrospect done = retrospectRepository.findById(sessionId).orElseThrow();
         assertThat(done.getStatus().name()).isEqualTo("COMPLETED");
-        assertThat(done.getDiary()).isEqualTo("그냥 일기.");
         assertThat(done.getCompletedAt()).isNotNull();
+
+        // 일기는 별도 테이블에 남고, 진입 감정 두 종과 생성 시기도 함께 저장된다.
+        Diary diary = diaryRepository.findByRetrospectId(sessionId).orElseThrow();
+        assertThat(diary.getOriginal()).isEqualTo("그냥 일기.");
+        assertThat(diary.getReframed()).isNull(); // 짧은 기록형은 리프레임 일기가 없다
+        assertThat(diary.getCurrentEmotion()).isEqualTo(Emotion.DEPRESSED);
+        assertThat(diary.getScheduleEmotion()).isEqualTo(Emotion.ANXIOUS);
+        assertThat(diary.getCreatedAt()).isNotNull();
     }
 
     @Test
@@ -275,9 +286,10 @@ class RetrospectApiIntegrationTest {
 
         Retrospect entity = Retrospect.start(user.getId(), RetrospectStatus.IN_PROGRESS,
                 RetroMode.REFRAME, null, Emotion.DEPRESSED, "{}");
-        entity.sync(RetrospectStatus.COMPLETED, RetroMode.REFRAME, "{}", "리프레임한 일기 본문",
-                "다시 본 오늘", Instant.now());
+        entity.sync(RetrospectStatus.COMPLETED, RetroMode.REFRAME, "{}", Instant.now());
         retrospectRepository.saveAndFlush(entity);
+        diaryRepository.saveAndFlush(Diary.create(user.getId(), entity.getId(), "리프레임한 일기 본문",
+                "다시 본 오늘", Emotion.DEPRESSED, Emotion.ANXIOUS));
         actionCardRepository.saveAndFlush(ActionCard.create(user.getId(), entity.getId(),
                 "발표를 앞두고 긴장했던 상황", "떨리는 건 준비를 잘했다는 신호라고 생각하며 심호흡을 세 번 하고 시작하기",
                 LocalDate.of(2026, 8, 10), false));

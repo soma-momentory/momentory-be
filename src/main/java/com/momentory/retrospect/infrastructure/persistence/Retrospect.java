@@ -57,12 +57,6 @@ public class Retrospect extends BaseTimeEntity {
     @Column(name = "state_json", nullable = false, columnDefinition = "TEXT")
     private String stateJson;
 
-    @Column(columnDefinition = "TEXT")
-    private String diary;
-
-    @Column(name = "reframed_diary", columnDefinition = "TEXT")
-    private String reframedDiary;
-
     @Column(name = "completed_at")
     private Instant completedAt;
 
@@ -85,19 +79,13 @@ public class Retrospect extends BaseTimeEntity {
     }
 
     /**
-     * 한 턴 처리 후 진행 상태를 반영한다. 완료 시에만 일기·완료시각이 채워진다.
+     * 한 턴 처리 후 진행 상태를 반영한다. 완료 시에만 완료시각이 채워진다(일기는 별도 테이블).
      */
     public void sync(RetrospectStatus status, RetroMode mode, String stateJson,
-            String diary, String reframedDiary, Instant completedAt) {
+            Instant completedAt) {
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.stateJson = Objects.requireNonNull(stateJson, "stateJson must not be null");
         this.mode = mode;
-        if (diary != null) {
-            this.diary = diary;
-        }
-        if (reframedDiary != null) {
-            this.reframedDiary = reframedDiary;
-        }
         if (completedAt != null) {
             this.completedAt = completedAt;
         }
@@ -133,14 +121,6 @@ public class Retrospect extends BaseTimeEntity {
 
     public String getStateJson() {
         return stateJson;
-    }
-
-    public String getDiary() {
-        return diary;
-    }
-
-    public String getReframedDiary() {
-        return reframedDiary;
     }
 
     public Instant getCompletedAt() {
