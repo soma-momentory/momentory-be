@@ -2,10 +2,16 @@ package com.momentory.retrospect.application;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Optional;
 
@@ -19,7 +25,11 @@ import com.momentory.retrospect.infrastructure.persistence.ActionCardRepository;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
+import com.momentory.retrospect.infrastructure.persistence.VectorLiteral;
 import com.momentory.user.application.AuthenticatedUserNotFoundException;
+import com.momentory.user.domain.RestMethod;
+import com.momentory.user.domain.UserProfile;
+import com.momentory.user.infrastructure.UserProfileRepository;
 import com.momentory.user.infrastructure.UserRepository;
 
 /**
@@ -32,6 +42,8 @@ import com.momentory.user.infrastructure.UserRepository;
 @Service
 public class RetrospectService {
 
+    private static final Logger log = LoggerFactory.getLogger(RetrospectService.class);
+
     /**
      * 코사인 거리 임계값 — 이 미만이어야 "비슷한 상황"으로 본다(0=동일, 2=정반대).
      * 너무 크면 관계없는 카드가 추천되고, 너무 작으면 거의 안 걸린다. 튜닝 지점.
@@ -42,18 +54,23 @@ public class RetrospectService {
     private final RetrospectRepository retrospectRepository;
     private final ActionCardRepository actionCardRepository;
     private final SituationEmbedder situationEmbedder;
+    private final ActionCardEmbedder actionCardEmbedder;
     private final RetrospectStateCodec codec;
     private final UserRepository userRepository;
+    private final UserProfileRepository userProfileRepository;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             ActionCardRepository actionCardRepository, SituationEmbedder situationEmbedder,
-            RetrospectStateCodec codec, UserRepository userRepository) {
+            ActionCardEmbedder actionCardEmbedder, RetrospectStateCodec codec,
+            UserRepository userRepository, UserProfileRepository userProfileRepository) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.actionCardRepository = actionCardRepository;
         this.situationEmbedder = situationEmbedder;
+        this.actionCardEmbedder = actionCardEmbedder;
         this.codec = codec;
         this.userRepository = userRepository;
+        this.userProfileRepository = userProfileRepository;
     }
 
     /** 회고 시작 — 세션을 만들고 첫 메시지(공감 + 1턴 질문)를 낸다. */
@@ -62,7 +79,7 @@ public class RetrospectService {
         requireUser(userId);
 
         RetrospectState state = new RetrospectState(UUID.randomUUID().toString());
-        ReplyDto reply = engine.start(state, command);
+        ReplyDto reply = engine.start(state, command, preferredRestMethods(userId));
 
         Retrospect entity = Retrospect.start(userId, RetrospectStatus.from(state.phase()),
                 state.mode(), state.schedule(), state.scheduleEmotion(), state.currentEmotion(),
@@ -89,23 +106,10 @@ public class RetrospectService {
     /** 이 사용자의 카드 중 상황이 의미상 가장 비슷한 한 장 — 임베딩 실패·매칭 없음이면 empty. */
     private Optional<PriorActionCard> findSimilarCard(Long userId, String situation) {
         return situationEmbedder.embed(situation)
-                .flatMap(vec -> actionCardRepository.findMostSimilar(userId, toVectorLiteral(vec),
+                .flatMap(vec -> actionCardRepository.findMostSimilar(userId, VectorLiteral.of(vec),
                         SIMILAR_MAX_DISTANCE))
-                .map(c -> new PriorActionCard(c.getTargetAction(), c.getDetail(), c.getSituation(),
+                .map(c -> new PriorActionCard(c.getTargetAction(), c.getSituation(),
                         c.getCreatedDate()));
-    }
-
-    /** float[] → pgvector 리터럴 {@code "[0.1,0.2,...]"}. */
-    private static String toVectorLiteral(float[] vec) {
-        StringBuilder sb = new StringBuilder(vec.length * 8 + 2);
-        sb.append('[');
-        for (int i = 0; i < vec.length; i++) {
-            if (i > 0) {
-                sb.append(',');
-            }
-            sb.append(vec[i]);
-        }
-        return sb.append(']').toString();
     }
 
     /** 완료된 회고의 일기 + 행동 카드 조회 — 그날의 일기를 다시 펼칠 때 쓴다. */
@@ -127,24 +131,54 @@ public class RetrospectService {
         Instant completedAt = phase.isTerminal() ? Instant.now() : null;
         entity.sync(RetrospectStatus.from(phase), state.mode(), codec.serialize(state),
                 diary, reframedDiary, completedAt);
-        persistActionCard(entity, reply);
+        persistActionCard(entity, state, reply);
     }
 
     /**
      * 회고가 만든 행동 카드를 영속화한다 — 이전엔 응답에만 실려 나가고 버려지던 것이다.
      * 회고 한 벌에 카드 한 장이라, 이미 있으면 다시 만들지 않는다(완료 턴에 한 번만 생긴다).
+     *
+     * <p>상황 임베딩은 <b>카드가 커밋된 뒤</b> 별도로 채운다({@link #scheduleEmbedding}). 임베딩은
+     * 부가물이라, 예전처럼 같은 트랜잭션에서 채우면 임베딩 저장이 터질 때 카드까지 롤백돼 사라진다.
      */
-    private void persistActionCard(Retrospect entity, ReplyDto reply) {
+    private void persistActionCard(Retrospect entity, RetrospectState state, ReplyDto reply) {
         ReplyDto.ActionCardDto card = reply.actionCard();
         if (card == null || actionCardRepository.existsByRetrospectId(entity.getId())) {
             return;
         }
+        // 사용자가 최종 선택한 행동이 '쉬는 방법 선호'로 만든 카드였는지 — 분석용 내부 표식(비노출).
+        boolean fromRestPreference = state.chosenAction() != null
+                && state.chosenAction().restPreference();
         ActionCard saved = actionCardRepository.save(ActionCard.create(entity.getUserId(),
-                entity.getId(), card.situation(), card.action(), card.detail(), LocalDate.now()));
-        // 상황을 임베딩해 저장한다 — 다음 회고에서 "비슷한 상황"으로 되살릴 열쇠. 실패해도 넘어간다.
-        situationEmbedder.embed(card.situation())
-                .ifPresent(vec -> actionCardRepository.updateEmbedding(saved.getId(),
-                        toVectorLiteral(vec)));
+                entity.getId(), card.situation(), card.action(), LocalDate.now(),
+                fromRestPreference));
+        scheduleEmbedding(saved.getId(), card.situation());
+    }
+
+    /**
+     * 카드가 커밋된 뒤 상황 임베딩을 채운다 — 다음 회고에서 "비슷한 상황"으로 되살릴 열쇠다.
+     * 커밋 전에 채우면 카드 행이 아직 안 보여 헛돌므로 {@code afterCommit} 에 건다. 실패해도 삼킨다
+     * ({@link ActionCardEmbedder} 가 별도 트랜잭션이라 카드 트랜잭션엔 영향이 없다).
+     */
+    private void scheduleEmbedding(Long cardId, String situation) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            embedQuietly(cardId, situation); // 트랜잭션 밖(방어) — 바로 시도한다.
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                embedQuietly(cardId, situation);
+            }
+        });
+    }
+
+    private void embedQuietly(Long cardId, String situation) {
+        try {
+            actionCardEmbedder.embedAndStore(cardId, situation);
+        } catch (Exception e) {
+            log.warn("행동 카드 임베딩 저장 실패(카드는 유지됨) cardId={}: {}", cardId, e.toString());
+        }
     }
 
     private Retrospect requireSession(Long userId, Long id) {
@@ -155,5 +189,31 @@ public class RetrospectService {
     private void requireUser(Long userId) {
         userRepository.findById(userId)
                 .orElseThrow(AuthenticatedUserNotFoundException::new);
+    }
+
+    /**
+     * 온보딩에서 고른 '평소 선호하는 쉬는 방법'을 프롬프트에 실을 한글 라벨 목록으로 뽑는다.
+     * 프로필·선호가 없으면 빈 목록(→ 프롬프트에 선호 블록이 안 붙어 기존 동작 그대로).
+     *
+     * <p>"기타"는 사용자가 적은 상세 문구로 바꾸고(비었으면 버림), "그때마다 달라요"는 특정 행동을
+     * 가리키지 않아 제외한다. 열거형 정의 순서로 정렬해 매 요청 같은 순서로 실린다(집합은 순서 불정).
+     */
+    private List<String> preferredRestMethods(Long userId) {
+        return userProfileRepository.findById(userId)
+                .map(RetrospectService::resolveRestMethods)
+                .orElseGet(List::of);
+    }
+
+    private static List<String> resolveRestMethods(UserProfile profile) {
+        return profile.getRestMethods().stream()
+                .filter(m -> m != RestMethod.VARIES_BY_DAY)
+                .sorted(Comparator.comparingInt(Enum::ordinal))
+                .map(m -> restMethodLabel(m, profile.getOtherRestMethodDetail()))
+                .filter(label -> label != null && !label.isBlank())
+                .toList();
+    }
+
+    private static String restMethodLabel(RestMethod method, String otherDetail) {
+        return method == RestMethod.OTHER ? otherDetail : method.getLabel();
     }
 }

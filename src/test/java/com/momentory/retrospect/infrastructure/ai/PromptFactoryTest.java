@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.script.RetroMode;
@@ -95,6 +97,58 @@ class PromptFactoryTest {
 
         String prompt = new PromptFactory(100).turnPrompt(state, anyTextStep());
         assertThat(prompt).contains("정말 긴 답변이에요.");
+    }
+
+    /** 감정 정리형 진입 후 쉬는 행동 카드(care_action) 스텝까지 온 상태. */
+    private RetrospectState emotionSortingAtCareAction() {
+        RetrospectState state = new RetrospectState("rest");
+        state.begin("면접 스터디", Emotion.ANXIOUS, Emotion.DEPRESSED, "정민");
+        state.applyMode(RetroMode.EMOTION_SORTING);
+        state.addAssistantMessage("남은 마음을 돌봐볼까요?");
+        state.addUserMessage("네, 좀 지쳤어요.");
+        return state;
+    }
+
+    private ScriptStep careActionStep() {
+        return Scripts.stepsOf(RetroMode.EMOTION_SORTING).stream()
+                .filter(ScriptStep::restAction)
+                .findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("쉬는 행동 카드 — 온보딩 쉬는 방법 선호를 프롬프트에 싣고 최소 하나 반영하라고 지시한다")
+    void restActionInjectsPreferredRestMethods() {
+        RetrospectState state = emotionSortingAtCareAction();
+        state.restMethods(List.of("잠자기", "산책하기", "맛있는 음식 먹기"));
+
+        String prompt = new PromptFactory(0).turnPrompt(state, careActionStep());
+
+        assertThat(prompt)
+                .contains("평소 선호하는 쉬는 방법")
+                .contains("잠자기, 산책하기, 맛있는 음식 먹기")
+                .contains("최소 하나는 이 선호를 반영")
+                // AI 가 선호 반영 보기에 표식을 달도록 지시한다(분석용).
+                .contains("restPreference");
+    }
+
+    @Test
+    @DisplayName("선호가 없으면 쉬는 방법 블록을 붙이지 않는다 — 기존 동작 그대로")
+    void restActionWithoutPreferenceOmitsBlock() {
+        String prompt = new PromptFactory(0)
+                .turnPrompt(emotionSortingAtCareAction(), careActionStep());
+
+        assertThat(prompt).doesNotContain("평소 선호하는 쉬는 방법");
+    }
+
+    @Test
+    @DisplayName("쉬는 행동 카드가 아닌 스텝엔 선호가 있어도 블록을 붙이지 않는다")
+    void nonRestStepIgnoresPreference() {
+        RetrospectState state = emotionSortingAtCareAction();
+        state.restMethods(List.of("잠자기", "산책하기"));
+
+        String prompt = new PromptFactory(0).turnPrompt(state, anyTextStep());
+
+        assertThat(prompt).doesNotContain("평소 선호하는 쉬는 방법");
     }
 
     @Test

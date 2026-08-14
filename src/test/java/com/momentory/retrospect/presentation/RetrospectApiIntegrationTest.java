@@ -279,8 +279,8 @@ class RetrospectApiIntegrationTest {
                 "다시 본 오늘", Instant.now());
         retrospectRepository.saveAndFlush(entity);
         actionCardRepository.saveAndFlush(ActionCard.create(user.getId(), entity.getId(),
-                "발표를 앞두고 긴장했던 상황", "심호흡을 세 번 하고 시작하기", "떨리는 건 준비를 잘했다는 신호",
-                LocalDate.of(2026, 8, 10)));
+                "발표를 앞두고 긴장했던 상황", "떨리는 건 준비를 잘했다는 신호라고 생각하며 심호흡을 세 번 하고 시작하기",
+                LocalDate.of(2026, 8, 10), false));
 
         mockMvc.perform(get("/api/v1/retrospect/{id}/diary", entity.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(user)))
@@ -288,8 +288,9 @@ class RetrospectApiIntegrationTest {
                 .andExpect(jsonPath("$.diary").value("리프레임한 일기 본문"))
                 .andExpect(jsonPath("$.reframedDiary").value("다시 본 오늘"))
                 .andExpect(jsonPath("$.actionCard.situation").value("발표를 앞두고 긴장했던 상황"))
-                .andExpect(jsonPath("$.actionCard.targetAction").value("심호흡을 세 번 하고 시작하기"))
-                .andExpect(jsonPath("$.actionCard.detail").value("떨리는 건 준비를 잘했다는 신호"))
+                .andExpect(jsonPath("$.actionCard.targetAction")
+                        .value("떨리는 건 준비를 잘했다는 신호라고 생각하며 심호흡을 세 번 하고 시작하기"))
+                .andExpect(jsonPath("$.actionCard.detail").doesNotExist())
                 .andExpect(jsonPath("$.actionCard.createdDate").value("2026-08-10"))
                 .andExpect(jsonPath("$.actionCard.done").value(false));
     }

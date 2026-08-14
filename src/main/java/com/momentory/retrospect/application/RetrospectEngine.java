@@ -87,7 +87,15 @@ public class RetrospectEngine {
 
     // ── 시작 — 1턴 공통 질문(템플릿, AI 0회) ─────────────────────────────
 
+    /** 쉬는 방법 선호 없이 시작(편의 — 테스트·선호 미제공 경로). */
     public ReplyDto start(RetrospectState state, StartCommand command) {
+        return start(state, command, List.of());
+    }
+
+    public ReplyDto start(RetrospectState state, StartCommand command, List<String> restMethods) {
+        // 온보딩 쉬는 방법 선호를 세션에 심는다 — 진입 분기와 무관하게 한 번, 쉬는 행동 카드에서 쓴다.
+        state.restMethods(restMethods);
+
         // 일정이 없으면 특정 일정 없이 현재 감정 하나로 '오늘 하루'를 연다(관심분야로 질문 구체화).
         if (command.schedules().isEmpty()) {
             state.beginNoSchedule(command.currentEmotion(), command.nickname(), command.interest());
@@ -456,9 +464,16 @@ public class RetrospectEngine {
             // 프롬프트 지시만으로는 줄바꿈이 안정적이지 않아 서버가 강제한다.
             text = breakAfterEmpathy(ai.get().message().strip());
             options = step.isChoice() ? ai.get().options() : List.of();
+            // 선호 표식은 쉬는 행동 카드에서만 의미가 있다 — 다른 스텝에 AI가 잘못 달았으면 지운다.
+            if (!step.restAction()) {
+                options = stripRestPreference(options);
+            }
         } else {
             text = fill(state, step.fallbackText());
-            options = step.fallbackOptions();
+            // 쉬는 행동 카드 폴백이면 선호를 반영한 카드로 갈아끼운다(선호 없으면 기존 그대로).
+            options = step.restAction()
+                    ? Scripts.restFallbackOptions(step.fallbackOptions(), state.restMethods())
+                    : step.fallbackOptions();
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(),
                     state.phase().key());
         }
@@ -513,8 +528,8 @@ public class RetrospectEngine {
             String situation = state.situationSummary() != null
                     ? state.situationSummary()
                     : state.hasSchedule() ? state.schedule() + "에서 있었던 일" : "오늘 하루 있었던 일";
-            card = new ReplyDto.ActionCardDto(situation, state.chosenAction().label(),
-                    state.chosenAction().description(), LocalDate.now().format(CARD_DATE));
+            card = new ReplyDto.ActionCardDto(situation, actionText(state.chosenAction()),
+                    LocalDate.now().format(CARD_DATE));
         }
 
         // AI-G4: 일기 생성 (한 호출). 실패하면 답변 기록으로 최소한의 일기를 조립한다.
@@ -654,10 +669,30 @@ public class RetrospectEngine {
         return out;
     }
 
-    /** 이전 카드 → 옵션. label·description 은 그대로 새 카드로 굳고, 맥락은 hint 로만 붙는다. */
+    /** 쉬는 행동 카드가 아닌 스텝의 옵션에서 선호 표식을 걷어낸다 — 그 스텝에선 의미가 없다. */
+    private static List<OptionItem> stripRestPreference(List<OptionItem> options) {
+        if (options.stream().noneMatch(OptionItem::restPreference)) {
+            return options;
+        }
+        return options.stream()
+                .map(o -> o.restPreference()
+                        ? new OptionItem(o.label(), o.description(), o.hint(), o.isInput(), false)
+                        : o)
+                .toList();
+    }
+
+    /** 이전 카드 → 옵션. action 이 그대로 새 카드로 굳고, 맥락은 hint 로만 붙는다. */
     private static OptionItem priorActionOption(PriorActionCard card) {
-        return new OptionItem(card.action(), card.detail(), "지난 비슷한 상황에서 정한 행동이에요",
-                false);
+        return new OptionItem(card.action(), null, "지난 비슷한 상황에서 정한 행동이에요", false);
+    }
+
+    /**
+     * 고른 행동을 카드에 저장할 한 줄 텍스트 — 상세 설명(description)이 있으면 그걸, 없으면 label 을 쓴다.
+     * 예전엔 label(제목)/description(상세)을 target_action/detail 로 나눠 담았지만, 이제 상세 내용을
+     * target_action 하나에 담는다("직접 입력"처럼 설명이 없는 경우엔 label 이 곧 그 내용이다).
+     */
+    private static String actionText(OptionItem action) {
+        return action.hasDescription() ? action.description() : action.label();
     }
 
     private static List<ReplyDto.OptionDto> toOptionDtos(List<OptionItem> options) {

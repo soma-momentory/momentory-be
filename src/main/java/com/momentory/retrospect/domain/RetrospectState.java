@@ -31,6 +31,11 @@ public class RetrospectState {
     private Emotion currentEmotion;
     /** 온보딩 관심분야 — 일정 선택 규칙, 그리고 일정 없는 회고의 질문 구체화에 쓴다. */
     private String interest;
+    /**
+     * 온보딩에서 고른 '평소 선호하는 쉬는 방법'의 한글 라벨들 — 쉬는 행동 카드(care_action)를 만들 때
+     * 프롬프트에 실어 선호를 반영한다. 시작 시 서비스가 프로필에서 채워 넣는다(없으면 빈 목록).
+     */
+    private List<String> restMethods = List.of();
     /** 아직 대상 일정을 못 골랐을 때의 후보 목록 (await_schedule 에서만 사용). */
     private List<ScheduleItem> pendingSchedules = List.of();
 
@@ -94,6 +99,16 @@ public class RetrospectState {
 
     public String interest() {
         return interest;
+    }
+
+    /** 온보딩 쉬는 방법 선호(한글 라벨) — 쉬는 행동 카드 프롬프트에 쓴다. 없으면 빈 목록. */
+    public List<String> restMethods() {
+        return List.copyOf(restMethods);
+    }
+
+    /** 시작 시 서비스가 프로필에서 뽑은 쉬는 방법 라벨을 심는다. */
+    public void restMethods(List<String> restMethods) {
+        this.restMethods = restMethods == null ? List.of() : List.copyOf(restMethods);
     }
 
     /** 특정 일정을 골라 진행 중인가. false면 '오늘 하루'를 현재 감정 하나로 돌아보는 회고다. */
@@ -325,6 +340,7 @@ public class RetrospectState {
         measures.forEach((k, v) -> measuresCopy.put(k, new LinkedHashMap<>(v)));
         return new RetrospectStateSnapshot(
                 id, nickname, schedule, scheduleEmotion, currentEmotion, interest,
+                List.copyOf(restMethods),
                 List.copyOf(pendingSchedules), phase, mode, stepIndex, turn, reasks,
                 new LinkedHashMap<>(answers), measuresCopy, new ArrayList<>(messages),
                 new RetrospectStateSnapshot.SafetySnapshot(
@@ -339,6 +355,7 @@ public class RetrospectState {
         state.scheduleEmotion = s.scheduleEmotion();
         state.currentEmotion = s.currentEmotion();
         state.interest = s.interest();
+        state.restMethods = s.restMethods() == null ? List.of() : List.copyOf(s.restMethods());
         state.pendingSchedules = s.pendingSchedules() == null ? List.of()
                 : List.copyOf(s.pendingSchedules());
         state.phase = s.phase();

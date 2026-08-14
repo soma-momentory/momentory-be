@@ -136,6 +136,21 @@ public class PromptFactory {
                 구체적으로 말했으면 false. 확신이 없으면 false 로 둡니다.
                 6) userAsked: 사용자가 답 대신 질문을 했으면 true(대개 false).""");
 
+        // 쉬는 행동 카드(care_action)면 온보딩에서 고른 '평소 쉬는 방법'을 실어 선호를 반영시킨다.
+        // 선호가 없으면 블록을 안 붙여 기존 동작 그대로. (다른 행동 카드 유형에는 붙지 않는다.)
+        if (step.restAction() && !state.restMethods().isEmpty()) {
+            task.append("""
+
+                    [사용자가 평소 선호하는 쉬는 방법]
+                    %s
+                    위 options 중 최소 하나는 이 선호를 반영하세요. 단 그대로 옮겨 적지 말고, 오늘 \
+                    대화 맥락에 맞춰 지금 바로 할 수 있는 작고 구체적인 행동으로 풀어내세요. 지금 상황·시간대에 \
+                    맞지 않는 방법은 무리해서 넣지 말고, 나머지 보기는 대화에서 나온 내용으로 채워 결이 다르게 하세요.
+                    그리고 이 선호를 반영해 만든 보기에는 restPreference 를 true 로, 그렇지 않은 보기에는 \
+                    false 로 표시하세요(내부 분석용 표식이라 사용자에게는 안 보입니다)."""
+                    .formatted(String.join(", ", state.restMethods())));
+        }
+
         return """
                 [진입 정보]
                 %s

@@ -89,7 +89,7 @@ class ActionCardRepositoryIntegrationTest {
         // 임베딩을 채우지 않은 카드 — 최근접에서 제외된다
         Long retrospectId = newRetrospect(userId);
         actionCardRepository.saveAndFlush(ActionCard.create(userId, retrospectId,
-                "면접에서 말문이 막힘", "심호흡 세 번", null, LocalDate.of(2026, 7, 20)));
+                "면접에서 말문이 막힘", "심호흡 세 번", LocalDate.of(2026, 7, 20), false));
 
         assertThat(actionCardRepository.findMostSimilar(userId, oneHot(0), MAX_DISTANCE)).isEmpty();
     }
@@ -97,7 +97,7 @@ class ActionCardRepositoryIntegrationTest {
     private ActionCard saveCard(Long userId, String situation, String embedding) {
         Long retrospectId = newRetrospect(userId);
         ActionCard card = actionCardRepository.saveAndFlush(ActionCard.create(userId, retrospectId,
-                situation, "심호흡 세 번", null, LocalDate.of(2026, 7, 20)));
+                situation, "심호흡 세 번", LocalDate.of(2026, 7, 20), false));
         actionCardRepository.updateEmbedding(card.getId(), embedding);
         return card;
     }

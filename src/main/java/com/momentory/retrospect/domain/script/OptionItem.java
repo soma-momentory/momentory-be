@@ -9,12 +9,21 @@ package com.momentory.retrospect.domain.script;
  *                    행동 카드로 굳지 않는다(카드는 {@code label}·{@code description} 만 쓴다). 없으면 null.
  * @param input       true 면 "직접 입력" 옵션 — 고르면 프론트가 텍스트 필드를 열고, 서버는 그 자유
  *                    텍스트를 행동으로 받는다(optionId 로 확정하지 않는다).
+ * @param restPreference true 면 온보딩 '쉬는 방법' 선호를 반영해 만든 보기 — <b>분석용 내부 표식</b>이다.
+ *                    사용자에게 노출하지 않고({@code OptionDto} 로 나가지 않는다) 행동 카드 저장 때만 쓴다.
+ *                    쉬는 행동 카드(care_action) 에서만 true 가 된다.
  */
-public record OptionItem(String label, String description, String hint, boolean input) {
+public record OptionItem(String label, String description, String hint, boolean input,
+        boolean restPreference) {
+
+    /** 기존 4-인자 형태 — 선호 표식 없음(false). */
+    public OptionItem(String label, String description, String hint, boolean input) {
+        this(label, description, hint, input, false);
+    }
 
     /** AI·폴백 옵션용 — 힌트 없음, 직접 입력 아님. */
     public OptionItem(String label, String description) {
-        this(label, description, null, false);
+        this(label, description, null, false, false);
     }
 
     public static OptionItem of(String label) {
@@ -24,6 +33,11 @@ public record OptionItem(String label, String description, String hint, boolean 
     /** "직접 입력" 옵션 — 고르면 텍스트 필드가 열린다. */
     public static OptionItem input(String label, String hint) {
         return new OptionItem(label, null, hint, true);
+    }
+
+    /** 쉬는 방법 선호를 반영해 만든 옵션 — 분석용 내부 표식이 붙는다(사용자 비노출). */
+    public static OptionItem restPreference(String label, String description) {
+        return new OptionItem(label, description, null, false, true);
     }
 
     public boolean hasDescription() {

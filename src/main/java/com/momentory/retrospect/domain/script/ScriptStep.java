@@ -16,6 +16,7 @@ import java.util.List;
  * @param optionCount    CHOICE 턴의 보기 개수
  * @param describedOptions 보기에 한 줄 설명이 붙는가 (행동 선택지)
  * @param actionStep     이 턴의 선택이 '행동 카드'의 목표 행동이 되는가
+ * @param restAction     이 행동 카드가 '쉬는/자기돌봄' 성격인가 — 온보딩 쉬는 방법 선호를 반영한다
  * @param measures       MEASURE 턴의 슬라이더 구성
  */
 public record ScriptStep(
@@ -25,6 +26,7 @@ public record ScriptStep(
         int optionCount,
         boolean describedOptions,
         boolean actionStep,
+        boolean restAction,
         List<MeasureField> measures,
         String fallbackText,
         List<OptionItem> fallbackOptions) {
@@ -35,25 +37,35 @@ public record ScriptStep(
     }
 
     static ScriptStep text(String id, String intent, String fallbackText) {
-        return new ScriptStep(id, StepKind.TEXT, intent, 0, false, false, List.of(),
+        return new ScriptStep(id, StepKind.TEXT, intent, 0, false, false, false, List.of(),
                 fallbackText, List.of());
     }
 
     static ScriptStep choice(String id, String intent, String fallbackText,
             List<OptionItem> fallbackOptions) {
         return new ScriptStep(id, StepKind.CHOICE, intent, fallbackOptions.size(), false, false,
-                List.of(), fallbackText, fallbackOptions);
+                false, List.of(), fallbackText, fallbackOptions);
     }
 
     /** 행동 선택 턴 — 보기 2개, 제목+한 줄 설명, 선택이 행동 카드가 된다. */
     static ScriptStep action(String id, String intent, String fallbackText,
             List<OptionItem> fallbackOptions) {
         return new ScriptStep(id, StepKind.CHOICE, intent, fallbackOptions.size(), true, true,
-                List.of(), fallbackText, fallbackOptions);
+                false, List.of(), fallbackText, fallbackOptions);
+    }
+
+    /**
+     * 쉬는 행동 선택 턴 — {@link #action}과 같되 '쉬는/자기돌봄' 성격이라 온보딩 쉬는 방법 선호를
+     * 프롬프트에 반영한다({@link com.momentory.retrospect.infrastructure.ai.PromptFactory}).
+     */
+    static ScriptStep restAction(String id, String intent, String fallbackText,
+            List<OptionItem> fallbackOptions) {
+        return new ScriptStep(id, StepKind.CHOICE, intent, fallbackOptions.size(), true, true,
+                true, List.of(), fallbackText, fallbackOptions);
     }
 
     static ScriptStep measure(String id, String fallbackText, MeasureField... fields) {
-        return new ScriptStep(id, StepKind.MEASURE, null, 0, false, false, List.of(fields),
+        return new ScriptStep(id, StepKind.MEASURE, null, 0, false, false, false, List.of(fields),
                 fallbackText, List.of());
     }
 
