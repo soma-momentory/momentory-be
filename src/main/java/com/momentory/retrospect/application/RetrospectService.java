@@ -22,6 +22,8 @@ import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.assistant.SituationEmbedder;
 import com.momentory.retrospect.infrastructure.persistence.ActionCard;
 import com.momentory.retrospect.infrastructure.persistence.ActionCardRepository;
+import com.momentory.retrospect.infrastructure.persistence.Diary;
+import com.momentory.retrospect.infrastructure.persistence.DiaryRepository;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
@@ -53,6 +55,7 @@ public class RetrospectService {
 
     private final RetrospectEngine engine;
     private final RetrospectRepository retrospectRepository;
+    private final DiaryRepository diaryRepository;
     private final ActionCardRepository actionCardRepository;
     private final SituationEmbedder situationEmbedder;
     private final ActionCardEmbedder actionCardEmbedder;
@@ -62,12 +65,13 @@ public class RetrospectService {
     private final ScheduleRepository scheduleRepository;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
-            ActionCardRepository actionCardRepository, SituationEmbedder situationEmbedder,
-            ActionCardEmbedder actionCardEmbedder, RetrospectStateCodec codec,
-            UserRepository userRepository, UserProfileRepository userProfileRepository,
-            ScheduleRepository scheduleRepository) {
+            DiaryRepository diaryRepository, ActionCardRepository actionCardRepository,
+            SituationEmbedder situationEmbedder, ActionCardEmbedder actionCardEmbedder,
+            RetrospectStateCodec codec, UserRepository userRepository,
+            UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
+        this.diaryRepository = diaryRepository;
         this.actionCardRepository = actionCardRepository;
         this.situationEmbedder = situationEmbedder;
         this.actionCardEmbedder = actionCardEmbedder;
@@ -133,23 +137,33 @@ public class RetrospectService {
     /** 완료된 회고의 일기 + 행동 카드 조회 — 그날의 일기를 다시 펼칠 때 쓴다. */
     @Transactional(readOnly = true)
     public RetrospectDiaryResult getDiary(Long userId, Long id) {
-        Retrospect entity = requireSession(userId, id);
+        requireSession(userId, id); // 소유권 검증 — 남의 회고 일기는 못 연다.
+        Diary diary = diaryRepository.findByRetrospectId(id).orElse(null);
         ActionCard card = actionCardRepository.findByRetrospectId(id).orElse(null);
-        return RetrospectDiaryResult.from(entity, card);
+        return RetrospectDiaryResult.from(diary, card);
     }
 
     private void sync(Retrospect entity, RetrospectState state, ReplyDto reply) {
-        String diary = null;
-        String reframedDiary = null;
-        if (reply.diary() != null) {
-            diary = reply.diary().diary();
-            reframedDiary = reply.diary().reframedDiary();
-        }
         Phase phase = state.phase();
         Instant completedAt = phase.isTerminal() ? Instant.now() : null;
         entity.sync(RetrospectStatus.from(phase), state.mode(), codec.serialize(state),
-                diary, reframedDiary, completedAt);
+                completedAt);
+        persistDiary(entity, state, reply);
         persistActionCard(entity, state, reply);
+    }
+
+    /**
+     * 완료 턴에 만들어진 일기를 diaries 테이블에 한 벌 남긴다 — 이전엔 회고 컬럼이었다. 진입 감정
+     * 두 종(현재·일정)을 함께 담아 나중의 월별 조회에서 바로 쓴다. 회고 한 벌에 일기 하나라,
+     * 이미 있으면 다시 만들지 않는다(완료 턴에 한 번만 생긴다).
+     */
+    private void persistDiary(Retrospect entity, RetrospectState state, ReplyDto reply) {
+        ReplyDto.DiaryDto diary = reply.diary();
+        if (diary == null || diaryRepository.existsByRetrospectId(entity.getId())) {
+            return;
+        }
+        diaryRepository.save(Diary.create(entity.getUserId(), entity.getId(), diary.diary(),
+                diary.reframedDiary(), state.currentEmotion(), state.scheduleEmotion()));
     }
 
     /**
