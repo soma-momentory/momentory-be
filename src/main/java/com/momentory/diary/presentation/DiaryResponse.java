@@ -1,9 +1,9 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.diary.presentation;
 
 import java.time.Instant;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.momentory.retrospect.application.DiaryView;
+import com.momentory.diary.application.DiaryView;
 import com.momentory.retrospect.domain.Emotion;
 
 import io.swagger.v3.oas.annotations.media.Schema;

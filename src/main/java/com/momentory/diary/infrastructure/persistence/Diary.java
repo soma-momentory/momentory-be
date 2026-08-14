@@ -1,4 +1,4 @@
-package com.momentory.retrospect.infrastructure.persistence;
+package com.momentory.diary.infrastructure.persistence;
 
 import java.util.Objects;
 

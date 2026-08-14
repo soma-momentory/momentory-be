@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -22,10 +23,10 @@ import com.momentory.retrospect.domain.PriorActionCard;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.assistant.SituationEmbedder;
+import com.momentory.diary.application.DiaryQueryService;
+import com.momentory.diary.application.DiaryView;
 import com.momentory.retrospect.infrastructure.persistence.ActionCard;
 import com.momentory.retrospect.infrastructure.persistence.ActionCardRepository;
-import com.momentory.retrospect.infrastructure.persistence.Diary;
-import com.momentory.retrospect.infrastructure.persistence.DiaryRepository;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
@@ -60,7 +61,7 @@ public class RetrospectService {
 
     private final RetrospectEngine engine;
     private final RetrospectRepository retrospectRepository;
-    private final DiaryRepository diaryRepository;
+    private final DiaryQueryService diaryQueryService;
     private final ActionCardRepository actionCardRepository;
     private final SituationEmbedder situationEmbedder;
     private final ActionCardEmbedder actionCardEmbedder;
@@ -68,15 +69,17 @@ public class RetrospectService {
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
     private final ScheduleRepository scheduleRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
-            DiaryRepository diaryRepository, ActionCardRepository actionCardRepository,
+            DiaryQueryService diaryQueryService, ActionCardRepository actionCardRepository,
             SituationEmbedder situationEmbedder, ActionCardEmbedder actionCardEmbedder,
             RetrospectStateCodec codec, UserRepository userRepository,
-            UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository) {
+            UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
+            ApplicationEventPublisher eventPublisher) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
-        this.diaryRepository = diaryRepository;
+        this.diaryQueryService = diaryQueryService;
         this.actionCardRepository = actionCardRepository;
         this.situationEmbedder = situationEmbedder;
         this.actionCardEmbedder = actionCardEmbedder;
@@ -84,6 +87,7 @@ public class RetrospectService {
         this.userRepository = userRepository;
         this.userProfileRepository = userProfileRepository;
         this.scheduleRepository = scheduleRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -147,7 +151,7 @@ public class RetrospectService {
     @Transactional(readOnly = true)
     public RetrospectDiaryResult getDiary(Long userId, Long id) {
         requireSession(userId, id); // 소유권 검증 — 남의 회고 일기는 못 연다.
-        Diary diary = diaryRepository.findByRetrospectId(id).orElse(null);
+        DiaryView diary = diaryQueryService.findByRetrospect(id).orElse(null);
         ActionCard card = actionCardRepository.findByRetrospectId(id).orElse(null);
         return RetrospectDiaryResult.from(diary, card);
     }
@@ -157,22 +161,23 @@ public class RetrospectService {
         Instant completedAt = phase.isTerminal() ? Instant.now() : null;
         entity.sync(RetrospectStatus.from(phase), state.mode(), codec.serialize(state),
                 completedAt);
-        persistDiary(entity, state, reply);
+        announceDiaryIfWritten(entity, state, reply);
         persistActionCard(entity, state, reply);
     }
 
     /**
-     * 완료 턴에 만들어진 일기를 diaries 테이블에 한 벌 남긴다 — 이전엔 회고 컬럼이었다. 진입 감정
-     * 두 종(현재·일정)을 함께 담아 나중의 월별 조회에서 바로 쓴다. 회고 한 벌에 일기 하나라,
-     * 이미 있으면 다시 만들지 않는다(완료 턴에 한 번만 생긴다).
+     * 완료 턴에 일기가 나왔으면 {@link RetrospectCompleted} 를 발행한다 — 저장은 이 이벤트를 구독하는
+     * diary 컨텍스트가 <b>같은 트랜잭션에서 동기로</b> 맡는다(retrospect 는 일기를 어떻게 저장하는지
+     * 모른다). 일기 본문이 없는 완료(안전 중단 등)에서는 발행하지 않는다.
      */
-    private void persistDiary(Retrospect entity, RetrospectState state, ReplyDto reply) {
+    private void announceDiaryIfWritten(Retrospect entity, RetrospectState state, ReplyDto reply) {
         ReplyDto.DiaryDto diary = reply.diary();
-        if (diary == null || diaryRepository.existsByRetrospectId(entity.getId())) {
+        if (diary == null) {
             return;
         }
-        diaryRepository.save(Diary.create(entity.getUserId(), entity.getId(), diary.diary(),
-                diary.reframedDiary(), state.currentEmotion(), state.scheduleEmotion()));
+        eventPublisher.publishEvent(new RetrospectCompleted(entity.getId(), entity.getUserId(),
+                state.currentEmotion(), state.scheduleEmotion(), diary.diary(),
+                diary.reframedDiary()));
     }
 
     /**
@@ -237,11 +242,7 @@ public class RetrospectService {
      * 회고 완료 때만 생기므로, 중도 이탈(일기 미저장)이면 오늘 안에 다시 시작할 수 있다.
      */
     private void requireNoDiaryToday(Long userId) {
-        LocalDate today = LocalDate.now(ZONE);
-        Instant start = today.atStartOfDay(ZONE).toInstant();
-        Instant end = today.plusDays(1).atStartOfDay(ZONE).toInstant();
-        if (diaryRepository.existsByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
-                userId, start, end)) {
+        if (diaryQueryService.hasDiaryOn(userId, LocalDate.now(ZONE))) {
             throw new AlreadyRetrospectedTodayException();
         }
     }

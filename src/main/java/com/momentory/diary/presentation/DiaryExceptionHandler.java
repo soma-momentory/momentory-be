@@ -1,4 +1,4 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.diary.presentation;
 
 import java.time.DateTimeException;
 
@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.momentory.common.presentation.ApiErrorResponse;
-import com.momentory.retrospect.application.DiaryNotFoundException;
+import com.momentory.diary.application.DiaryNotFoundException;
 
 @RestControllerAdvice(assignableTypes = DiaryController.class)
 public class DiaryExceptionHandler {
