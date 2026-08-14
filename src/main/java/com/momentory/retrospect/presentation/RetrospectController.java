@@ -64,6 +64,14 @@ public class RetrospectController {
                               "code": "AUTHENTICATION_REQUIRED",
                               "message": "인증이 필요합니다."
                             }
+                            """))),
+            @ApiResponse(responseCode = "409", description = "오늘 이미 회고 완료(하루 한 번)", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
+                    name = "ALREADY_RETROSPECTED_TODAY",
+                    value = """
+                            {
+                              "code": "ALREADY_RETROSPECTED_TODAY",
+                              "message": "오늘은 이미 회고를 완료했어요. 회고는 하루에 한 번만 할 수 있어요."
+                            }
                             """)))
     })
     @ResponseStatus(HttpStatus.CREATED)

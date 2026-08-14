@@ -2,6 +2,7 @@ package com.momentory.retrospect.application;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.util.Optional;
 
+import com.momentory.common.time.TimeZonePolicy;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.PriorActionCard;
 import com.momentory.retrospect.domain.RetrospectState;
@@ -53,6 +55,9 @@ public class RetrospectService {
      */
     private static final double SIMILAR_MAX_DISTANCE = 0.35;
 
+    /** "하루 한 번" 가드의 하루 경계 기준 — 일기 월별 조회와 같은 KST. */
+    private static final ZoneId ZONE = TimeZonePolicy.DEFAULT_ZONE_ID;
+
     private final RetrospectEngine engine;
     private final RetrospectRepository retrospectRepository;
     private final DiaryRepository diaryRepository;
@@ -81,10 +86,14 @@ public class RetrospectService {
         this.scheduleRepository = scheduleRepository;
     }
 
-    /** 회고 시작 — 세션을 만들고 첫 메시지(공감 + 1턴 질문)를 낸다. */
+    /**
+     * 회고 시작 — 세션을 만들고 첫 메시지(공감 + 1턴 질문)를 낸다. 회고는 하루 한 번이라, 오늘(KST)
+     * 이미 완주한 일기가 있으면 시작을 막는다({@link AlreadyRetrospectedTodayException}).
+     */
     @Transactional
     public RetrospectResult start(Long userId, StartCommand command) {
         requireUser(userId);
+        requireNoDiaryToday(userId);
 
         RetrospectState state = new RetrospectState(UUID.randomUUID().toString());
         ReplyDto reply = engine.start(state, command, preferredRestMethods(userId));
@@ -221,6 +230,20 @@ public class RetrospectService {
     private void requireUser(Long userId) {
         userRepository.findById(userId)
                 .orElseThrow(AuthenticatedUserNotFoundException::new);
+    }
+
+    /**
+     * 오늘(KST) 이미 완주한 일기가 있으면 새 회고 시작을 막는다 — 회고는 하루 한 번이다. 일기는
+     * 회고 완료 때만 생기므로, 중도 이탈(일기 미저장)이면 오늘 안에 다시 시작할 수 있다.
+     */
+    private void requireNoDiaryToday(Long userId) {
+        LocalDate today = LocalDate.now(ZONE);
+        Instant start = today.atStartOfDay(ZONE).toInstant();
+        Instant end = today.plusDays(1).atStartOfDay(ZONE).toInstant();
+        if (diaryRepository.existsByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                userId, start, end)) {
+            throw new AlreadyRetrospectedTodayException();
+        }
     }
 
     /**

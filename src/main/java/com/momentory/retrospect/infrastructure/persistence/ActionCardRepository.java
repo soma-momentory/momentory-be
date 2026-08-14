@@ -1,5 +1,7 @@
 package com.momentory.retrospect.infrastructure.persistence;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +15,17 @@ public interface ActionCardRepository extends JpaRepository<ActionCard, Long> {
     Optional<ActionCard> findByRetrospectId(Long retrospectId);
 
     boolean existsByRetrospectId(Long retrospectId);
+
+    /** 단건 조회 + 소유권 검증 — 남의 카드는 못 연다. */
+    Optional<ActionCard> findByIdAndUserId(Long id, Long userId);
+
+    /**
+     * 한 달치 행동 카드 — {@code [start, end)} 반열림 구간(월 경계는 서비스가 KST 로 계산한다).
+     * 일기 월별 조회와 같은 {@code created_at} 기준이라, 달력에서 그날의 일기와 나란히 묶인다.
+     * 최신순. {@code idx_action_cards_user_created (user_id, created_at)} 를 탄다.
+     */
+    List<ActionCard> findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+            Long userId, Instant start, Instant end);
 
     /**
      * 상황 임베딩을 저장한다 — 카드 저장 직후 별도로 채운다(JPA 엔티티는 벡터 컬럼을 매핑하지

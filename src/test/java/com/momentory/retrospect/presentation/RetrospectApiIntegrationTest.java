@@ -25,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -88,6 +89,7 @@ class RetrospectApiIntegrationTest {
     @Autowired DiaryRepository diaryRepository;
     @Autowired ActionCardRepository actionCardRepository;
     @Autowired AccessTokenIssuer accessTokenIssuer;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     @MockitoBean UnderstandingChecker understandingChecker;
     @MockitoBean TurnScripter turnScripter;
@@ -169,6 +171,54 @@ class RetrospectApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message", Matchers.containsString("schedules[0].emotion")));
+    }
+
+    @Test
+    @DisplayName("하루 한 번 — 오늘(KST) 일기가 이미 있으면 시작은 409 {code,message}")
+    void startBlockedWhenTodayDiaryAlreadyExists() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        // 오늘 완주한 일기 한 벌 — Diary 의 @PrePersist 가 created_at 을 지금(=오늘 KST)으로 박는다.
+        Retrospect done = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
+                RetrospectStatus.COMPLETED, RetroMode.REFRAME, null, Emotion.DEPRESSED, "{}"));
+        diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(), "오늘 일기", null,
+                Emotion.DEPRESSED, null));
+
+        mockMvc.perform(post("/api/v1/retrospect")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schedules":[{"name":"면접 스터디","emotion":"anxious"}],
+                                 "currentEmotion":"depressed","nickname":"정민"}"""))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ALREADY_RETROSPECTED_TODAY"))
+                .andExpect(jsonPath("$.message", Matchers.containsString("하루에 한 번")));
+
+        // 가드는 시작을 막았을 뿐 — 새 회고 레코드는 남지 않는다(원래 완주 한 벌만).
+        assertThat(retrospectRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("하루 한 번 — 어제 일기뿐이면 오늘 시작은 막지 않는다(201)")
+    void startAllowedWhenOnlyYesterdayDiaryExists() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        Retrospect done = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
+                RetrospectStatus.COMPLETED, RetroMode.REFRAME, null, Emotion.DEPRESSED, "{}"));
+        Diary yesterday = diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(),
+                "어제 일기", null, Emotion.DEPRESSED, null));
+        // created_at 을 어제로 되돌린다(@PrePersist 가 now 로 박으므로 직접 UPDATE).
+        java.time.OffsetDateTime yesterdayAt = java.time.OffsetDateTime.ofInstant(
+                Instant.now().minus(java.time.Duration.ofDays(1)), java.time.ZoneOffset.UTC);
+        jdbcTemplate.update("UPDATE diaries SET created_at = ? WHERE id = ?",
+                yesterdayAt, yesterday.getId());
+
+        mockMvc.perform(post("/api/v1/retrospect")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schedules":[{"name":"면접 스터디","emotion":"anxious"}],
+                                 "currentEmotion":"depressed","nickname":"정민"}"""))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sessionId").isNumber());
     }
 
     @Test

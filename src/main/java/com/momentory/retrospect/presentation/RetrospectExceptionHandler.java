@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.momentory.common.presentation.ApiErrorResponse;
+import com.momentory.retrospect.application.AlreadyRetrospectedTodayException;
 import com.momentory.retrospect.application.RetrospectSessionNotFoundException;
 
 @RestControllerAdvice(assignableTypes = RetrospectController.class)
@@ -15,6 +16,13 @@ public class RetrospectExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleSessionNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ApiErrorResponse("RETROSPECT_SESSION_NOT_FOUND", "회고 세션을 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(AlreadyRetrospectedTodayException.class)
+    ResponseEntity<ApiErrorResponse> handleAlreadyRetrospectedToday() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiErrorResponse("ALREADY_RETROSPECTED_TODAY",
+                        "오늘은 이미 회고를 완료했어요. 회고는 하루에 한 번만 할 수 있어요."));
     }
 
     @ExceptionHandler(InvalidStartException.class)
