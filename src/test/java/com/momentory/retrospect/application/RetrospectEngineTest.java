@@ -225,9 +225,71 @@ class RetrospectEngineTest {
             assertThat(r.diary().diary()).isEqualTo("오늘의 그냥 일기.");
             assertThat(r.diary().reframedDiary()).isEqualTo("오늘의 리프레이밍 일기.");
             assertThat(r.actionCard()).isNotNull(); // 감정 정리형도 행동 카드가 남는다
-            assertThat(r.actionCard().action()).isEqualTo("[care_action] 보기2");
-            assertThat(r.actionCard().detail()).isEqualTo("보기2 설명");
+            // 이제 카드에는 상세 설명(description)이 target_action(action) 하나로 담긴다.
+            assertThat(r.actionCard().action()).isEqualTo("보기2 설명");
             assertThat(fake.diaryCalls).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("AI 경로 — 선호 반영 보기(restPreference)를 고르면 그 표식이 최종 선택 행동에 남는다")
+        void aiRestPreferenceTagFlowsToChosenAction() {
+            fake.tagRestPreference = true; // care_action 첫 보기에 선호 표식이 달린다
+            state.restMethods(List.of("산책하기"));
+            ReplyDto r = toCareActionOptions();
+
+            // 선호 표식이 달린 첫 보기를 고른다 → 저장될 행동에 표식이 남아야 한다(분석용).
+            assertThat(r.options()).hasSize(3);
+            service.handle(state, TurnCommand.option("1"));
+
+            assertThat(state.chosenAction().restPreference()).isTrue();
+        }
+
+        @Test
+        @DisplayName("AI 경로 — 선호가 아닌 보기를 고르면 표식이 남지 않는다")
+        void aiNonPreferenceOptionHasNoTag() {
+            fake.tagRestPreference = true;
+            state.restMethods(List.of("산책하기"));
+            toCareActionOptions();
+
+            // 표식이 없는 둘째 보기 선택.
+            service.handle(state, TurnCommand.option("2"));
+
+            assertThat(state.chosenAction().restPreference()).isFalse();
+        }
+
+        @Test
+        @DisplayName("폴백 경로 — 선호로 만든 쉬는 카드를 고르면 표식이 남는다")
+        void fallbackRestPreferenceTagFlowsToChosenAction() {
+            toBeforeCareAction();
+            state.restMethods(List.of("산책하기"));
+            fake.failTurns = true; // care_action 이 폴백으로 내려가 선호 카드로 채워진다
+
+            ReplyDto r = service.handle(state, TurnCommand.measures(
+                    Map.of("schedule_emotion", 4, "current_emotion", 5)));
+            // 폴백 첫 보기 = 선호 카드.
+            assertThat(r.options().get(0).label()).isEqualTo("산책하기");
+            service.handle(state, TurnCommand.option("1"));
+
+            assertThat(state.chosenAction().restPreference()).isTrue();
+        }
+
+        /** 감정 정리형 진입 후 마지막 슬라이더 직전(self_message 답변 직후)까지 몬다. */
+        private void toBeforeCareAction() {
+            answerIntro();
+            service.handle(state, TurnCommand.option("1")); // 감정 정리형
+            service.handle(state, TurnCommand.text("피드백을 받을 때요."));
+            service.handle(state, TurnCommand.text("집에 오는 길에 계속 생각났어요."));
+            service.handle(state, TurnCommand.text("몸에 힘이 없고 침대에 누워 있었어요."));
+            service.handle(state, TurnCommand.option("2")); // need_now 3택
+            service.handle(state, TurnCommand.text("고생했다고 말해주고 싶어요."));
+            // 이제 pending 은 슬라이더 턴 — 다음 measures 가 care_action 을 낸다.
+        }
+
+        /** care_action 선택지가 화면에 뜬 상태까지 몰고, 그 응답을 돌려준다. */
+        private ReplyDto toCareActionOptions() {
+            toBeforeCareAction();
+            return service.handle(state, TurnCommand.measures(
+                    Map.of("schedule_emotion", 4, "current_emotion", 5)));
         }
     }
 
@@ -277,7 +339,7 @@ class RetrospectEngineTest {
             assertThat(r.actionCard()).isNotNull();
             assertThat(r.actionCard().situation())
                     .isEqualTo("모의 면접에서 준비한 내용을 제대로 말하지 못함");
-            assertThat(r.actionCard().action()).isEqualTo("[verify_action] 보기1");
+            assertThat(r.actionCard().action()).isEqualTo("보기1 설명");
             assertThat(r.actionCard().createdDate()).isNotBlank();
             assertThat(r.diary().reframedDiary()).isNotBlank();
 
@@ -335,7 +397,7 @@ class RetrospectEngineTest {
 
             assertThat(r.done()).isTrue();
             assertThat(r.actionCard()).isNotNull();
-            assertThat(r.actionCard().detail()).isEqualTo("보기1 설명");
+            assertThat(r.actionCard().action()).isEqualTo("보기1 설명");
         }
     }
 
@@ -387,7 +449,7 @@ class RetrospectEngineTest {
         @DisplayName("비슷한 상황의 이전 카드가 있으면 추천 첫 줄에 붙고, 고르면 그 행동이 카드가 된다")
         void priorCardPrependedFirst() {
             state.priorCardFinder(situation -> Optional.of(new PriorActionCard(
-                    "예상 질문 하나 소리 내어 답해보기", "결론부터 30초로", "면접에서 말문이 막힘",
+                    "예상 질문 하나 소리 내어 답해보기", "면접에서 말문이 막힘",
                     LocalDate.of(2026, 7, 20))));
 
             ReplyDto atAction = toActionStep();
@@ -400,9 +462,8 @@ class RetrospectEngineTest {
             service.handle(state, TurnCommand.option("1")); // 이전 카드 선택
             ReplyDto r = finishMeasure();
 
-            // hint 는 카드에 들어가지 않는다 — label·description 만 굳는다
+            // hint 는 카드에 들어가지 않는다 — 이전 카드의 action 이 그대로 굳는다
             assertThat(r.actionCard().action()).isEqualTo("예상 질문 하나 소리 내어 답해보기");
-            assertThat(r.actionCard().detail()).isEqualTo("결론부터 30초로");
         }
     }
 

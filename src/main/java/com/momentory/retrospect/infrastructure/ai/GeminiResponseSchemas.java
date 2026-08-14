@@ -46,6 +46,8 @@ final class GeminiResponseSchemas {
         LinkedHashMap<String, Object> optionProps = new LinkedHashMap<>();
         optionProps.put("label", str());
         optionProps.put("description", str());
+        // 쉬는 행동 카드에서만 의미가 있다 — 그 보기가 온보딩 쉬는 방법 선호를 반영했는지(분석용 내부 표식).
+        optionProps.put("restPreference", bool());
         Map<String, Object> optionObject = object(optionProps, List.of("label"));
 
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();

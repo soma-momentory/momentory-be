@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.momentory.retrospect.domain.Emotion;
+import com.momentory.user.domain.RestMethod;
 
 /** 스크립트 정의가 PDF 시나리오의 턴 구조와 일치하는지 고정한다. */
 class ScriptsTest {
@@ -29,6 +30,8 @@ class ScriptsTest {
         // need_now(필요한 것 3택)는 행동 스텝이 아니다(정리용 선택).
         assertThat(byId(steps, "care_action").actionStep()).isTrue();
         assertThat(byId(steps, "care_action").describedOptions()).isTrue();
+        // care_action 은 '쉬는' 행동 카드라 온보딩 쉬는 방법 선호를 반영하는 스텝으로 표시된다.
+        assertThat(byId(steps, "care_action").restAction()).isTrue();
         assertThat(byId(steps, "need_now").actionStep()).isFalse();
         assertThat(byId(steps, "after_intensity").measures()).containsExactly(
                 MeasureField.SCHEDULE_EMOTION, MeasureField.CURRENT_EMOTION);
@@ -52,7 +55,60 @@ class ScriptsTest {
         assertThat(action.actionStep()).isTrue();
         assertThat(action.describedOptions()).isTrue();
         assertThat(action.optionCount()).isEqualTo(2);
+        // 인지 재구성형 행동은 '쉬는' 카드가 아니라 선호를 반영하지 않는다(감정 정리형만 반영).
+        assertThat(action.restAction()).isFalse();
         assertThat(RetroMode.REFRAME.hasActionCard()).isTrue();
+    }
+
+    @Test
+    @DisplayName("쉬는 폴백 카드 — 선호가 있으면 첫 장을 선호 카드로 바꾸고 결이 다른 기존 카드 한 장을 남긴다")
+    void restFallbackReflectsPreference() {
+        List<OptionItem> base = List.of(
+                new OptionItem("따뜻한 물 마시며 10분 쉬기", "따뜻한 물을 마시며 10분 편하게 쉬기"),
+                new OptionItem("내일 확인할 시간만 정해두기", "내일 언제 확인할지 시간만 정해두기"));
+
+        List<OptionItem> out = Scripts.restFallbackOptions(base, List.of("산책하기", "잠자기"));
+
+        assertThat(out).hasSize(2);
+        // 첫 장 = 선호 목록의 첫 방법으로 만든 카드. 제목은 방법 이름, 설명은 방법별 문구.
+        assertThat(out.get(0).label()).isEqualTo("산책하기");
+        assertThat(out.get(0).description()).isEqualTo("가볍게 밖으로 나가 10분 정도 천천히 걸으며 바람 쐬기");
+        // 선호 카드에는 분석용 내부 표식이 붙는다(사용자 비노출).
+        assertThat(out.get(0).restPreference()).isTrue();
+        // 둘째 장 = 결이 다른 기존 폴백 카드(마지막 것)를 유지 — 선호 표식 없음.
+        assertThat(out.get(1).label()).isEqualTo("내일 확인할 시간만 정해두기");
+        assertThat(out.get(1).restPreference()).isFalse();
+    }
+
+    @Test
+    @DisplayName("쉬는 폴백 카드 — 방법마다 그 방법에 맞는 고유 문구가 붙는다(일반형 템플릿으로 새지 않는다)")
+    void restFallbackHasPerMethodWording() {
+        List<OptionItem> base = List.of(new OptionItem("기존", "기존 설명"));
+
+        for (RestMethod method : RestMethod.values()) {
+            // "그때마다 달라요"는 서비스에서 제외되고, "기타"는 직접 입력이라 일반형이 정상.
+            if (method == RestMethod.VARIES_BY_DAY || method == RestMethod.OTHER) {
+                continue;
+            }
+            String label = method.getLabel();
+            String detail = Scripts.restFallbackOptions(base, List.of(label)).get(0).description();
+
+            String generic = "평소 좋아하던 " + label + ", 오늘도 잠깐 시간 내서 해보기";
+            assertThat(detail)
+                    .as("%s 는 방법별 고유 문구가 있어야 한다", label)
+                    .isNotBlank()
+                    .isNotEqualTo(generic);
+        }
+    }
+
+    @Test
+    @DisplayName("쉬는 폴백 카드 — 선호가 없으면(미선택 사용자) 기존 고정 카드 두 장 그대로")
+    void restFallbackWithoutPreferenceIsUnchanged() {
+        List<OptionItem> base = List.of(
+                new OptionItem("따뜻한 물 마시며 10분 쉬기", "따뜻한 물을 마시며 10분 편하게 쉬기"),
+                new OptionItem("내일 확인할 시간만 정해두기", "내일 언제 확인할지 시간만 정해두기"));
+
+        assertThat(Scripts.restFallbackOptions(base, List.of())).isSameAs(base);
     }
 
     @Test

@@ -21,6 +21,7 @@ public record RetrospectStateSnapshot(
         Emotion scheduleEmotion,
         Emotion currentEmotion,
         String interest,
+        List<String> restMethods,
         List<ScheduleItem> pendingSchedules,
         Phase phase,
         RetroMode mode,

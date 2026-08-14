@@ -51,10 +51,9 @@ public record ReplyDto(
         }
     }
 
-    /** 행동 카드 (PDF "🪪 행동 카드"). */
+    /** 행동 카드 (PDF "🪪 행동 카드"). {@code action} 하나에 실행할 행동을 상세히 담는다. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record ActionCardDto(String situation, String action, String detail,
-            String createdDate) {
+    public record ActionCardDto(String situation, String action, String createdDate) {
     }
 
     /** 일기 — 짧은 기록형은 {@code reframedDiary} 가 없어 프론트가 카드 1장만 그린다. */

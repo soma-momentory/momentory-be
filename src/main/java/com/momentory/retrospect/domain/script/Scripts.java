@@ -1,5 +1,6 @@
 package com.momentory.retrospect.domain.script;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -150,7 +151,7 @@ public final class Scripts {
                                     + "지금은 어느 정도로 느껴지는지 표시해 주세요."
                                     + SCALE_HINT + BASELINE_NOTE,
                             MeasureField.SCHEDULE_EMOTION, MeasureField.CURRENT_EMOTION),
-                    ScriptStep.action("care_action",
+                    ScriptStep.restAction("care_action",
                             "남아 있는 감정을 돌보기 위해 오늘 바로 할 수 있는 아주 작은 행동 2가지를 "
                                     + "제안한다. 대화에 나온 내용을 반영하되 부담 없고 구체적으로. "
                                     + "각 보기는 제목과 한 줄 설명으로.",
@@ -288,6 +289,62 @@ public final class Scripts {
 
     public static List<ScriptStep> stepsOf(RetroMode mode) {
         return STEPS.get(mode);
+    }
+
+    // ── 쉬는 행동 카드 폴백 ──────────────────────────────────────────────
+
+    /**
+     * 쉬는 행동 카드(care_action)의 폴백 선택지에 온보딩 쉬는 방법 선호를 반영한다 —
+     * AI 생성이 실패해 폴백으로 내려가도 최소한 선호 한 장은 나가게 한다.
+     *
+     * <p>선호가 없으면 기존 고정 폴백 두 장을 그대로 돌려준다(선호 미선택 사용자는 현행과 동일).
+     * 선호가 있으면 첫 장을 '선호 카드'로 바꾸고, 결이 다른 기존 카드 한 장(마지막 것 —
+     * "내일 확인할 시간만 정해두기")을 남겨 두 장을 유지한다. AI 가 없어 대화 맥락은 못 녹이므로
+     * 문구는 일반형 템플릿이다(정상 흐름의 선호 반영은 AI 프롬프트가 맡는다).
+     */
+    public static List<OptionItem> restFallbackOptions(List<OptionItem> base,
+            List<String> restMethods) {
+        if (restMethods == null || restMethods.isEmpty()) {
+            return base;
+        }
+        List<OptionItem> out = new ArrayList<>();
+        out.add(restPreferenceCard(restMethods.get(0)));
+        if (!base.isEmpty()) {
+            out.add(base.get(base.size() - 1));
+        }
+        return out;
+    }
+
+    /**
+     * 온보딩 쉬는 방법(라벨)별 폴백 카드 설명 — 오늘 바로 할 수 있을 만큼 작고 부담 없는 한 줄.
+     * 키는 {@code RestMethod.getLabel()} 과 정확히 같아야 한다(라벨을 바꾸면 여기 키도 함께 고칠 것 —
+     * {@code ScriptsTest} 가 누락을 잡는다). "그때마다 달라요"는 서비스에서 제외되고, "기타"(직접 입력)는
+     * 여기 없어 일반형 템플릿으로 처리한다.
+     */
+    private static final Map<String, String> REST_CARD_DETAILS = Map.ofEntries(
+            Map.entry("잠자기", "잠깐이라도 눈을 붙이거나 이불 속에서 몸에 힘을 빼고 쉬기"),
+            Map.entry("명상하기", "5분만 눈을 감고 천천히 숨을 고르며 마음을 가라앉히기"),
+            Map.entry("맛있는 음식 먹기", "먹고 싶던 음식이나 간식을 천천히 음미하며 한 입 즐기기"),
+            Map.entry("음악 듣기", "좋아하는 노래 한두 곡을 틀어놓고 가만히 들으며 쉬기"),
+            Map.entry("영화, 드라마 보기", "보고 싶던 영상이나 드라마 한 편을 편하게 틀어두고 보기"),
+            Map.entry("독서하기", "읽던 책이나 짧은 글을 부담 없이 몇 장만 읽어보기"),
+            Map.entry("글쓰기", "지금 드는 생각이나 마음을 몇 줄로 편하게 적어보기"),
+            Map.entry("카페가기", "가까운 카페에 가서 좋아하는 음료 한 잔과 함께 잠시 쉬기"),
+            Map.entry("산책하기", "가볍게 밖으로 나가 10분 정도 천천히 걸으며 바람 쐬기"),
+            Map.entry("가까운 사람과 대화하기", "마음 편한 사람에게 안부를 건네며 잠깐 이야기 나누기"),
+            Map.entry("운동하기", "가벼운 스트레칭이나 짧은 운동으로 몸을 부드럽게 풀기"),
+            Map.entry("게임하기", "좋아하는 게임을 잠깐 켜서 가볍게 한 판 즐기기"),
+            Map.entry("멍하니 쉬기", "아무것도 하지 않고 편한 자세로 잠시 멍하니 쉬기"));
+
+    /**
+     * 선호 쉬는 방법 한 개를 폴백 카드로 — 제목은 방법 이름, 설명은 방법별 문구.
+     * 매핑에 없는 값("기타" 직접 입력 텍스트 등)은 일반형 템플릿으로 감싼다.
+     */
+    private static OptionItem restPreferenceCard(String restMethod) {
+        String detail = REST_CARD_DETAILS.getOrDefault(restMethod,
+                "평소 좋아하던 " + restMethod + ", 오늘도 잠깐 시간 내서 해보기");
+        // 분석용 선호 표식을 단다(사용자 비노출) — 폴백은 선호로 직접 만든 카드라 확정적으로 true.
+        return OptionItem.restPreference(restMethod, detail);
     }
 
     // ── 슬라이더 라벨 ────────────────────────────────────────────────────

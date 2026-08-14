@@ -34,6 +34,8 @@ class FakeAssistant implements UnderstandingChecker, TurnScripter, DiaryWriter {
     boolean understandingVague;
     /** null 이면 기본 문구("[AI] <stepId> 질문")를 쓴다. */
     String turnMessage;
+    /** true 로 켜면 쉬는 행동 스텝(restAction)의 첫 보기에 선호 표식을 단다 — AI 경로 태깅 검증용. */
+    boolean tagRestPreference;
 
     int understandingCalls;
     int diaryCalls;
@@ -61,8 +63,9 @@ class FakeAssistant implements UnderstandingChecker, TurnScripter, DiaryWriter {
         List<OptionItem> options = new ArrayList<>();
         if (step.isChoice()) {
             for (int i = 1; i <= step.optionCount(); i++) {
+                boolean pref = tagRestPreference && step.restAction() && i == 1;
                 options.add(new OptionItem("[" + step.id() + "] 보기" + i,
-                        step.describedOptions() ? "보기" + i + " 설명" : null));
+                        step.describedOptions() ? "보기" + i + " 설명" : null, null, false, pref));
             }
         }
         String message = turnMessage != null ? turnMessage : "[AI] " + step.id() + " 질문";

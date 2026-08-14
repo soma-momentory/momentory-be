@@ -2,6 +2,8 @@ package com.momentory.retrospect.application;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -25,6 +27,9 @@ import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
 import com.momentory.retrospect.infrastructure.persistence.VectorLiteral;
 import com.momentory.user.application.AuthenticatedUserNotFoundException;
+import com.momentory.user.domain.RestMethod;
+import com.momentory.user.domain.UserProfile;
+import com.momentory.user.infrastructure.UserProfileRepository;
 import com.momentory.user.infrastructure.UserRepository;
 
 /**
@@ -52,11 +57,12 @@ public class RetrospectService {
     private final ActionCardEmbedder actionCardEmbedder;
     private final RetrospectStateCodec codec;
     private final UserRepository userRepository;
+    private final UserProfileRepository userProfileRepository;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             ActionCardRepository actionCardRepository, SituationEmbedder situationEmbedder,
             ActionCardEmbedder actionCardEmbedder, RetrospectStateCodec codec,
-            UserRepository userRepository) {
+            UserRepository userRepository, UserProfileRepository userProfileRepository) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.actionCardRepository = actionCardRepository;
@@ -64,6 +70,7 @@ public class RetrospectService {
         this.actionCardEmbedder = actionCardEmbedder;
         this.codec = codec;
         this.userRepository = userRepository;
+        this.userProfileRepository = userProfileRepository;
     }
 
     /** 회고 시작 — 세션을 만들고 첫 메시지(공감 + 1턴 질문)를 낸다. */
@@ -72,7 +79,7 @@ public class RetrospectService {
         requireUser(userId);
 
         RetrospectState state = new RetrospectState(UUID.randomUUID().toString());
-        ReplyDto reply = engine.start(state, command);
+        ReplyDto reply = engine.start(state, command, preferredRestMethods(userId));
 
         Retrospect entity = Retrospect.start(userId, RetrospectStatus.from(state.phase()),
                 state.mode(), state.schedule(), state.scheduleEmotion(), state.currentEmotion(),
@@ -101,7 +108,7 @@ public class RetrospectService {
         return situationEmbedder.embed(situation)
                 .flatMap(vec -> actionCardRepository.findMostSimilar(userId, VectorLiteral.of(vec),
                         SIMILAR_MAX_DISTANCE))
-                .map(c -> new PriorActionCard(c.getTargetAction(), c.getDetail(), c.getSituation(),
+                .map(c -> new PriorActionCard(c.getTargetAction(), c.getSituation(),
                         c.getCreatedDate()));
     }
 
@@ -124,7 +131,7 @@ public class RetrospectService {
         Instant completedAt = phase.isTerminal() ? Instant.now() : null;
         entity.sync(RetrospectStatus.from(phase), state.mode(), codec.serialize(state),
                 diary, reframedDiary, completedAt);
-        persistActionCard(entity, reply);
+        persistActionCard(entity, state, reply);
     }
 
     /**
@@ -134,13 +141,17 @@ public class RetrospectService {
      * <p>상황 임베딩은 <b>카드가 커밋된 뒤</b> 별도로 채운다({@link #scheduleEmbedding}). 임베딩은
      * 부가물이라, 예전처럼 같은 트랜잭션에서 채우면 임베딩 저장이 터질 때 카드까지 롤백돼 사라진다.
      */
-    private void persistActionCard(Retrospect entity, ReplyDto reply) {
+    private void persistActionCard(Retrospect entity, RetrospectState state, ReplyDto reply) {
         ReplyDto.ActionCardDto card = reply.actionCard();
         if (card == null || actionCardRepository.existsByRetrospectId(entity.getId())) {
             return;
         }
+        // 사용자가 최종 선택한 행동이 '쉬는 방법 선호'로 만든 카드였는지 — 분석용 내부 표식(비노출).
+        boolean fromRestPreference = state.chosenAction() != null
+                && state.chosenAction().restPreference();
         ActionCard saved = actionCardRepository.save(ActionCard.create(entity.getUserId(),
-                entity.getId(), card.situation(), card.action(), card.detail(), LocalDate.now()));
+                entity.getId(), card.situation(), card.action(), LocalDate.now(),
+                fromRestPreference));
         scheduleEmbedding(saved.getId(), card.situation());
     }
 
@@ -178,5 +189,31 @@ public class RetrospectService {
     private void requireUser(Long userId) {
         userRepository.findById(userId)
                 .orElseThrow(AuthenticatedUserNotFoundException::new);
+    }
+
+    /**
+     * 온보딩에서 고른 '평소 선호하는 쉬는 방법'을 프롬프트에 실을 한글 라벨 목록으로 뽑는다.
+     * 프로필·선호가 없으면 빈 목록(→ 프롬프트에 선호 블록이 안 붙어 기존 동작 그대로).
+     *
+     * <p>"기타"는 사용자가 적은 상세 문구로 바꾸고(비었으면 버림), "그때마다 달라요"는 특정 행동을
+     * 가리키지 않아 제외한다. 열거형 정의 순서로 정렬해 매 요청 같은 순서로 실린다(집합은 순서 불정).
+     */
+    private List<String> preferredRestMethods(Long userId) {
+        return userProfileRepository.findById(userId)
+                .map(RetrospectService::resolveRestMethods)
+                .orElseGet(List::of);
+    }
+
+    private static List<String> resolveRestMethods(UserProfile profile) {
+        return profile.getRestMethods().stream()
+                .filter(m -> m != RestMethod.VARIES_BY_DAY)
+                .sorted(Comparator.comparingInt(Enum::ordinal))
+                .map(m -> restMethodLabel(m, profile.getOtherRestMethodDetail()))
+                .filter(label -> label != null && !label.isBlank())
+                .toList();
+    }
+
+    private static String restMethodLabel(RestMethod method, String otherDetail) {
+        return method == RestMethod.OTHER ? otherDetail : method.getLabel();
     }
 }

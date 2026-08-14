@@ -28,8 +28,7 @@ public record RetrospectDiaryResponse(
     public record ActionCard(
             @Schema(example = "1") Long id,
             @Schema(example = "발표를 앞두고 긴장했던 상황") String situation,
-            @Schema(example = "심호흡을 세 번 하고 시작하기") String targetAction,
-            @Schema(example = "떨리는 건 준비를 잘했다는 신호라고 생각하기") String detail,
+            @Schema(example = "떨리는 건 준비를 잘했다는 신호라고 생각하며 심호흡을 세 번 하고 시작하기") String targetAction,
             @Schema(example = "2026-08-10") LocalDate createdDate,
             @Schema(example = "false") boolean done,
             @Schema(description = "느낀 점 — 해본 뒤에만 채워짐") String reflection) {
@@ -38,7 +37,7 @@ public record RetrospectDiaryResponse(
             if (card == null) {
                 return null;
             }
-            return new ActionCard(card.id(), card.situation(), card.targetAction(), card.detail(),
+            return new ActionCard(card.id(), card.situation(), card.targetAction(),
                     card.createdDate(), card.done(), card.reflection());
         }
     }

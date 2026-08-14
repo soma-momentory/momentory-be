@@ -41,14 +41,16 @@ public class ActionCard extends BaseTimeEntity {
     @Column(nullable = false, length = 500)
     private String situation;
 
-    @Column(name = "target_action", nullable = false, length = 255)
+    // 상세 내용까지 담으므로 TEXT — 예전 target_action(255)/detail(TEXT) 이원화를 합쳤다.
+    @Column(name = "target_action", nullable = false, columnDefinition = "TEXT")
     private String targetAction;
-
-    @Column(columnDefinition = "TEXT")
-    private String detail;
 
     @Column(name = "created_date", nullable = false)
     private LocalDate createdDate;
+
+    /** 분석용 내부 표식 — 온보딩 쉬는 방법 선호를 반영해 만든 카드인가(사용자 비노출). */
+    @Column(name = "from_rest_preference", nullable = false)
+    private boolean fromRestPreference;
 
     @Column(nullable = false)
     private boolean done;
@@ -63,20 +65,21 @@ public class ActionCard extends BaseTimeEntity {
     }
 
     private ActionCard(Long userId, Long retrospectId, String situation, String targetAction,
-            String detail, LocalDate createdDate) {
+            LocalDate createdDate, boolean fromRestPreference) {
         this.userId = Objects.requireNonNull(userId, "userId must not be null");
         this.retrospectId = Objects.requireNonNull(retrospectId, "retrospectId must not be null");
         this.situation = Objects.requireNonNull(situation, "situation must not be null");
         this.targetAction = Objects.requireNonNull(targetAction, "targetAction must not be null");
         this.createdDate = Objects.requireNonNull(createdDate, "createdDate must not be null");
-        this.detail = detail;
+        this.fromRestPreference = fromRestPreference;
         this.done = false;
     }
 
     /** 회고 완료 시 생성 — 아직 해보지 않은(미완료) 상태로 남는다. */
     public static ActionCard create(Long userId, Long retrospectId, String situation,
-            String targetAction, String detail, LocalDate createdDate) {
-        return new ActionCard(userId, retrospectId, situation, targetAction, detail, createdDate);
+            String targetAction, LocalDate createdDate, boolean fromRestPreference) {
+        return new ActionCard(userId, retrospectId, situation, targetAction, createdDate,
+                fromRestPreference);
     }
 
     public Long getId() {
@@ -99,12 +102,13 @@ public class ActionCard extends BaseTimeEntity {
         return targetAction;
     }
 
-    public String getDetail() {
-        return detail;
-    }
-
     public LocalDate getCreatedDate() {
         return createdDate;
+    }
+
+    /** 분석용 — 이 카드가 온보딩 쉬는 방법 선호를 반영해 만들어졌는가. */
+    public boolean isFromRestPreference() {
+        return fromRestPreference;
     }
 
     public boolean isDone() {

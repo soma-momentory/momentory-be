@@ -28,8 +28,9 @@ public interface ActionCardRepository extends JpaRepository<ActionCard, Long> {
      * 거리가 {@code maxDistance} 미만일 때만. 임베딩이 없는 카드는 제외한다.
      */
     @Query(value = """
-            SELECT id, user_id, retrospect_id, situation, target_action, detail,
-                   created_date, done, done_at, reflection, created_at, updated_at
+            SELECT id, user_id, retrospect_id, situation, target_action,
+                   created_date, from_rest_preference, done, done_at, reflection,
+                   created_at, updated_at
             FROM action_cards
             WHERE user_id = :userId
               AND situation_embedding IS NOT NULL
