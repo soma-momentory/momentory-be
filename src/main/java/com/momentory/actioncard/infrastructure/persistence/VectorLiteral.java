@@ -1,4 +1,4 @@
-package com.momentory.retrospect.infrastructure.persistence;
+package com.momentory.actioncard.infrastructure.persistence;
 
 /**
  * pgvector 리터럴 포맷팅 — {@code float[]} → {@code "[0.1,0.2,...]"}.

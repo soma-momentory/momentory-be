@@ -1,4 +1,4 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.actioncard.presentation;
 
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.momentory.auth.security.Login;
 import com.momentory.auth.security.LoginPrincipal;
 import com.momentory.common.presentation.ApiErrorResponse;
-import com.momentory.retrospect.application.ActionCardQueryService;
+import com.momentory.actioncard.application.ActionCardQueryService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;

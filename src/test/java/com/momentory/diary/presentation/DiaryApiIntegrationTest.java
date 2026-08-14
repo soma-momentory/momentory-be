@@ -31,7 +31,7 @@ import com.momentory.auth.token.application.AccessTokenIssuer;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.script.RetroMode;
-import com.momentory.diary.infrastructure.persistence.DiaryRepository;
+import com.momentory.diary.infrastructure.DiaryRepository;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;

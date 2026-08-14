@@ -12,7 +12,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -51,10 +50,9 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.script.OptionItem;
 import com.momentory.retrospect.domain.script.RetroMode;
-import com.momentory.retrospect.infrastructure.persistence.ActionCard;
-import com.momentory.retrospect.infrastructure.persistence.ActionCardRepository;
-import com.momentory.diary.infrastructure.persistence.Diary;
-import com.momentory.diary.infrastructure.persistence.DiaryRepository;
+import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
+import com.momentory.diary.domain.Diary;
+import com.momentory.diary.infrastructure.DiaryRepository;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;
@@ -307,68 +305,6 @@ class RetrospectApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     }
 
-    @Test
-    @DisplayName("일기 조회 — 완주한 회고의 일기 본문을 돌려준다(카드 없는 짧은 기록형)")
-    void getDiaryReturnsBodyWithoutCard() throws Exception {
-        User user = userRepository.saveAndFlush(User.create());
-        long sessionId = startSession(user);
-
-        mockMvc.perform(message(user, sessionId, "{\"content\":\"답변을 제대로 못 했어요.\"}"));
-        mockMvc.perform(message(user, sessionId, "{\"optionId\":\"4\"}"));
-        mockMvc.perform(message(user, sessionId, """
-                {"measures":{"schedule_emotion":8,"current_emotion":6}}"""));
-        mockMvc.perform(message(user, sessionId, "{\"content\":\"불안했고 우울해졌다.\"}"))
-                .andExpect(status().isOk());
-
-        mockMvc.perform(get("/api/v1/retrospect/{id}/diary", sessionId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.diary").value("그냥 일기."))
-                // 짧은 기록형은 리프레임 일기도, 행동 카드도 없다
-                .andExpect(jsonPath("$.reframedDiary").doesNotExist())
-                .andExpect(jsonPath("$.actionCard").doesNotExist());
-    }
-
-    @Test
-    @DisplayName("일기 조회 — 저장된 행동 카드가 상황/목표 행동/느낀 점 계약대로 함께 온다")
-    void getDiaryReturnsPersistedActionCard() throws Exception {
-        User user = userRepository.saveAndFlush(User.create());
-
-        Retrospect entity = Retrospect.start(user.getId(), RetrospectStatus.IN_PROGRESS,
-                RetroMode.REFRAME, null, Emotion.DEPRESSED, "{}");
-        entity.sync(RetrospectStatus.COMPLETED, RetroMode.REFRAME, "{}", Instant.now());
-        retrospectRepository.saveAndFlush(entity);
-        diaryRepository.saveAndFlush(Diary.create(user.getId(), entity.getId(), "리프레임한 일기 본문",
-                "다시 본 오늘", Emotion.DEPRESSED, Emotion.ANXIOUS));
-        actionCardRepository.saveAndFlush(ActionCard.create(user.getId(), entity.getId(),
-                "발표를 앞두고 긴장했던 상황", "떨리는 건 준비를 잘했다는 신호라고 생각하며 심호흡을 세 번 하고 시작하기",
-                LocalDate.of(2026, 8, 10), false));
-
-        mockMvc.perform(get("/api/v1/retrospect/{id}/diary", entity.getId())
-                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.diary").value("리프레임한 일기 본문"))
-                .andExpect(jsonPath("$.reframedDiary").value("다시 본 오늘"))
-                .andExpect(jsonPath("$.actionCard.situation").value("발표를 앞두고 긴장했던 상황"))
-                .andExpect(jsonPath("$.actionCard.targetAction")
-                        .value("떨리는 건 준비를 잘했다는 신호라고 생각하며 심호흡을 세 번 하고 시작하기"))
-                .andExpect(jsonPath("$.actionCard.detail").doesNotExist())
-                .andExpect(jsonPath("$.actionCard.createdDate").value("2026-08-10"))
-                .andExpect(jsonPath("$.actionCard.done").value(false));
-    }
-
-    @Test
-    @DisplayName("일기 조회 — 남의 세션은 404")
-    void getDiaryOfAnotherUserIs404() throws Exception {
-        User owner = userRepository.saveAndFlush(User.create());
-        User other = userRepository.saveAndFlush(User.create());
-        long sessionId = startSession(owner);
-
-        mockMvc.perform(get("/api/v1/retrospect/{id}/diary", sessionId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(other)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RETROSPECT_SESSION_NOT_FOUND"));
-    }
 
     // ── 도우미 ───────────────────────────────────────────────────────────
 

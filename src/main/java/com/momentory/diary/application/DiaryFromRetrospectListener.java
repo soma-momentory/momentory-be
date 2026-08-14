@@ -3,8 +3,8 @@ package com.momentory.diary.application;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
-import com.momentory.diary.infrastructure.persistence.Diary;
-import com.momentory.diary.infrastructure.persistence.DiaryRepository;
+import com.momentory.diary.domain.Diary;
+import com.momentory.diary.infrastructure.DiaryRepository;
 import com.momentory.retrospect.application.RetrospectCompleted;
 
 /**
@@ -29,10 +29,12 @@ public class DiaryFromRetrospectListener {
 
     @EventListener
     public void on(RetrospectCompleted event) {
-        if (diaryRepository.existsByRetrospectId(event.retrospectId())) {
+        RetrospectCompleted.DiaryData diary = event.diary();
+        if (diary == null || diaryRepository.existsByRetrospectId(event.retrospectId())) {
             return;
         }
         diaryRepository.save(Diary.create(event.userId(), event.retrospectId(),
-                event.diary(), event.reframed(), event.currentEmotion(), event.scheduleEmotion()));
+                diary.original(), diary.reframed(), diary.currentEmotion(),
+                diary.scheduleEmotion()));
     }
 }

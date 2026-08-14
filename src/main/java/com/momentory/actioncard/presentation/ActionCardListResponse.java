@@ -1,8 +1,8 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.actioncard.presentation;
 
 import java.util.List;
 
-import com.momentory.retrospect.application.ActionCardView;
+import com.momentory.actioncard.application.ActionCardView;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 

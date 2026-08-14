@@ -1,4 +1,4 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.actioncard.presentation;
 
 import java.time.DateTimeException;
 
@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.momentory.common.presentation.ApiErrorResponse;
-import com.momentory.retrospect.application.ActionCardNotFoundException;
+import com.momentory.actioncard.application.ActionCardNotFoundException;
 
 @RestControllerAdvice(assignableTypes = ActionCardController.class)
 public class ActionCardExceptionHandler {

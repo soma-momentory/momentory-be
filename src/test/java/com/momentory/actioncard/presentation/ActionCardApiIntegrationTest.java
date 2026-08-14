@@ -1,4 +1,4 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.actioncard.presentation;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -32,7 +32,7 @@ import com.momentory.auth.token.application.AccessTokenIssuer;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.script.RetroMode;
-import com.momentory.retrospect.infrastructure.persistence.ActionCardRepository;
+import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;

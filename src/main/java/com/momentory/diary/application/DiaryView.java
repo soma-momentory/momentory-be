@@ -3,7 +3,7 @@ package com.momentory.diary.application;
 import java.time.Instant;
 
 import com.momentory.retrospect.domain.Emotion;
-import com.momentory.diary.infrastructure.persistence.Diary;
+import com.momentory.diary.domain.Diary;
 
 /**
  * 일기 조회 결과 한 벌 — 목록·단건 응답의 재료다. 행동 카드는 그날의 회고

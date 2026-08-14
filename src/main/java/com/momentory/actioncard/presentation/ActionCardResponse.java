@@ -1,10 +1,10 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.actioncard.presentation;
 
 import java.time.Instant;
 import java.time.LocalDate;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.momentory.retrospect.application.ActionCardView;
+import com.momentory.actioncard.application.ActionCardView;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 

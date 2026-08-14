@@ -1,10 +1,12 @@
-package com.momentory.diary.infrastructure.persistence;
+package com.momentory.diary.infrastructure;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+
+import com.momentory.diary.domain.Diary;
 
 public interface DiaryRepository extends JpaRepository<Diary, Long> {
 

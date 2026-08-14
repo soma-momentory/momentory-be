@@ -11,6 +11,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
 
+
 /**
  * 실제 Gemini {@code embedContent} 를 1번 때려 <b>임베딩 차원</b>만 확인하는 opt-in 진단.
  * {@code GEMINI_API_KEY} 가 있을 때만 돈다(CI 기본 비활성).

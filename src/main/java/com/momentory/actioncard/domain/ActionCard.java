@@ -1,4 +1,4 @@
-package com.momentory.retrospect.infrastructure.persistence;
+package com.momentory.actioncard.domain;
 
 import java.time.Instant;
 import java.time.LocalDate;

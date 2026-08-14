@@ -1,4 +1,4 @@
-package com.momentory.retrospect.application;
+package com.momentory.actioncard.application;
 
 import java.time.Instant;
 import java.time.YearMonth;
@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.momentory.common.time.TimeZonePolicy;
-import com.momentory.retrospect.infrastructure.persistence.ActionCardRepository;
+import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 
 /**
  * 행동 카드 조회 유스케이스 — 보관함의 월별 목록과 단건 조회. 카드 생성은 회고 완료 흐름
@@ -53,4 +53,5 @@ public class ActionCardQueryService {
                 .map(ActionCardView::from)
                 .orElseThrow(ActionCardNotFoundException::new);
     }
+
 }

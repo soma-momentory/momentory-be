@@ -1,4 +1,4 @@
-package com.momentory.diary.infrastructure.persistence;
+package com.momentory.diary.domain;
 
 import java.util.Objects;
 

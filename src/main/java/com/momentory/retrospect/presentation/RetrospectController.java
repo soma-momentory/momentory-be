@@ -2,7 +2,6 @@ package com.momentory.retrospect.presentation;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -120,31 +119,4 @@ public class RetrospectController {
         return retrospectService.handle(principal.userId(), id, request.toDomain());
     }
 
-    @Operation(summary = "회고 일기 조회", description = "완료된 회고의 일기 본문과 (있으면) 행동 카드를 돌려준다.")
-    @SecurityRequirement(name = "bearerAuth")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = RetrospectDiaryResponse.class))),
-            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
-                    name = "AUTHENTICATION_REQUIRED",
-                    value = """
-                            {
-                              "code": "AUTHENTICATION_REQUIRED",
-                              "message": "인증이 필요합니다."
-                            }
-                            """))),
-            @ApiResponse(responseCode = "404", description = "세션을 찾을 수 없음", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
-                    name = "RETROSPECT_SESSION_NOT_FOUND",
-                    value = """
-                            {
-                              "code": "RETROSPECT_SESSION_NOT_FOUND",
-                              "message": "회고 세션을 찾을 수 없습니다."
-                            }
-                            """)))
-    })
-    @GetMapping(value = "/{id}/diary", produces = MediaType.APPLICATION_JSON_VALUE)
-    public RetrospectDiaryResponse getDiary(
-            @Login LoginPrincipal principal,
-            @Parameter(example = "1") @PathVariable Long id) {
-        return RetrospectDiaryResponse.from(retrospectService.getDiary(principal.userId(), id));
-    }
 }

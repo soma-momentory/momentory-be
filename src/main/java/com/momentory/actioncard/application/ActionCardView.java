@@ -1,9 +1,9 @@
-package com.momentory.retrospect.application;
+package com.momentory.actioncard.application;
 
 import java.time.Instant;
 import java.time.LocalDate;
 
-import com.momentory.retrospect.infrastructure.persistence.ActionCard;
+import com.momentory.actioncard.domain.ActionCard;
 
 /**
  * 행동 카드 조회 결과 한 벌 — 보관함 목록·단건 응답의 재료다. {@code retrospectId} 로 그날의

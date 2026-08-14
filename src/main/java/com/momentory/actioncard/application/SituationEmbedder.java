@@ -1,4 +1,4 @@
-package com.momentory.retrospect.domain.assistant;
+package com.momentory.actioncard.application;
 
 import java.util.Optional;
 

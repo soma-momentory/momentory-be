@@ -1,4 +1,4 @@
-package com.momentory.retrospect.infrastructure.ai;
+package com.momentory.actioncard.infrastructure.ai;
 
 import java.util.List;
 import java.util.Map;
@@ -11,7 +11,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-import com.momentory.retrospect.domain.assistant.SituationEmbedder;
+import com.momentory.actioncard.application.SituationEmbedder;
+import com.momentory.retrospect.infrastructure.ai.GeminiApiProperties;
 
 /**
  * 상황 임베딩 어댑터 — Gemini Developer API {@code embedContent} 직접 호출.

@@ -197,10 +197,12 @@ class OpenApiContractIntegrationTest {
         for (ApiOperation operation : ApiOperation.values()) {
             JsonNode responses = operationResponses(apiDocs, operation.path(), operation.method());
             assertThat(responses.has("403")).isFalse();
-            assertThat(responses.has("409")).isFalse();
             assertThat(responses.has("500")).isFalse();
             if (!operation.allowsNotFound()) {
                 assertThat(responses.has("404")).isFalse();
+            }
+            if (!operation.allowsConflict()) {
+                assertThat(responses.has("409")).isFalse();
             }
         }
 
@@ -356,6 +358,11 @@ class OpenApiContractIntegrationTest {
                     || this == SCHEDULES_ORDER
                     || this == DAILY_MEMO_GET
                     || this == RETROSPECT_MESSAGE;
+        }
+
+        /** 회고 시작은 "하루 한 번" 가드로 409(오늘 이미 완료)를 낸다. */
+        boolean allowsConflict() {
+            return this == RETROSPECT_START;
         }
     }
 }

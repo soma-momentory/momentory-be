@@ -5,13 +5,12 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.momentory.common.time.TimeZonePolicy;
-import com.momentory.diary.infrastructure.persistence.DiaryRepository;
+import com.momentory.diary.infrastructure.DiaryRepository;
 
 /**
  * 일기 조회 유스케이스 — 보관함의 월별 목록·단건, 그리고 회고 화면이 쓰는 회고별 단건. 쓰기(생성)는
@@ -54,15 +53,6 @@ public class DiaryQueryService {
         return diaryRepository.findByIdAndUserId(id, userId)
                 .map(DiaryView::from)
                 .orElseThrow(DiaryNotFoundException::new);
-    }
-
-    /**
-     * 회고에 딸린 일기(있으면). 회고 화면(그날의 일기)이 행동 카드와 합쳐 보여줄 때 쓴다 —
-     * 소유권은 호출부(회고 소유권 검증)가 이미 보장하므로 여기선 회고 id 로만 찾는다.
-     */
-    @Transactional(readOnly = true)
-    public Optional<DiaryView> findByRetrospect(Long retrospectId) {
-        return diaryRepository.findByRetrospectId(retrospectId).map(DiaryView::from);
     }
 
     /**
