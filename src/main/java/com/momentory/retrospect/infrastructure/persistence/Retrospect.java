@@ -28,8 +28,6 @@ import jakarta.persistence.Table;
 @Table(name = "retrospects")
 public class Retrospect extends BaseTimeEntity {
 
-    private static final int SCHEDULE_MAX_LENGTH = 255;
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -45,12 +43,12 @@ public class Retrospect extends BaseTimeEntity {
     @Column(length = 30)
     private RetroMode mode;
 
-    @Column(length = SCHEDULE_MAX_LENGTH)
-    private String schedule;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "schedule_emotion", length = 30)
-    private Emotion scheduleEmotion;
+    /**
+     * 회고 대상 일정 — schedules 테이블 id 참조(스칼라, be 관례). 특정 일정 없는 '오늘 하루' 회고나
+     * 목록 밖 자유 입력 일정이면 null. 일정 이름·감정은 세션 진행용으로 {@code state_json} 안에 있다.
+     */
+    @Column(name = "schedule_id")
+    private Long scheduleId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "current_emotion", nullable = false, length = 30)
@@ -71,21 +69,19 @@ public class Retrospect extends BaseTimeEntity {
     protected Retrospect() {
     }
 
-    private Retrospect(Long userId, RetrospectStatus status, RetroMode mode, String schedule,
-            Emotion scheduleEmotion, Emotion currentEmotion, String stateJson) {
+    private Retrospect(Long userId, RetrospectStatus status, RetroMode mode, Long scheduleId,
+            Emotion currentEmotion, String stateJson) {
         this.userId = Objects.requireNonNull(userId, "userId must not be null");
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.currentEmotion = Objects.requireNonNull(currentEmotion, "currentEmotion must not be null");
         this.stateJson = Objects.requireNonNull(stateJson, "stateJson must not be null");
         this.mode = mode;
-        this.schedule = schedule;
-        this.scheduleEmotion = scheduleEmotion;
+        this.scheduleId = scheduleId;
     }
 
     public static Retrospect start(Long userId, RetrospectStatus status, RetroMode mode,
-            String schedule, Emotion scheduleEmotion, Emotion currentEmotion, String stateJson) {
-        return new Retrospect(userId, status, mode, schedule, scheduleEmotion, currentEmotion,
-                stateJson);
+            Long scheduleId, Emotion currentEmotion, String stateJson) {
+        return new Retrospect(userId, status, mode, scheduleId, currentEmotion, stateJson);
     }
 
     /**
@@ -127,12 +123,8 @@ public class Retrospect extends BaseTimeEntity {
         return mode;
     }
 
-    public String getSchedule() {
-        return schedule;
-    }
-
-    public Emotion getScheduleEmotion() {
-        return scheduleEmotion;
+    public Long getScheduleId() {
+        return scheduleId;
     }
 
     public Emotion getCurrentEmotion() {

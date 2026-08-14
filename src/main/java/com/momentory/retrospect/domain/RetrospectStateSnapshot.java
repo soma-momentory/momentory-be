@@ -17,6 +17,7 @@ import com.momentory.retrospect.domain.script.RetroMode;
 public record RetrospectStateSnapshot(
         String id,
         String nickname,
+        Long scheduleId,
         String schedule,
         Emotion scheduleEmotion,
         Emotion currentEmotion,

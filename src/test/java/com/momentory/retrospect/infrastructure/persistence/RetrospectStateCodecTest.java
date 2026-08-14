@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
+import com.momentory.retrospect.domain.ScheduleItem;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
 import com.momentory.retrospect.domain.script.OptionItem;
 import com.momentory.retrospect.domain.script.RetroMode;
@@ -27,6 +28,7 @@ class RetrospectStateCodecTest {
     void roundTripsProgressState() {
         RetrospectState state = new RetrospectState("sess-1");
         state.begin("면접 스터디", Emotion.ANXIOUS, Emotion.DEPRESSED, "정민");
+        state.assignSchedule(new ScheduleItem(77L, "면접 스터디", Emotion.ANXIOUS));
         state.applyMode(RetroMode.REFRAME);
         state.advanceStep();
         state.recordAnswer("first_moment", "답변을 제대로 못 했어요");
@@ -41,6 +43,7 @@ class RetrospectStateCodecTest {
 
         assertThat(restored.id()).isEqualTo("sess-1");
         assertThat(restored.nickname()).isEqualTo("정민");
+        assertThat(restored.scheduleId()).isEqualTo(77L);
         assertThat(restored.schedule()).isEqualTo("면접 스터디");
         assertThat(restored.scheduleEmotion()).isEqualTo(Emotion.ANXIOUS);
         assertThat(restored.currentEmotion()).isEqualTo(Emotion.DEPRESSED);

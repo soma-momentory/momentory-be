@@ -104,7 +104,7 @@ class ActionCardRepositoryIntegrationTest {
 
     private Long newRetrospect(Long userId) {
         return retrospectRepository.saveAndFlush(Retrospect.start(userId,
-                RetrospectStatus.IN_PROGRESS, RetroMode.REFRAME, "면접 스터디", Emotion.ANXIOUS,
+                RetrospectStatus.IN_PROGRESS, RetroMode.REFRAME, null,
                 Emotion.DEPRESSED, "{}")).getId();
     }
 

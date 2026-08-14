@@ -26,6 +26,7 @@ import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
 import com.momentory.retrospect.infrastructure.persistence.VectorLiteral;
+import com.momentory.schedule.infrastructure.ScheduleRepository;
 import com.momentory.user.application.AuthenticatedUserNotFoundException;
 import com.momentory.user.domain.RestMethod;
 import com.momentory.user.domain.UserProfile;
@@ -58,11 +59,13 @@ public class RetrospectService {
     private final RetrospectStateCodec codec;
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
+    private final ScheduleRepository scheduleRepository;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             ActionCardRepository actionCardRepository, SituationEmbedder situationEmbedder,
             ActionCardEmbedder actionCardEmbedder, RetrospectStateCodec codec,
-            UserRepository userRepository, UserProfileRepository userProfileRepository) {
+            UserRepository userRepository, UserProfileRepository userProfileRepository,
+            ScheduleRepository scheduleRepository) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.actionCardRepository = actionCardRepository;
@@ -71,6 +74,7 @@ public class RetrospectService {
         this.codec = codec;
         this.userRepository = userRepository;
         this.userProfileRepository = userProfileRepository;
+        this.scheduleRepository = scheduleRepository;
     }
 
     /** 회고 시작 — 세션을 만들고 첫 메시지(공감 + 1턴 질문)를 낸다. */
@@ -82,11 +86,25 @@ public class RetrospectService {
         ReplyDto reply = engine.start(state, command, preferredRestMethods(userId));
 
         Retrospect entity = Retrospect.start(userId, RetrospectStatus.from(state.phase()),
-                state.mode(), state.schedule(), state.scheduleEmotion(), state.currentEmotion(),
-                codec.serialize(state));
+                state.mode(), resolveScheduleId(userId, state.scheduleId()),
+                state.currentEmotion(), codec.serialize(state));
         retrospectRepository.save(entity);
 
         return new RetrospectResult(entity.getId(), reply);
+    }
+
+    /**
+     * 회고 대상 일정 id 를 <b>이 사용자의 것인지</b> 확인해 그대로 쓰거나 버린다. FE 가 목록 밖
+     * 자유 입력(id 없음)이나 오래된·남의 id 를 실어 보내도 FK 위반으로 저장이 터지지 않도록, 검증에
+     * 실패하면 null 로 둔다(일정 이름·감정은 이미 state_json 에 남아 회고 진행에는 영향이 없다).
+     */
+    private Long resolveScheduleId(Long userId, Long scheduleId) {
+        if (scheduleId == null) {
+            return null;
+        }
+        return scheduleRepository.findByIdAndUserId(scheduleId, userId)
+                .map(s -> scheduleId)
+                .orElse(null);
     }
 
     /** 한 턴 진행 — 세션을 불러 엔진을 돌리고 갱신된 상태를 저장한다. */
