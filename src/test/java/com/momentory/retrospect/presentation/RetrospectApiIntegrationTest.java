@@ -274,7 +274,7 @@ class RetrospectApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
 
         Retrospect entity = Retrospect.start(user.getId(), RetrospectStatus.IN_PROGRESS,
-                RetroMode.REFRAME, "면접 스터디", Emotion.ANXIOUS, Emotion.DEPRESSED, "{}");
+                RetroMode.REFRAME, null, Emotion.DEPRESSED, "{}");
         entity.sync(RetrospectStatus.COMPLETED, RetroMode.REFRAME, "{}", "리프레임한 일기 본문",
                 "다시 본 오늘", Instant.now());
         retrospectRepository.saveAndFlush(entity);

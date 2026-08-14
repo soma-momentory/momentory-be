@@ -26,6 +26,8 @@ public class RetrospectState {
 
     // 진입 선택 (시작 후 불변)
     private String nickname;
+    /** 대상 일정의 schedules 테이블 id — 영속 시 retrospects.schedule_id 로 저장된다. 없으면 null. */
+    private Long scheduleId;
     private String schedule;
     private Emotion scheduleEmotion;
     private Emotion currentEmotion;
@@ -83,6 +85,11 @@ public class RetrospectState {
 
     public String nickname() {
         return nickname;
+    }
+
+    /** 대상 일정의 schedules 테이블 id — 없으면(오늘 하루·자유 입력) null. */
+    public Long scheduleId() {
+        return scheduleId;
     }
 
     public String schedule() {
@@ -182,6 +189,7 @@ public class RetrospectState {
         this.currentEmotion = currentEmotion;
         this.nickname = nickname;
         this.interest = interest;
+        this.scheduleId = null;
         this.schedule = null;
         this.scheduleEmotion = null;
         this.phase = Phase.INTRO;
@@ -203,6 +211,7 @@ public class RetrospectState {
 
     /** 대상 일정 확정 — 1턴 질문을 낼 준비가 됐다. */
     public void assignSchedule(ScheduleItem item) {
+        this.scheduleId = item.id();
         this.schedule = item.name();
         this.scheduleEmotion = item.emotion();
         this.pendingSchedules = List.of();
@@ -339,7 +348,7 @@ public class RetrospectState {
         Map<String, Map<String, Integer>> measuresCopy = new LinkedHashMap<>();
         measures.forEach((k, v) -> measuresCopy.put(k, new LinkedHashMap<>(v)));
         return new RetrospectStateSnapshot(
-                id, nickname, schedule, scheduleEmotion, currentEmotion, interest,
+                id, nickname, scheduleId, schedule, scheduleEmotion, currentEmotion, interest,
                 List.copyOf(restMethods),
                 List.copyOf(pendingSchedules), phase, mode, stepIndex, turn, reasks,
                 new LinkedHashMap<>(answers), measuresCopy, new ArrayList<>(messages),
@@ -351,6 +360,7 @@ public class RetrospectState {
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
         RetrospectState state = new RetrospectState(s.id());
         state.nickname = s.nickname();
+        state.scheduleId = s.scheduleId();
         state.schedule = s.schedule();
         state.scheduleEmotion = s.scheduleEmotion();
         state.currentEmotion = s.currentEmotion();
