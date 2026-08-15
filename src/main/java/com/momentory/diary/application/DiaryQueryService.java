@@ -1,6 +1,7 @@
-package com.momentory.retrospect.application;
+package com.momentory.diary.application;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.List;
@@ -9,11 +10,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.momentory.common.time.TimeZonePolicy;
-import com.momentory.retrospect.infrastructure.persistence.DiaryRepository;
+import com.momentory.diary.infrastructure.DiaryRepository;
 
 /**
- * 일기 조회 유스케이스 — 보관함의 월별 목록과 단건 조회. 쓰기(생성)는 회고 완료 흐름
- * ({@link RetrospectService}) 이 맡고, 여기선 읽기만 한다.
+ * 일기 조회 유스케이스 — 보관함의 월별 목록·단건, 그리고 회고 화면이 쓰는 회고별 단건. 쓰기(생성)는
+ * {@code RetrospectCompleted} 이벤트를 받는 {@link DiaryFromRetrospectListener} 가 맡고,
+ * 여기선 읽기만 한다.
  */
 @Service
 public class DiaryQueryService {
@@ -51,5 +53,17 @@ public class DiaryQueryService {
         return diaryRepository.findByIdAndUserId(id, userId)
                 .map(DiaryView::from)
                 .orElseThrow(DiaryNotFoundException::new);
+    }
+
+    /**
+     * 그 날(KST)에 이 사용자의 일기가 있는가 — "회고 하루 한 번" 가드가 쓴다. 일기의 날짜 경계
+     * 계산(KST 반열림 구간)은 diary 의 몫이라 여기에 둔다.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasDiaryOn(Long userId, LocalDate date) {
+        Instant start = date.atStartOfDay(ZONE).toInstant();
+        Instant end = date.plusDays(1).atStartOfDay(ZONE).toInstant();
+        return diaryRepository.existsByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                userId, start, end);
     }
 }

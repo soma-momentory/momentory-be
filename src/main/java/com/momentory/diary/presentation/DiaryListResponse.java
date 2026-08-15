@@ -1,8 +1,8 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.diary.presentation;
 
 import java.util.List;
 
-import com.momentory.retrospect.application.DiaryView;
+import com.momentory.diary.application.DiaryView;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 

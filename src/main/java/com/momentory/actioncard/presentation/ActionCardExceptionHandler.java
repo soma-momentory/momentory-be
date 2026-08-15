@@ -1,4 +1,4 @@
-package com.momentory.retrospect.presentation;
+package com.momentory.actioncard.presentation;
 
 import java.time.DateTimeException;
 
@@ -8,15 +8,15 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.momentory.common.presentation.ApiErrorResponse;
-import com.momentory.retrospect.application.DiaryNotFoundException;
+import com.momentory.actioncard.application.ActionCardNotFoundException;
 
-@RestControllerAdvice(assignableTypes = DiaryController.class)
-public class DiaryExceptionHandler {
+@RestControllerAdvice(assignableTypes = ActionCardController.class)
+public class ActionCardExceptionHandler {
 
-    @ExceptionHandler(DiaryNotFoundException.class)
-    ResponseEntity<ApiErrorResponse> handleDiaryNotFound() {
+    @ExceptionHandler(ActionCardNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> handleActionCardNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ApiErrorResponse("DIARY_NOT_FOUND", "일기를 찾을 수 없습니다."));
+                .body(new ApiErrorResponse("ACTION_CARD_NOT_FOUND", "행동 카드를 찾을 수 없습니다."));
     }
 
     /** 월이 1~12 를 벗어나는 등 연·월 조합이 잘못됐을 때({@code YearMonth.of} 가 던진다). */

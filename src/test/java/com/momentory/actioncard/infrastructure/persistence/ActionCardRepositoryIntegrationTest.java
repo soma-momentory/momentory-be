@@ -1,4 +1,4 @@
-package com.momentory.retrospect.infrastructure.persistence;
+package com.momentory.actioncard.infrastructure.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,9 +16,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import com.momentory.actioncard.domain.ActionCard;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.script.RetroMode;
+import com.momentory.retrospect.infrastructure.persistence.Retrospect;
+import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;
 import com.momentory.user.infrastructure.UserRepository;
 
