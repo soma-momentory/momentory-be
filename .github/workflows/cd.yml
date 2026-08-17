@@ -4,44 +4,30 @@ on:
   push:
     branches: [main]
 
+  # Parameter Store 값만 바꾼 뒤
+  # 코드 변경 없이 수동 재배포할 때 사용
+  workflow_dispatch:
+
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  build-and-push:
-    name: Build, push and deploy
+  deploy:
+    name: Build and deploy to ECS
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+
+    env:
+      ECS_TASK_DEFINITION: ecs-task-definition.json
+      ECS_CONTAINER_NAME: Main
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Inspect GitHub OIDC claims
-        shell: bash
-        run: |
-          response=$(curl -sS \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
-
-          token=$(echo "$response" | jq -r '.value')
-
-          TOKEN="$token" python3 - <<'PY'
-          import os
-          import json
-          import base64
-
-          payload = os.environ["TOKEN"].split(".")[1]
-          payload += "=" * (-len(payload) % 4)
-          claims = json.loads(base64.urlsafe_b64decode(payload))
-
-          print("sub:", claims.get("sub"))
-          print("aud:", claims.get("aud"))
-          PY
-
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.0
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -51,128 +37,37 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push Docker image
+        id: build-image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          set -euo pipefail
+
+          IMAGE_URI="$REGISTRY/$REPOSITORY:$IMAGE_TAG"
+
           docker build \
-            --tag "$REGISTRY/$REPOSITORY:latest" \
-            --tag "$REGISTRY/$REPOSITORY:$IMAGE_TAG" \
+            --tag "$IMAGE_URI" \
             .
 
-          docker push "$REGISTRY/$REPOSITORY:latest"
-          docker push "$REGISTRY/$REPOSITORY:$IMAGE_TAG"
+          docker push "$IMAGE_URI"
 
-      - name: Create SSM deployment command
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          python3 - <<'PY'
-          import base64
-          import json
-          import os
+          echo "image=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
-          region = os.environ["AWS_REGION"]
-          registry = os.environ["ECR_REGISTRY"]
+      - name: Render ECS task definition
+        id: task-definition
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_TASK_DEFINITION }}
+          container-name: ${{ env.ECS_CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
 
-          with open("compose.prod.yml", "rb") as compose_file:
-              compose_base64 = base64.b64encode(
-                  compose_file.read()
-              ).decode("ascii")
-
-          commands = [
-              "set -eu",
-              (
-                  f"aws ecr get-login-password --region {region} "
-                  f"| docker login --username AWS --password-stdin {registry}"
-              ),
-              "mkdir -p /home/ubuntu/momentory",
-              (
-                  f"printf '%s' '{compose_base64}' "
-                  "| base64 -d > /home/ubuntu/momentory/compose.prod.yml"
-              ),
-              "cd /home/ubuntu/momentory",
-              "docker compose --env-file .env -f compose.prod.yml config --quiet",
-              "docker compose --env-file .env -f compose.prod.yml pull app",
-              "docker compose --env-file .env -f compose.prod.yml up -d app",
-              "deadline=$(( $(date +%s) + 60 ))",
-              (
-                  "while [ \"$(date +%s)\" -lt \"$deadline\" ]; do "
-                  "if health_response=$(curl --fail --silent --show-error "
-                  "--connect-timeout 3 --max-time 5 "
-                  "http://localhost:8080/actuator/health); then "
-                  "if printf '%s' \"$health_response\" "
-                  "| grep -Eq '\"status\"[[:space:]]*:[[:space:]]*\"UP\"'; then "
-                  "echo 'Application health status is UP.'; "
-                  "exit 0; "
-                  "fi; "
-                  "fi; "
-                  "sleep 5; "
-                  "done; "
-                  "echo 'Application did not become healthy within 60 seconds.'; "
-                  "docker compose --env-file .env -f compose.prod.yml "
-                  "logs --tail=200 app; "
-                  "exit 1"
-              )
-          ]
-
-          with open("ssm-parameters.json", "w", encoding="utf-8") as file:
-              json.dump({"commands": commands}, file)
-          PY
-
-      - name: Deploy app through SSM
-        env:
-          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-        run: |
-          set -eu
-
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$EC2_INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Deploy Momentory ${GITHUB_SHA}" \
-            --timeout-seconds 300 \
-            --parameters file://ssm-parameters.json \
-            --query "Command.CommandId" \
-            --output text)
-
-          echo "SSM command ID: $COMMAND_ID"
-
-          if ! aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$EC2_INSTANCE_ID"; then
-
-            echo "SSM deployment failed or timed out."
-
-            aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$EC2_INSTANCE_ID" \
-              --output json
-
-            exit 1
-          fi
-
-          STATUS=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$EC2_INSTANCE_ID" \
-            --query "Status" \
-            --output text)
-
-          echo "Deployment status: $STATUS"
-
-          aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$EC2_INSTANCE_ID" \
-            --query "StandardOutputContent" \
-            --output text
-
-          if [ "$STATUS" != "Success" ]; then
-            aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$EC2_INSTANCE_ID" \
-              --query "StandardErrorContent" \
-              --output text
-
-            exit 1
-          fi
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-definition.outputs.task-definition }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_SERVICE }}
+          wait-for-service-stability: true
+          wait-max-delay-seconds: 15
