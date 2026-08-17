@@ -1,0 +1,143 @@
+{
+  "taskDefinitionArn": "arn:aws:ecs:ap-northeast-2:184974285238:task-definition/momentory-core-task:2",
+  "containerDefinitions": [
+    {
+      "name": "Main",
+      "image": "184974285238.dkr.ecr.ap-northeast-2.amazonaws.com/momentory-api@sha256:78283009c46000ca463d346d1b116b68e1e4adb8f1f95814c03d9df94ebad5b7",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp",
+          "name": "main-8080-tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "KAKAO_API_BASE_URL",
+          "value": "https://kapi.kakao.com"
+        },
+        {
+          "name": "GEMINI_MODEL",
+          "value": "gemini-flash-lite-latest"
+        },
+        {
+          "name": "KAKAO_READ_TIMEOUT",
+          "value": "5s"
+        },
+        {
+          "name": "SPRING_PROFILES_ACTIVE",
+          "value": "prod"
+        },
+        {
+          "name": "KAKAO_CONNECT_TIMEOUT",
+          "value": "3s"
+        }
+      ],
+      "environmentFiles": [],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "DB_URL",
+          "valueFrom": "/momentory/prod/DB_URL"
+        },
+        {
+          "name": "DB_USERNAME",
+          "valueFrom": "/momentory/prod/DB_USERNAME"
+        },
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "/momentory/prod/DB_PASSWORD"
+        },
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "/momentory/prod/JWT_SECRET"
+        },
+        {
+          "name": "JWT_REFRESH_EXPIRATION",
+          "valueFrom": "/momentory/prod/JWT_REFRESH_EXPIRATION"
+        },
+        {
+          "name": "KAKAO_APP_ID",
+          "valueFrom": "/momentory/prod/KAKAO_APP_ID"
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "valueFrom": "/momentory/prod/GEMINI_API_KEY"
+        }
+      ],
+      "ulimits": [],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/momentory-core-task",
+          "awslogs-create-group": "true",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs"
+        },
+        "secretOptions": []
+      },
+      "systemControls": []
+    }
+  ],
+  "family": "momentory-core-task",
+  "executionRoleArn": "arn:aws:iam::184974285238:role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "revision": 2,
+  "volumes": [],
+  "status": "ACTIVE",
+  "requiresAttributes": [
+    {
+      "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+    },
+    {
+      "name": "ecs.capability.execution-role-awslogs"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.ecr-auth"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.21"
+    },
+    {
+      "name": "ecs.capability.execution-role-ecr-pull"
+    },
+    {
+      "name": "ecs.capability.secrets.ssm.environment-variables"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+    },
+    {
+      "name": "ecs.capability.task-eni"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.29"
+    }
+  ],
+  "placementConstraints": [],
+  "compatibilities": [
+    "EC2",
+    "FARGATE",
+    "MANAGED_INSTANCES"
+  ],
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "3072",
+  "registeredAt": "2026-08-17T15:35:18.881000+00:00",
+  "registeredBy": "arn:aws:sts::184974285238:assumed-role/AWSReservedSSO_myisb_IsbUsersPS_d25625c345bfc41e/oopt1234+soma@gmail.com",
+  "enableFaultInjection": false
+}
