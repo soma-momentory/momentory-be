@@ -159,6 +159,20 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "404", "ApiErrorResponse", "RETROSPECT_SESSION_NOT_FOUND", "RETROSPECT_SESSION_NOT_FOUND", "회고 세션을 찾을 수 없습니다.");
+
+        assertNoResponseContent(apiDocs, "/api/v1/diaries/{id}", "delete", "204");
+        assertErrorExample(apiDocs, "/api/v1/diaries/{id}", "delete", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/diaries/{id}", "delete", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/diaries/by-retrospect/{retrospectId}", "put", "200", "DiaryResponse");
+        assertErrorExample(apiDocs, "/api/v1/diaries/by-retrospect/{retrospectId}", "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "일기 본문을 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/diaries/by-retrospect/{retrospectId}", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/diaries/by-retrospect/{retrospectId}", "put", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "200", "ActionCardCompletionResponse");
+        assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "되돌린 상태에서는 느낀 점을 남길 수 없습니다.");
+        assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "404", "ApiErrorResponse", "ACTION_CARD_NOT_FOUND", "ACTION_CARD_NOT_FOUND", "행동 카드를 찾을 수 없습니다.");
     }
 
     @Test
@@ -333,7 +347,10 @@ class OpenApiContractIntegrationTest {
         DAILY_MEMO_PUT("/api/v1/memos/{date}", "put"),
         DAILY_MEMO_DELETE("/api/v1/memos/{date}", "delete"),
         RETROSPECT_START("/api/v1/retrospect", "post"),
-        RETROSPECT_MESSAGE("/api/v1/retrospect/{id}/messages", "post");
+        RETROSPECT_MESSAGE("/api/v1/retrospect/{id}/messages", "post"),
+        DIARY_DELETE("/api/v1/diaries/{id}", "delete"),
+        DIARY_UPDATE_BY_RETROSPECT("/api/v1/diaries/by-retrospect/{retrospectId}", "put"),
+        ACTION_CARD_COMPLETION("/api/v1/action-cards/{id}/completion", "put");
 
         private final String path;
         private final String method;
@@ -357,7 +374,10 @@ class OpenApiContractIntegrationTest {
                     || this == SCHEDULES_COMPLETION
                     || this == SCHEDULES_ORDER
                     || this == DAILY_MEMO_GET
-                    || this == RETROSPECT_MESSAGE;
+                    || this == RETROSPECT_MESSAGE
+                    || this == DIARY_DELETE
+                    || this == DIARY_UPDATE_BY_RETROSPECT
+                    || this == ACTION_CARD_COMPLETION;
         }
 
         /** 회고 시작은 "하루 한 번" 가드로 409(오늘 이미 완료)를 낸다. */
