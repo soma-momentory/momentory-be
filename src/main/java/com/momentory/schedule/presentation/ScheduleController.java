@@ -70,6 +70,26 @@ public class ScheduleController {
         return ScheduleResponse.from(scheduleService.createManualSchedule(principal.userId(), request.date(), request.title()));
     }
 
+    @Operation(summary = "기기 캘린더 일정 동기화")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "캘린더 동기화 성공", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = CalendarSyncResponse.class))),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = {
+                    @ExampleObject(name = "validationError", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"externalId는 필수입니다.\"}"),
+                    @ExampleObject(name = "invalidSyncRange", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"캘린더 동기화 요청이 올바르지 않습니다.\"}")
+            })),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(name = "AUTHENTICATION_REQUIRED", value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}")))
+    })
+    @PostMapping(value = "/sync", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public CalendarSyncResponse syncCalendar(
+            @Login LoginPrincipal principal,
+            @Valid @RequestBody CalendarSyncRequest request
+    ) {
+        return CalendarSyncResponse.from(scheduleService.syncCalendar(
+                principal.userId(), request.from(), request.to(), request.toEvents()
+        ));
+    }
+
     @Operation(summary = "수동 일정 수정")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
@@ -85,6 +105,24 @@ public class ScheduleController {
             @Valid @RequestBody ScheduleRequest request
     ) {
         return ScheduleResponse.from(scheduleService.updateManualSchedule(principal.userId(), scheduleId, request.date(), request.title()));
+    }
+
+    @Operation(summary = "캘린더 일정 숨김 상태 변경")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "숨김 상태 변경 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(name = "validationError", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"hidden은 필수입니다.\"}"))),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(name = "AUTHENTICATION_REQUIRED", value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}"))),
+            @ApiResponse(responseCode = "404", description = "일정을 찾을 수 없음", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(name = "SCHEDULE_NOT_FOUND", value = "{\"code\":\"SCHEDULE_NOT_FOUND\",\"message\":\"일정을 찾을 수 없습니다.\"}")))
+    })
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PatchMapping(value = "/{scheduleId}/visibility", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public void changeCalendarVisibility(
+            @Login LoginPrincipal principal,
+            @PathVariable Long scheduleId,
+            @Valid @RequestBody ScheduleVisibilityRequest request
+    ) {
+        scheduleService.changeCalendarVisibility(principal.userId(), scheduleId, request.hidden());
     }
 
     @Operation(summary = "일정 삭제")

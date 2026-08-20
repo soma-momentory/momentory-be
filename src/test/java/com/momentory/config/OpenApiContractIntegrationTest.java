@@ -109,11 +109,17 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/onboarding/options", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
         assertResponseSchema(apiDocs, "/api/v1/schedules", "get", "200", "ScheduleListResponse");
+        assertScheduleResponseProperties(apiDocs);
         assertErrorExample(apiDocs, "/api/v1/schedules", "get", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/schedules", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertResponseSchema(apiDocs, "/api/v1/schedules", "post", "201", "ScheduleResponse");
         assertErrorExample(apiDocs, "/api/v1/schedules", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "title은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/schedules", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertResponseSchema(apiDocs, "/api/v1/schedules/sync", "post", "200", "CalendarSyncResponse");
+        assertCalendarSyncRequestProperties(apiDocs);
+        assertErrorExample(apiDocs, "/api/v1/schedules/sync", "post", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "externalId는 필수입니다.");
+        assertErrorExample(apiDocs, "/api/v1/schedules/sync", "post", "400", "ApiErrorResponse", "invalidSyncRange", "INVALID_REQUEST", "캘린더 동기화 요청이 올바르지 않습니다.");
+        assertErrorExample(apiDocs, "/api/v1/schedules/sync", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertResponseSchema(apiDocs, "/api/v1/schedules/{scheduleId}", "patch", "200", "ScheduleResponse");
         assertErrorExample(apiDocs, "/api/v1/schedules/{scheduleId}", "patch", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "title은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/schedules/{scheduleId}", "patch", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
@@ -122,6 +128,11 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/schedules/{scheduleId}", "delete", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/schedules/{scheduleId}", "delete", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertErrorExample(apiDocs, "/api/v1/schedules/{scheduleId}", "delete", "404", "ApiErrorResponse", "SCHEDULE_NOT_FOUND", "SCHEDULE_NOT_FOUND", "일정을 찾을 수 없습니다.");
+        assertNoResponseContent(apiDocs, "/api/v1/schedules/{scheduleId}/visibility", "patch", "204");
+        assertVisibilityRequestProperties(apiDocs);
+        assertErrorExample(apiDocs, "/api/v1/schedules/{scheduleId}/visibility", "patch", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "hidden은 필수입니다.");
+        assertErrorExample(apiDocs, "/api/v1/schedules/{scheduleId}/visibility", "patch", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/schedules/{scheduleId}/visibility", "patch", "404", "ApiErrorResponse", "SCHEDULE_NOT_FOUND", "SCHEDULE_NOT_FOUND", "일정을 찾을 수 없습니다.");
 
         assertResponseSchema(apiDocs, "/api/v1/schedules/{scheduleId}/completion", "put", "200", "ScheduleCompletionResponse");
         assertScheduleCompletionRequestProperties(apiDocs);
@@ -290,6 +301,33 @@ class OpenApiContractIntegrationTest {
         assertThat(properties.has("completionEmotionValid")).isFalse();
     }
 
+    private void assertCalendarSyncRequestProperties(JsonNode apiDocs) {
+        JsonNode request = apiDocs.at("/components/schemas/CalendarSyncRequest/properties");
+        assertThat(request.size()).isEqualTo(3);
+        assertThat(request.has("from")).isTrue();
+        assertThat(request.has("to")).isTrue();
+        assertThat(request.has("events")).isTrue();
+
+        JsonNode event = apiDocs.at("/components/schemas/CalendarSyncEventRequest/properties");
+        assertThat(event.size()).isEqualTo(3);
+        assertThat(event.has("externalId")).isTrue();
+        assertThat(event.has("date")).isTrue();
+        assertThat(event.has("title")).isTrue();
+    }
+
+    private void assertScheduleResponseProperties(JsonNode apiDocs) {
+        JsonNode properties = apiDocs.at("/components/schemas/ScheduleResponse/properties");
+        assertThat(properties.has("source")).isTrue();
+        assertThat(properties.has("hidden")).isTrue();
+        assertThat(properties.has("externalId")).isFalse();
+    }
+
+    private void assertVisibilityRequestProperties(JsonNode apiDocs) {
+        JsonNode properties = apiDocs.at("/components/schemas/ScheduleVisibilityRequest/properties");
+        assertThat(properties.size()).isEqualTo(1);
+        assertThat(properties.has("hidden")).isTrue();
+    }
+
     private void assertOnboardingRequestProperties(JsonNode apiDocs) {
         JsonNode properties = apiDocs.at("/components/schemas/CompleteOnboardingRequest/properties");
         assertThat(properties.has("otherInterestDetail")).isTrue();
@@ -325,8 +363,10 @@ class OpenApiContractIntegrationTest {
         ONBOARDING_OPTIONS("/api/v1/onboarding/options", "get"),
         SCHEDULES_GET("/api/v1/schedules", "get"),
         SCHEDULES_POST("/api/v1/schedules", "post"),
+        SCHEDULES_SYNC("/api/v1/schedules/sync", "post"),
         SCHEDULES_PATCH("/api/v1/schedules/{scheduleId}", "patch"),
         SCHEDULES_DELETE("/api/v1/schedules/{scheduleId}", "delete"),
+        SCHEDULES_VISIBILITY("/api/v1/schedules/{scheduleId}/visibility", "patch"),
         SCHEDULES_COMPLETION("/api/v1/schedules/{scheduleId}/completion", "put"),
         SCHEDULES_ORDER("/api/v1/schedules/order", "patch"),
         DAILY_MEMO_GET("/api/v1/memos/{date}", "get"),
@@ -354,6 +394,7 @@ class OpenApiContractIntegrationTest {
         boolean allowsNotFound() {
             return this == SCHEDULES_PATCH
                     || this == SCHEDULES_DELETE
+                    || this == SCHEDULES_VISIBILITY
                     || this == SCHEDULES_COMPLETION
                     || this == SCHEDULES_ORDER
                     || this == DAILY_MEMO_GET
