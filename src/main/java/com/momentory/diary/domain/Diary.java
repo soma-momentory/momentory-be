@@ -70,6 +70,17 @@ public class Diary extends BaseTimeEntity {
         return new Diary(userId, retrospectId, original, reframed, currentEmotion, scheduleEmotion);
     }
 
+    /**
+     * 「내가 남긴 오늘」 본문을 사용자가 고친 것으로 바꾼다 — 회고 완료 화면(C6)의 직접 고치기.
+     *
+     * <p>바바가 다시 본 오늘({@code reframed})·진입 감정·회고 연결은 그대로 둔다 — 고칠 수 있는
+     * 것은 원본 본문뿐이다({@code A4.md}: "고칠 수 있는 것은 body 와 감정 태그뿐"이고 감정 태그는
+     * 목록용이라 서버 진입 감정과 다르다).
+     */
+    public void updateOriginal(String original) {
+        this.original = Objects.requireNonNull(original, "original must not be null");
+    }
+
     public Long getId() {
         return id;
     }
