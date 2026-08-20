@@ -20,6 +20,41 @@ class ScheduleTest {
         assertThat(schedule.getTitle()).isEqualTo("저녁 운동하기");
         assertThat(schedule.isCompleted()).isFalse();
         assertThat(schedule.getEmotion()).isNull();
+        assertThat(schedule.getSource()).isEqualTo(ScheduleSource.MANUAL);
+        assertThat(schedule.getExternalId()).isNull();
+        assertThat(schedule.isHidden()).isFalse();
+    }
+
+    @Test
+    void synchronizesAndRestoresCalendarScheduleWithoutClearingUserState() {
+        Schedule schedule = Schedule.createCalendar(
+                1L, "calendar-event-1", LocalDate.of(2026, 8, 10), "회의", 0L
+        );
+        schedule.changeCompletion(true, ScheduleEmotion.CALM);
+        schedule.changeHidden(true);
+        schedule.delete(Instant.parse("2026-08-11T00:00:00Z"));
+
+        boolean changed = schedule.syncFromCalendar(LocalDate.of(2026, 8, 12), "팀 회의");
+
+        assertThat(changed).isTrue();
+        assertThat(schedule.getSource()).isEqualTo(ScheduleSource.CALENDAR);
+        assertThat(schedule.getExternalId()).isEqualTo("calendar-event-1");
+        assertThat(schedule.getScheduleDate()).isEqualTo(LocalDate.of(2026, 8, 12));
+        assertThat(schedule.getTitle()).isEqualTo("팀 회의");
+        assertThat(schedule.isDeleted()).isFalse();
+        assertThat(schedule.isCompleted()).isTrue();
+        assertThat(schedule.getEmotion()).isEqualTo(ScheduleEmotion.CALM);
+        assertThat(schedule.isHidden()).isTrue();
+    }
+
+    @Test
+    void rejectsCalendarOnlyOperationsForManualSchedule() {
+        Schedule schedule = Schedule.createManual(1L, LocalDate.now(), "운동하기", 0L);
+
+        assertThatThrownBy(() -> schedule.syncFromCalendar(LocalDate.now(), "회의"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> schedule.changeHidden(true))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test

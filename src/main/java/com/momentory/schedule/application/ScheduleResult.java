@@ -2,6 +2,7 @@ package com.momentory.schedule.application;
 
 import com.momentory.schedule.domain.Schedule;
 import com.momentory.schedule.domain.ScheduleEmotion;
+import com.momentory.schedule.domain.ScheduleSource;
 
 import java.time.LocalDate;
 
@@ -11,7 +12,9 @@ public record ScheduleResult(
         String title,
         boolean completed,
         ScheduleEmotion emotion,
-        long displayOrder
+        long displayOrder,
+        ScheduleSource source,
+        boolean hidden
 ) {
 
     public static ScheduleResult from(Schedule schedule) {
@@ -21,7 +24,9 @@ public record ScheduleResult(
                 schedule.getTitle(),
                 schedule.isCompleted(),
                 schedule.getEmotion(),
-                schedule.getDisplayOrder()
+                schedule.getDisplayOrder(),
+                schedule.getSource(),
+                schedule.isHidden()
         );
     }
 }

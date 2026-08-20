@@ -2,6 +2,8 @@ package com.momentory.schedule.presentation;
 
 import com.momentory.auth.token.application.AccessTokenIssuer;
 import com.momentory.schedule.domain.Schedule;
+import com.momentory.schedule.domain.ScheduleEmotion;
+import com.momentory.schedule.domain.ScheduleSource;
 import com.momentory.schedule.infrastructure.ScheduleRepository;
 import com.momentory.user.domain.User;
 import com.momentory.user.infrastructure.UserRepository;
@@ -10,7 +12,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -24,6 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -57,7 +59,6 @@ class ScheduleControllerIntegrationTest {
     @Autowired UserRepository userRepository;
     @Autowired ScheduleRepository scheduleRepository;
     @Autowired AccessTokenIssuer accessTokenIssuer;
-    @Autowired JdbcTemplate jdbcTemplate;
 
     private MockMvc mockMvc;
 
@@ -85,7 +86,9 @@ class ScheduleControllerIntegrationTest {
                 .andExpect(jsonPath("$.title").value("운동하기"))
                 .andExpect(jsonPath("$.completed").value(false))
                 .andExpect(jsonPath("$.emotion").doesNotExist())
-                .andExpect(jsonPath("$.displayOrder").value(0));
+                .andExpect(jsonPath("$.displayOrder").value(0))
+                .andExpect(jsonPath("$.source").value("MANUAL"))
+                .andExpect(jsonPath("$.hidden").value(false));
         mockMvc.perform(create(user, "{\"date\":\"2026-08-10\",\"title\":\"독서하기\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.displayOrder").value(1));
@@ -122,10 +125,11 @@ class ScheduleControllerIntegrationTest {
         User anotherUser = userRepository.saveAndFlush(User.create());
         Schedule schedule = scheduleRepository.saveAndFlush(Schedule.createManual(user.getId(), LocalDate.of(2026, 8, 10), "운동하기", 0L));
         Schedule deleted = scheduleRepository.saveAndFlush(Schedule.createManual(user.getId(), LocalDate.of(2026, 8, 10), "삭제된 일정", 1L));
-        Schedule external = scheduleRepository.saveAndFlush(Schedule.createManual(user.getId(), LocalDate.of(2026, 8, 10), "외부 일정", 2L));
+        Schedule external = scheduleRepository.saveAndFlush(Schedule.createCalendar(
+                user.getId(), "external-1", LocalDate.of(2026, 8, 10), "외부 일정", 2L
+        ));
         deleted.delete(java.time.Instant.now());
         scheduleRepository.saveAndFlush(deleted);
-        jdbcTemplate.update("UPDATE schedules SET external_id = ? WHERE id = ?", "external-1", external.getId());
 
         mockMvc.perform(update(user, schedule.getId(), "{\"date\":\"2026-08-11\",\"title\":\" 저녁 운동하기 \"}"))
                 .andExpect(status().isOk())
@@ -280,14 +284,152 @@ class ScheduleControllerIntegrationTest {
     @Test
     void completesExternalScheduleWithEmotion() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        Schedule external = scheduleRepository.saveAndFlush(Schedule.createManual(user.getId(), LocalDate.of(2026, 8, 10), "외부 일정", 0L));
-        jdbcTemplate.update("UPDATE schedules SET external_id = ? WHERE id = ?", "external-1", external.getId());
+        Schedule external = scheduleRepository.saveAndFlush(Schedule.createCalendar(
+                user.getId(), "external-1", LocalDate.of(2026, 8, 10), "외부 일정", 0L
+        ));
 
         mockMvc.perform(changeCompletion(user, external.getId(), "{\"completed\":true,\"emotion\":\"CALM\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.emotion").value("CALM"));
         assertThat(scheduleRepository.findById(external.getId()).orElseThrow().getEmotion())
                 .isEqualTo(com.momentory.schedule.domain.ScheduleEmotion.CALM);
+    }
+
+    @Test
+    void reconcilesCalendarSnapshotAndRestoresDeletedScheduleWithoutClearingUserState() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        User anotherUser = userRepository.saveAndFlush(User.create());
+        Schedule manual = Schedule.createManual(user.getId(), LocalDate.of(2026, 8, 10), "수동 일정", 0L);
+        Schedule updated = Schedule.createCalendar(
+                user.getId(), "calendar-updated", LocalDate.of(2026, 8, 10), "수정 전", 1L
+        );
+        Schedule removed = Schedule.createCalendar(
+                user.getId(), "calendar-removed", LocalDate.of(2026, 8, 11), "삭제될 일정", 0L
+        );
+        Schedule restored = Schedule.createCalendar(
+                user.getId(), "calendar-restored", LocalDate.of(2026, 8, 12), "복구 전", 0L
+        );
+        restored.changeCompletion(true, ScheduleEmotion.CALM);
+        restored.changeHidden(true);
+        restored.delete(java.time.Instant.parse("2026-08-13T00:00:00Z"));
+        Schedule anotherUsers = Schedule.createCalendar(
+                anotherUser.getId(), "calendar-removed", LocalDate.of(2026, 8, 11), "다른 사용자", 0L
+        );
+        scheduleRepository.saveAllAndFlush(List.of(manual, updated, removed, restored, anotherUsers));
+
+        String body = """
+                {
+                  "from":"2026-08-01",
+                  "to":"2026-08-31",
+                  "events":[
+                    {"externalId":"calendar-updated","date":"2026-08-15","title":"수정 후"},
+                    {"externalId":"calendar-restored","date":"2026-08-16","title":"복구 후"},
+                    {"externalId":"calendar-created","date":"2026-08-17","title":"삭제될 일정"}
+                  ]
+                }
+                """;
+
+        mockMvc.perform(sync(user, body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.created").value(1))
+                .andExpect(jsonPath("$.updated").value(2))
+                .andExpect(jsonPath("$.deleted").value(1));
+
+        Schedule syncedSchedule = scheduleRepository.findById(updated.getId()).orElseThrow();
+        assertThat(syncedSchedule.getScheduleDate()).isEqualTo(LocalDate.of(2026, 8, 15));
+        assertThat(syncedSchedule.getTitle()).isEqualTo("수정 후");
+        assertThat(scheduleRepository.findById(removed.getId()).orElseThrow().isDeleted()).isTrue();
+
+        Schedule revived = scheduleRepository.findById(restored.getId()).orElseThrow();
+        assertThat(revived.isDeleted()).isFalse();
+        assertThat(revived.getScheduleDate()).isEqualTo(LocalDate.of(2026, 8, 16));
+        assertThat(revived.getTitle()).isEqualTo("복구 후");
+        assertThat(revived.isCompleted()).isTrue();
+        assertThat(revived.getEmotion()).isEqualTo(ScheduleEmotion.CALM);
+        assertThat(revived.isHidden()).isTrue();
+
+        assertThat(scheduleRepository.findById(manual.getId()).orElseThrow().isDeleted()).isFalse();
+        assertThat(scheduleRepository.findById(anotherUsers.getId()).orElseThrow().isDeleted()).isFalse();
+        assertThat(scheduleRepository.findByUserIdAndScheduleDateAndDeletedAtIsNullOrderByDisplayOrderAscIdAsc(
+                user.getId(), LocalDate.of(2026, 8, 17)
+        )).singleElement().satisfies(created -> {
+            assertThat(created.getId()).isNotEqualTo(removed.getId());
+            assertThat(created.getTitle()).isEqualTo(removed.getTitle());
+            assertThat(created.getSource()).isEqualTo(ScheduleSource.CALENDAR);
+            assertThat(created.getExternalId()).isEqualTo("calendar-created");
+        });
+
+        mockMvc.perform(sync(user, body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.created").value(0))
+                .andExpect(jsonPath("$.updated").value(0))
+                .andExpect(jsonPath("$.deleted").value(0));
+    }
+
+    @Test
+    void rejectsInvalidCalendarSnapshotsWithoutChangingSchedules() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        Schedule calendar = scheduleRepository.saveAndFlush(Schedule.createCalendar(
+                user.getId(), "calendar-1", LocalDate.of(2026, 8, 10), "기존 일정", 0L
+        ));
+
+        mockMvc.perform(sync(user, """
+                {"from":"2026-08-31","to":"2026-08-01","events":[]}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("캘린더 동기화 요청이 올바르지 않습니다."));
+        mockMvc.perform(sync(user, """
+                {"from":"2026-08-01","to":"2026-08-31","events":[
+                  {"externalId":"duplicate","date":"2026-08-10","title":"첫 번째"},
+                  {"externalId":"duplicate","date":"2026-08-11","title":"두 번째"}
+                ]}
+                """))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(sync(user, """
+                {"from":"2026-08-01","to":"2026-08-31","events":[
+                  {"externalId":"outside","date":"2026-09-01","title":"범위 밖"}
+                ]}
+                """))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(sync(user, """
+                {"from":"2026-08-01","to":"2026-08-31","events":[null]}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("event는 필수입니다."));
+
+        Schedule unchanged = scheduleRepository.findById(calendar.getId()).orElseThrow();
+        assertThat(unchanged.isDeleted()).isFalse();
+        assertThat(unchanged.getTitle()).isEqualTo("기존 일정");
+    }
+
+    @Test
+    void changesVisibilityOnlyForOwnedActiveCalendarSchedule() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        User anotherUser = userRepository.saveAndFlush(User.create());
+        Schedule calendar = scheduleRepository.saveAndFlush(Schedule.createCalendar(
+                user.getId(), "calendar-1", LocalDate.of(2026, 8, 10), "캘린더 일정", 0L
+        ));
+        Schedule manual = scheduleRepository.saveAndFlush(Schedule.createManual(
+                user.getId(), LocalDate.of(2026, 8, 10), "수동 일정", 1L
+        ));
+
+        mockMvc.perform(changeVisibility(user, calendar.getId(), "{\"hidden\":true}"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(getSchedules(user, LocalDate.of(2026, 8, 10)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schedules[0].source").value("CALENDAR"))
+                .andExpect(jsonPath("$.schedules[0].hidden").value(true));
+        mockMvc.perform(changeVisibility(user, manual.getId(), "{\"hidden\":true}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(changeVisibility(anotherUser, calendar.getId(), "{\"hidden\":true}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(changeVisibility(user, calendar.getId(), "{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("hidden은 필수입니다."));
+        mockMvc.perform(deleteSchedule(user, calendar.getId()))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -392,6 +534,15 @@ class ScheduleControllerIntegrationTest {
         mockMvc.perform(patch("/api/v1/schedules/order").header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"date\":\"2026-08-10\",\"scheduleIds\":[1]}"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/schedules/sync").header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":\"2026-08-01\",\"to\":\"2026-08-31\",\"events\":[]}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(patch("/api/v1/schedules/{scheduleId}/visibility", 1L)
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hidden\":true}"))
+                .andExpect(status().isUnauthorized());
 
         assertThat(scheduleRepository.findByUserIdAndScheduleDateAndDeletedAtIsNullOrderByDisplayOrderAscIdAsc(user.getId(), date))
                 .isEmpty();
@@ -436,6 +587,24 @@ class ScheduleControllerIntegrationTest {
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder changeOrder(User user, String body) {
         return patch("/api/v1/schedules/order")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(user))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body);
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder sync(User user, String body) {
+        return post("/api/v1/schedules/sync")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(user))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body);
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder changeVisibility(
+            User user,
+            Long scheduleId,
+            String body
+    ) {
+        return patch("/api/v1/schedules/{scheduleId}/visibility", scheduleId)
                 .header(HttpHeaders.AUTHORIZATION, bearerToken(user))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body);

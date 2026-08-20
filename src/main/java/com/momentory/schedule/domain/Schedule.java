@@ -30,6 +30,10 @@ public class Schedule extends BaseTimeEntity {
     @Column(name = "external_id", length = 255)
     private String externalId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ScheduleSource source;
+
     @Column(name = "schedule_date", nullable = false)
     private LocalDate scheduleDate;
 
@@ -46,22 +50,45 @@ public class Schedule extends BaseTimeEntity {
     @Column(name = "display_order", nullable = false)
     private long displayOrder;
 
+    @Column(nullable = false)
+    private boolean hidden;
+
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
     protected Schedule() {
     }
 
-    private Schedule(Long userId, LocalDate scheduleDate, String title, long displayOrder) {
+    private Schedule(
+            Long userId,
+            LocalDate scheduleDate,
+            String title,
+            long displayOrder,
+            ScheduleSource source,
+            String externalId
+    ) {
         this.userId = Objects.requireNonNull(userId);
         this.scheduleDate = Objects.requireNonNull(scheduleDate);
         this.title = validateTitle(title);
         this.displayOrder = displayOrder;
+        this.source = Objects.requireNonNull(source);
+        this.externalId = validateExternalId(source, externalId);
         this.completed = false;
+        this.hidden = false;
     }
 
     public static Schedule createManual(Long userId, LocalDate scheduleDate, String title, long displayOrder) {
-        return new Schedule(userId, scheduleDate, title, displayOrder);
+        return new Schedule(userId, scheduleDate, title, displayOrder, ScheduleSource.MANUAL, null);
+    }
+
+    public static Schedule createCalendar(
+            Long userId,
+            String externalId,
+            LocalDate scheduleDate,
+            String title,
+            long displayOrder
+    ) {
+        return new Schedule(userId, scheduleDate, title, displayOrder, ScheduleSource.CALENDAR, externalId);
     }
 
     public void update(LocalDate scheduleDate, String title) {
@@ -73,6 +100,28 @@ public class Schedule extends BaseTimeEntity {
         if (this.deletedAt == null) {
             this.deletedAt = Objects.requireNonNull(deletedAt);
         }
+    }
+
+    public boolean syncFromCalendar(LocalDate scheduleDate, String title) {
+        if (source != ScheduleSource.CALENDAR) {
+            throw new IllegalStateException("only calendar schedules can be synchronized");
+        }
+        LocalDate normalizedDate = Objects.requireNonNull(scheduleDate);
+        String normalizedTitle = validateTitle(title);
+        boolean changed = !this.scheduleDate.equals(normalizedDate)
+                || !this.title.equals(normalizedTitle)
+                || this.deletedAt != null;
+        this.scheduleDate = normalizedDate;
+        this.title = normalizedTitle;
+        this.deletedAt = null;
+        return changed;
+    }
+
+    public void changeHidden(boolean hidden) {
+        if (source != ScheduleSource.CALENDAR) {
+            throw new IllegalStateException("only calendar schedules can be hidden");
+        }
+        this.hidden = hidden;
     }
 
     public void changeCompletion(boolean completed, ScheduleEmotion emotion) {
@@ -115,6 +164,18 @@ public class Schedule extends BaseTimeEntity {
         return this.userId.equals(userId);
     }
 
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public ScheduleSource getSource() {
+        return source;
+    }
+
+    public boolean isHidden() {
+        return hidden;
+    }
+
     public long getDisplayOrder() {
         return displayOrder;
     }
@@ -129,5 +190,19 @@ public class Schedule extends BaseTimeEntity {
             throw new IllegalArgumentException("title must be between 1 and 255 characters");
         }
         return normalizedTitle;
+    }
+
+    private String validateExternalId(ScheduleSource source, String externalId) {
+        if (source == ScheduleSource.MANUAL) {
+            if (externalId != null) {
+                throw new IllegalArgumentException("manual schedule must not have an external id");
+            }
+            return null;
+        }
+        String normalizedExternalId = Objects.requireNonNull(externalId).strip();
+        if (normalizedExternalId.isBlank() || normalizedExternalId.length() > 255) {
+            throw new IllegalArgumentException("external id must be between 1 and 255 characters");
+        }
+        return normalizedExternalId;
     }
 }
