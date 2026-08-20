@@ -2,6 +2,7 @@ package com.momentory.actioncard.presentation;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -196,7 +198,138 @@ class ActionCardApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     }
 
+    @Test
+    @DisplayName("해봤어요 — done·doneAt 이 DB 에 남고 응답에도 온다")
+    void markDonePersists() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long cardId = seedCard(user, "상황", "행동", Instant.parse("2026-08-10T01:00:00Z"));
+
+        mockMvc.perform(put("/api/v1/action-cards/{id}/completion", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"done\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value((int) cardId))
+                .andExpect(jsonPath("$.done").value(true))
+                .andExpect(jsonPath("$.doneAt").exists())
+                .andExpect(jsonPath("$.reflection").doesNotExist());
+
+        assertCard(cardId, true, true, null);
+    }
+
+    @Test
+    @DisplayName("느낀 점 — 완료 상태에서 남고, 다시 보내면 덮어쓴다")
+    void reflectionPersistsWhenDone() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long cardId = seedCard(user, "상황", "행동", Instant.parse("2026-08-10T01:00:00Z"));
+
+        mockMvc.perform(put("/api/v1/action-cards/{id}/completion", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"done\":true,\"reflection\":\"해보니 괜찮았다\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reflection").value("해보니 괜찮았다"));
+
+        assertCard(cardId, true, true, "해보니 괜찮았다");
+    }
+
+    @Test
+    @DisplayName("되돌리기 — done·doneAt·느낀 점이 함께 비워진다")
+    void undoClearsDoneAndReflection() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long cardId = seedCard(user, "상황", "행동", Instant.parse("2026-08-10T01:00:00Z"));
+
+        // 먼저 해보고 느낀 점까지 남긴 뒤 되돌린다
+        mockMvc.perform(put("/api/v1/action-cards/{id}/completion", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"done\":true,\"reflection\":\"한 줄\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/v1/action-cards/{id}/completion", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"done\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.done").value(false))
+                .andExpect(jsonPath("$.doneAt").doesNotExist())
+                .andExpect(jsonPath("$.reflection").doesNotExist());
+
+        assertCard(cardId, false, false, null);
+    }
+
+    @Test
+    @DisplayName("되돌린 상태의 느낀 점은 400 — 상태를 바꾸지 않는다")
+    void reflectionWhileUndoneIs400() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long cardId = seedCard(user, "상황", "행동", Instant.parse("2026-08-10T01:00:00Z"));
+
+        mockMvc.perform(put("/api/v1/action-cards/{id}/completion", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"done\":false,\"reflection\":\"남길 수 없다\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        assertCard(cardId, false, false, null);
+    }
+
+    @Test
+    @DisplayName("완료 여부 누락은 400")
+    void missingDoneIs400() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long cardId = seedCard(user, "상황", "행동", Instant.parse("2026-08-10T01:00:00Z"));
+
+        mockMvc.perform(put("/api/v1/action-cards/{id}/completion", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    @DisplayName("남의 카드는 404 — 상태를 바꾸지 못한다")
+    void completingAnotherUsersCardIs404() throws Exception {
+        User owner = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        long cardId = seedCard(owner, "상황", "행동", Instant.parse("2026-08-10T01:00:00Z"));
+
+        mockMvc.perform(put("/api/v1/action-cards/{id}/completion", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(other))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"done\":true}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ACTION_CARD_NOT_FOUND"));
+
+        assertCard(cardId, false, false, null);
+    }
+
+    @Test
+    @DisplayName("완료 반영은 인증이 필요하다 — 없으면 401")
+    void completionRequiresAuthentication() throws Exception {
+        mockMvc.perform(put("/api/v1/action-cards/{id}/completion", 1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"done\":true}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
     // ── 도우미 ───────────────────────────────────────────────────────────
+
+    /** DB 의 카드 상태를 확인한다 — 응답만이 아니라 실제로 남았는지 본다. */
+    private void assertCard(long cardId, boolean done, boolean hasDoneAt, String reflection) {
+        Boolean actualDone = jdbcTemplate.queryForObject(
+                "SELECT done FROM action_cards WHERE id = ?", Boolean.class, cardId);
+        Integer doneAtCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM action_cards WHERE id = ? AND done_at IS NOT NULL",
+                Integer.class, cardId);
+        String actualReflection = jdbcTemplate.queryForObject(
+                "SELECT reflection FROM action_cards WHERE id = ?", String.class, cardId);
+        org.junit.jupiter.api.Assertions.assertEquals(done, actualDone);
+        org.junit.jupiter.api.Assertions.assertEquals(hasDoneAt ? 1 : 0, doneAtCount);
+        org.junit.jupiter.api.Assertions.assertEquals(reflection, actualReflection);
+    }
 
     /** 회고(FK 대상)를 실제 저장하고, 그에 딸린 행동 카드를 지정한 {@code createdAt} 으로 직접 넣는다. */
     private long seedCard(User user, String situation, String targetAction, Instant createdAt) {

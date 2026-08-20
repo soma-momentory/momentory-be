@@ -1,11 +1,14 @@
 package com.momentory.diary.presentation;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
@@ -16,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -80,6 +84,8 @@ class DiaryApiIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        // 삭제 테스트가 회고에 딸린 행동 카드를 심으므로, 회고를 지우기 전에 먼저 비운다(FK).
+        jdbcTemplate.update("DELETE FROM action_cards");
         diaryRepository.deleteAllInBatch();
         retrospectRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
@@ -196,7 +202,156 @@ class DiaryApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     }
 
+    @Test
+    @DisplayName("삭제 — 일기만 지운다. 행동 카드와 회고 세션은 남는다")
+    void deleteRemovesOnlyDiary() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long diaryId = seedDiary(user, "지울 일기", null, Emotion.CALM, null,
+                Instant.parse("2026-08-14T02:00:00Z"));
+        long retrospectId = jdbcTemplate.queryForObject(
+                "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
+        // 같은 회고에 딸린 행동 카드 — 삭제 뒤에도 자기 보관함에 남아야 한다
+        seedCardRow(user, retrospectId, Instant.parse("2026-08-14T02:00:00Z"));
+
+        mockMvc.perform(delete("/api/v1/diaries/{id}", diaryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNoContent());
+
+        assertRowCount("diaries", "id", diaryId, 0);
+        // 스펙 스냅샷과의 차이: 행동 카드·회고 세션은 함께 지우지 않는다(PRODUCT.md 「상류와 차이」)
+        assertRowCount("action_cards", "retrospect_id", retrospectId, 1);
+        assertRowCount("retrospects", "id", retrospectId, 1);
+    }
+
+    @Test
+    @DisplayName("삭제 — 남의 일기는 404, 지워지지 않는다")
+    void deletingAnotherUsersDiaryIs404() throws Exception {
+        User owner = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        long diaryId = seedDiary(owner, "남의 일기", null, Emotion.CALM, null,
+                Instant.parse("2026-08-14T02:00:00Z"));
+
+        mockMvc.perform(delete("/api/v1/diaries/{id}", diaryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(other)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DIARY_NOT_FOUND"));
+
+        assertRowCount("diaries", "id", diaryId, 1);
+    }
+
+    @Test
+    @DisplayName("삭제 — 없는 일기는 404")
+    void deletingMissingDiaryIs404() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(delete("/api/v1/diaries/{id}", 999_999)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DIARY_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("삭제는 인증이 필요하다 — 없으면 401")
+    void deleteRequiresAuthentication() throws Exception {
+        mockMvc.perform(delete("/api/v1/diaries/{id}", 1))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    @DisplayName("본문 수정 — 회고 id 로 찾아 original 을 바꾼다(reframed·감정은 그대로)")
+    void updateByRetrospectChangesOriginal() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long diaryId = seedDiary(user, "원래 본문", "바바의 문장", Emotion.DEPRESSED, Emotion.ANXIOUS,
+                Instant.parse("2026-08-14T02:00:00Z"));
+        long retrospectId = jdbcTemplate.queryForObject(
+                "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
+
+        mockMvc.perform(put("/api/v1/diaries/by-retrospect/{retrospectId}", retrospectId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"original\":\"내가 고친 본문\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value((int) diaryId))
+                .andExpect(jsonPath("$.original").value("내가 고친 본문"))
+                // 바바의 문장·감정은 건드리지 않는다
+                .andExpect(jsonPath("$.reframed").value("바바의 문장"))
+                .andExpect(jsonPath("$.currentEmotion").value("depressed"));
+
+        String stored = jdbcTemplate.queryForObject(
+                "SELECT original FROM diaries WHERE id = ?", String.class, diaryId);
+        org.junit.jupiter.api.Assertions.assertEquals("내가 고친 본문", stored);
+    }
+
+    @Test
+    @DisplayName("본문 수정 — 남의 회고면 404, 바뀌지 않는다")
+    void updatingAnotherUsersDiaryIs404() throws Exception {
+        User owner = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        long diaryId = seedDiary(owner, "원래 본문", null, Emotion.CALM, null,
+                Instant.parse("2026-08-14T02:00:00Z"));
+        long retrospectId = jdbcTemplate.queryForObject(
+                "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
+
+        mockMvc.perform(put("/api/v1/diaries/by-retrospect/{retrospectId}", retrospectId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(other))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"original\":\"남이 고침\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DIARY_NOT_FOUND"));
+
+        String stored = jdbcTemplate.queryForObject(
+                "SELECT original FROM diaries WHERE id = ?", String.class, diaryId);
+        org.junit.jupiter.api.Assertions.assertEquals("원래 본문", stored);
+    }
+
+    @Test
+    @DisplayName("본문 수정 — 빈 본문은 400")
+    void updatingWithBlankOriginalIs400() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long diaryId = seedDiary(user, "원래 본문", null, Emotion.CALM, null,
+                Instant.parse("2026-08-14T02:00:00Z"));
+        long retrospectId = jdbcTemplate.queryForObject(
+                "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
+
+        mockMvc.perform(put("/api/v1/diaries/by-retrospect/{retrospectId}", retrospectId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"original\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    @DisplayName("본문 수정은 인증이 필요하다 — 없으면 401")
+    void updateRequiresAuthentication() throws Exception {
+        mockMvc.perform(put("/api/v1/diaries/by-retrospect/{retrospectId}", 1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"original\":\"x\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
     // ── 도우미 ───────────────────────────────────────────────────────────
+
+    private void assertRowCount(String table, String column, long value, int expected) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + table + " WHERE " + column + " = ?", Integer.class, value);
+        org.junit.jupiter.api.Assertions.assertEquals(expected, count);
+    }
+
+    /** 회고에 딸린 행동 카드 한 장을 직접 넣는다 — 일기 삭제 뒤에도 남는지 보려는 것. */
+    private void seedCardRow(User user, long retrospectId, Instant createdAt) {
+        OffsetDateTime at = OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC);
+        LocalDate createdDate = createdAt.atZone(ZoneOffset.ofHours(9)).toLocalDate();
+        jdbcTemplate.update("""
+                INSERT INTO action_cards (user_id, retrospect_id, situation, target_action,
+                                          created_date, from_rest_preference, done,
+                                          created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                user.getId(), retrospectId, "상황", "행동", createdDate, false, false, at, at);
+    }
 
     /** 회고(FK 대상)를 실제 저장하고, 그에 딸린 일기를 지정한 {@code createdAt} 으로 직접 넣는다. */
     private long seedDiary(User user, String original, String reframed, Emotion current,

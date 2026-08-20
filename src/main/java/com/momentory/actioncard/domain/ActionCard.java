@@ -82,6 +82,28 @@ public class ActionCard extends BaseTimeEntity {
                 fromRestPreference);
     }
 
+    /**
+     * "해봤어요"/되돌리기와 느낀 점을 한 번에 반영한다.
+     *
+     * <p>완료로 바꿀 때 아직 해본 시각이 없으면 지금으로 찍는다 — 느낀 점만 고치는 재요청에서는
+     * 처음 해본 시각을 지키려고 기존 값을 그대로 둔다. 되돌리면 <b>해본 시각·느낀 점이 함께
+     * 사라진다</b>(느낀 점은 "해본 뒤 한 줄"이라 완료 상태에만 매달린다). 미완료로 두면서 느낀
+     * 점을 남기는 조합은 표현 계층에서 막는다({@code ActionCardCompletionRequest}).
+     */
+    public void changeCompletion(boolean done, String reflection, Instant now) {
+        if (done) {
+            this.done = true;
+            if (this.doneAt == null) {
+                this.doneAt = Objects.requireNonNull(now, "now must not be null");
+            }
+            this.reflection = reflection;
+        } else {
+            this.done = false;
+            this.doneAt = null;
+            this.reflection = null;
+        }
+    }
+
     public Long getId() {
         return id;
     }
