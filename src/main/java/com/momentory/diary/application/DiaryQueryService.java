@@ -4,13 +4,18 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.momentory.common.time.TimeZonePolicy;
+import com.momentory.diary.domain.Diary;
 import com.momentory.diary.infrastructure.DiaryRepository;
+import com.momentory.retrospect.domain.Emotion;
 
 /**
  * 일기 조회 유스케이스 — 보관함의 월별 목록·단건, 그리고 회고 화면이 쓰는 회고별 단건. 쓰기(생성)는
@@ -56,6 +61,28 @@ public class DiaryQueryService {
                 .stream()
                 .map(DiaryView::from)
                 .toList();
+    }
+
+    /**
+     * {@code [from, to]}(KST, 양끝 포함) 안에서 하루별 현재 감정 — 주간 리포트의 「이번 주의 마음」이
+     * 쓴다. 일기는 하루 한 벌만 남으므로(회고 "하루 한 번" 가드) 날짜 하나에 감정 하나다. 혹시 같은
+     * 날에 둘이 있으면 최신 것을 쓴다. 일기가 없는 날은 키 자체가 없다 — 빈 칸은 부르는 쪽이 채운다.
+     *
+     * <p>본문은 담지 않는다 — 세는 화면에 일기 내용을 흘리지 않기 위해서다.
+     */
+    @Transactional(readOnly = true)
+    public Map<LocalDate, Emotion> getDailyEmotions(Long userId, LocalDate from, LocalDate to) {
+        Instant start = from.atStartOfDay(ZONE).toInstant();
+        Instant end = to.plusDays(1).atStartOfDay(ZONE).toInstant();
+        Map<LocalDate, Emotion> byDate = new LinkedHashMap<>();
+        // 최신순으로 오므로, 같은 날에 둘이 있으면 먼저 담기는 최신 것이 남는다.
+        for (Diary diary : diaryRepository
+                .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                        userId, start, end)) {
+            byDate.putIfAbsent(LocalDate.ofInstant(diary.getCreatedAt(), ZONE),
+                    diary.getCurrentEmotion());
+        }
+        return Collections.unmodifiableMap(byDate);
     }
 
     /** 일기 단건 — 소유권을 함께 검증한다. */

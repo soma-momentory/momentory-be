@@ -1,6 +1,7 @@
 package com.momentory.actioncard.application;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.List;
@@ -44,6 +45,23 @@ public class ActionCardQueryService {
                 .stream()
                 .map(ActionCardView::from)
                 .toList();
+    }
+
+    /**
+     * {@code [from, to]}(KST, 양끝 포함) 안에 만들어진 행동 카드 수와 그중 완료된 수 — 주간 리포트가
+     * 쓴다. 보관함 월별 조회와 같은 {@code created_at} 기준이라, 목록에 보이는 카드와 셈이 어긋나지
+     * 않는다.
+     */
+    @Transactional(readOnly = true)
+    public ActionCardPeriodCount countInPeriod(Long userId, LocalDate from, LocalDate to) {
+        Instant start = from.atStartOfDay(ZONE).toInstant();
+        Instant end = to.plusDays(1).atStartOfDay(ZONE).toInstant();
+        long created = actionCardRepository
+                .countByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(userId, start, end);
+        long completed = actionCardRepository
+                .countByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanAndDoneTrue(
+                        userId, start, end);
+        return new ActionCardPeriodCount(created, completed);
     }
 
     /** 행동 카드 단건 — 소유권을 함께 검증한다. */

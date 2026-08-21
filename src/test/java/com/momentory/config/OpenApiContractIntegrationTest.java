@@ -192,6 +192,12 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/diaries/by-retrospect/{retrospectId}", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertErrorExample(apiDocs, "/api/v1/diaries/by-retrospect/{retrospectId}", "put", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
 
+        assertResponseSchema(apiDocs, "/api/v1/reports/weekly", "get", "200", "WeeklyReportResponse");
+        assertWeeklyReportResponseProperties(apiDocs);
+        assertErrorExample(apiDocs, "/api/v1/reports/weekly", "get", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/reports/weekly", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertOperationTag(apiDocs, "/api/v1/reports/weekly", "get", "Reports");
+
         assertResponseSchema(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "200", "ActionCardCompletionResponse");
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "되돌린 상태에서는 느낀 점을 남길 수 없습니다.");
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
@@ -341,6 +347,26 @@ class OpenApiContractIntegrationTest {
         assertThat(event.has("title")).isTrue();
     }
 
+    private void assertWeeklyReportResponseProperties(JsonNode apiDocs) {
+        JsonNode properties = apiDocs.at("/components/schemas/WeeklyReportResponse/properties");
+        assertThat(properties.size()).isEqualTo(10);
+        assertThat(properties.has("startDate")).isTrue();
+        assertThat(properties.has("endDate")).isTrue();
+        assertThat(properties.has("dailyMoods")).isTrue();
+        assertThat(properties.has("dominantEmotion")).isTrue();
+        assertThat(properties.has("moodMessage")).isTrue();
+        assertThat(properties.has("scheduleTotalCount")).isTrue();
+        assertThat(properties.has("scheduleCompletedCount")).isTrue();
+        assertThat(properties.has("actionCardCreatedCount")).isTrue();
+        assertThat(properties.has("actionCardCompletedCount")).isTrue();
+        assertThat(properties.has("diaryCount")).isTrue();
+
+        JsonNode daily = apiDocs.at("/components/schemas/DailyMoodResponse/properties");
+        assertThat(daily.size()).isEqualTo(2);
+        assertThat(daily.has("date")).isTrue();
+        assertThat(daily.has("emotion")).isTrue();
+    }
+
     private void assertScheduleResponseProperties(JsonNode apiDocs) {
         JsonNode properties = apiDocs.at("/components/schemas/ScheduleResponse/properties");
         assertThat(properties.has("source")).isTrue();
@@ -404,7 +430,8 @@ class OpenApiContractIntegrationTest {
         RETROSPECT_MESSAGE("/api/v1/retrospect/{id}/messages", "post"),
         DIARY_DELETE("/api/v1/diaries/{id}", "delete"),
         DIARY_UPDATE_BY_RETROSPECT("/api/v1/diaries/by-retrospect/{retrospectId}", "put"),
-        ACTION_CARD_COMPLETION("/api/v1/action-cards/{id}/completion", "put");
+        ACTION_CARD_COMPLETION("/api/v1/action-cards/{id}/completion", "put"),
+        REPORT_WEEKLY("/api/v1/reports/weekly", "get");
 
         private final String path;
         private final String method;
