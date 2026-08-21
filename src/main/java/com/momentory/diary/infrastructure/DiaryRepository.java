@@ -32,4 +32,11 @@ public interface DiaryRepository extends JpaRepository<Diary, Long> {
      */
     List<Diary> findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
             Long userId, Instant start, Instant end);
+
+    /**
+     * 이 사용자의 일기 전체 — 최신순. 보관함 리스트 뷰가 한 번에 훑어본다. 일기는 하루 한 벌만
+     * 생기므로(회고 완료 때) 몇 해가 쌓여도 수백 행 규모라 통째로 돌려준다.
+     * {@code idx_diaries_user_created (user_id, created_at)} 를 탄다.
+     */
+    List<Diary> findByUserIdOrderByCreatedAtDesc(Long userId);
 }

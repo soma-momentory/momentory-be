@@ -47,6 +47,17 @@ public class DiaryQueryService {
                 .toList();
     }
 
+    /**
+     * 이 사용자의 일기 전체(최신순) — 보관함 리스트 뷰가 쓴다. 월 필터 없이 통째로 훑는다.
+     */
+    @Transactional(readOnly = true)
+    public List<DiaryView> getAll(Long userId) {
+        return diaryRepository.findByUserIdOrderByCreatedAtDesc(userId)
+                .stream()
+                .map(DiaryView::from)
+                .toList();
+    }
+
     /** 일기 단건 — 소유권을 함께 검증한다. */
     @Transactional(readOnly = true)
     public DiaryView getOne(Long userId, Long id) {
