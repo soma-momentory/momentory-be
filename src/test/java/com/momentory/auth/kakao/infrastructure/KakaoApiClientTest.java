@@ -109,6 +109,7 @@ class KakaoApiClientTest {
         KakaoApiProperties properties = new KakaoApiProperties(
                 server.url("/").toString(),
                 KAKAO_APP_ID,
+                "test-admin-key",
                 Duration.ofSeconds(1),
                 readTimeout
         );
@@ -120,6 +121,7 @@ class KakaoApiClientTest {
         KakaoApiProperties properties = new KakaoApiProperties(
                 "http://127.0.0.1:1",
                 KAKAO_APP_ID,
+                "test-admin-key",
                 Duration.ofMillis(100),
                 Duration.ofMillis(100)
         );

@@ -7,12 +7,18 @@ import com.momentory.auth.logout.presentation.LogoutController;
 import com.momentory.auth.token.application.RefreshTokenReissueException;
 import com.momentory.auth.token.presentation.RefreshTokenReissueController;
 import com.momentory.common.presentation.ApiErrorResponse;
+import com.momentory.user.withdrawal.presentation.UserWithdrawalController;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = {KakaoLoginController.class, RefreshTokenReissueController.class, LogoutController.class})
+@RestControllerAdvice(assignableTypes = {
+        KakaoLoginController.class,
+        RefreshTokenReissueController.class,
+        LogoutController.class,
+        UserWithdrawalController.class
+})
 public class AuthExceptionHandler {
 
     @ExceptionHandler(KakaoApiException.class)

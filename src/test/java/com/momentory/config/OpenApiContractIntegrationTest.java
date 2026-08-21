@@ -98,6 +98,12 @@ class OpenApiContractIntegrationTest {
 
         assertResponseSchema(apiDocs, "/api/v1/users/me", "get", "200", "UserMeResponse");
         assertErrorExample(apiDocs, "/api/v1/users/me", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertNoResponseContent(apiDocs, "/api/v1/users/me", "delete", "204");
+        assertErrorExample(apiDocs, "/api/v1/users/me", "delete", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/users/me", "delete", "502", "ApiErrorResponse", "KAKAO_API_SERVER_ERROR", "KAKAO_API_SERVER_ERROR", "카카오 서비스에 일시적인 오류가 발생했습니다.");
+        assertErrorExample(apiDocs, "/api/v1/users/me", "delete", "502", "ApiErrorResponse", "KAKAO_API_RESPONSE_ERROR", "KAKAO_API_RESPONSE_ERROR", "카카오 서비스 응답을 처리할 수 없습니다.");
+        assertErrorExample(apiDocs, "/api/v1/users/me", "delete", "503", "ApiErrorResponse", "KAKAO_API_NETWORK_ERROR", "KAKAO_API_NETWORK_ERROR", "카카오 서비스에 연결할 수 없습니다.");
+        assertOperationTag(apiDocs, "/api/v1/users/me", "delete", "Users");
 
         assertResponseSchema(apiDocs, "/api/v1/users/me/onboarding", "put", "200", "CompleteOnboardingResponse");
         assertOnboardingRequestProperties(apiDocs);
@@ -373,6 +379,7 @@ class OpenApiContractIntegrationTest {
         TOKEN_REISSUE("/api/v1/auth/reissue", "post"),
         LOGOUT("/api/v1/auth/logout", "post"),
         USER_ME("/api/v1/users/me", "get"),
+        USER_WITHDRAWAL("/api/v1/users/me", "delete"),
         ONBOARDING_COMPLETE("/api/v1/users/me/onboarding", "put"),
         ONBOARDING_OPTIONS("/api/v1/onboarding/options", "get"),
         SCHEDULES_GET("/api/v1/schedules", "get"),
