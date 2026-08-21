@@ -3,6 +3,7 @@ package com.momentory.schedule.presentation;
 import com.momentory.common.presentation.ApiErrorResponse;
 import com.momentory.schedule.application.ScheduleNotFoundException;
 import com.momentory.schedule.application.InvalidScheduleOrderException;
+import com.momentory.schedule.application.InvalidSchedulePeriodException;
 import com.momentory.schedule.application.InvalidCalendarSyncException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,11 @@ public class ScheduleExceptionHandler {
     @ExceptionHandler(InvalidCalendarSyncException.class)
     ResponseEntity<ApiErrorResponse> handleInvalidCalendarSync() {
         return scheduleError(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "캘린더 동기화 요청이 올바르지 않습니다.");
+    }
+
+    @ExceptionHandler(InvalidSchedulePeriodException.class)
+    ResponseEntity<ApiErrorResponse> handleInvalidSchedulePeriod() {
+        return scheduleError(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "일정 조회 기간이 올바르지 않습니다.");
     }
 
     private ResponseEntity<ApiErrorResponse> scheduleError(HttpStatus status, String code, String message) {

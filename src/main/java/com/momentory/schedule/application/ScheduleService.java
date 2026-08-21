@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -32,10 +33,25 @@ public class ScheduleService {
         this.userRepository = userRepository;
     }
 
+    private static final int MAX_PERIOD_DAYS = 366;
+
     @Transactional(readOnly = true)
     public List<ScheduleResult> getSchedules(Long userId, LocalDate date) {
         requireUser(userId);
         return scheduleRepository.findByUserIdAndScheduleDateAndDeletedAtIsNullOrderByDisplayOrderAscIdAsc(userId, date)
+                .stream()
+                .map(ScheduleResult::from)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ScheduleResult> getSchedulesInPeriod(Long userId, LocalDate from, LocalDate to) {
+        requireUser(userId);
+        validatePeriod(from, to);
+        return scheduleRepository
+                .findByUserIdAndScheduleDateBetweenAndHiddenFalseAndDeletedAtIsNullOrderByScheduleDateAscDisplayOrderAscIdAsc(
+                        userId, from, to
+                )
                 .stream()
                 .map(ScheduleResult::from)
                 .toList();
@@ -205,6 +221,12 @@ public class ScheduleService {
     private void requireUser(Long userId) {
         userRepository.findById(userId)
                 .orElseThrow(AuthenticatedUserNotFoundException::new);
+    }
+
+    private void validatePeriod(LocalDate from, LocalDate to) {
+        if (from.isAfter(to) || ChronoUnit.DAYS.between(from, to) + 1 > MAX_PERIOD_DAYS) {
+            throw new InvalidSchedulePeriodException();
+        }
     }
 
     private void validateSyncRequest(LocalDate from, LocalDate to, List<CalendarSyncEvent> events) {

@@ -112,6 +112,10 @@ class OpenApiContractIntegrationTest {
         assertScheduleResponseProperties(apiDocs);
         assertErrorExample(apiDocs, "/api/v1/schedules", "get", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/schedules", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertResponseSchema(apiDocs, "/api/v1/schedules/period", "get", "200", "ScheduleListResponse");
+        assertErrorExample(apiDocs, "/api/v1/schedules/period", "get", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/schedules/period", "get", "400", "ApiErrorResponse", "invalidPeriodRange", "INVALID_REQUEST", "일정 조회 기간이 올바르지 않습니다.");
+        assertErrorExample(apiDocs, "/api/v1/schedules/period", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertResponseSchema(apiDocs, "/api/v1/schedules", "post", "201", "ScheduleResponse");
         assertErrorExample(apiDocs, "/api/v1/schedules", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "title은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/schedules", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
@@ -376,6 +380,7 @@ class OpenApiContractIntegrationTest {
         ONBOARDING_COMPLETE("/api/v1/users/me/onboarding", "put"),
         ONBOARDING_OPTIONS("/api/v1/onboarding/options", "get"),
         SCHEDULES_GET("/api/v1/schedules", "get"),
+        SCHEDULES_PERIOD("/api/v1/schedules/period", "get"),
         SCHEDULES_POST("/api/v1/schedules", "post"),
         SCHEDULES_SYNC("/api/v1/schedules/sync", "post"),
         SCHEDULES_PATCH("/api/v1/schedules/{scheduleId}", "patch"),

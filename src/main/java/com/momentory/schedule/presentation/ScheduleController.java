@@ -57,6 +57,25 @@ public class ScheduleController {
         return ScheduleListResponse.from(scheduleService.getSchedules(principal.userId(), date));
     }
 
+    @Operation(summary = "기간별 일정 조회")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "일정 조회 성공", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ScheduleListResponse.class))),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = {
+                    @ExampleObject(name = "INVALID_REQUEST", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"잘못된 요청입니다.\"}"),
+                    @ExampleObject(name = "invalidPeriodRange", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"일정 조회 기간이 올바르지 않습니다.\"}")
+            })),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(name = "AUTHENTICATION_REQUIRED", value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}")))
+    })
+    @GetMapping(value = "/period", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ScheduleListResponse getSchedulesInPeriod(
+            @Login LoginPrincipal principal,
+            @Parameter(example = "2026-08-01") @RequestParam("from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(example = "2026-08-31") @RequestParam("to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return ScheduleListResponse.from(scheduleService.getSchedulesInPeriod(principal.userId(), from, to));
+    }
+
     @Operation(summary = "수동 일정 추가")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
