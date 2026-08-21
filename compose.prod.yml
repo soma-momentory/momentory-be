@@ -30,6 +30,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a Base64-encoded random value of at least 32 bytes}
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:?JWT_REFRESH_EXPIRATION must be set}
       KAKAO_APP_ID: ${KAKAO_APP_ID:?KAKAO_APP_ID must be set}
+      KAKAO_ADMIN_KEY: ${KAKAO_ADMIN_KEY:?KAKAO_ADMIN_KEY must be set}
       KAKAO_API_BASE_URL: ${KAKAO_API_BASE_URL:-https://kapi.kakao.com}
       KAKAO_CONNECT_TIMEOUT: ${KAKAO_CONNECT_TIMEOUT:-3s}
       KAKAO_READ_TIMEOUT: ${KAKAO_READ_TIMEOUT:-5s}
