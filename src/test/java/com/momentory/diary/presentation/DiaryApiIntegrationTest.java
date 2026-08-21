@@ -150,6 +150,66 @@ class DiaryApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("전체 목록 — 월 필터 없이 이 사용자의 모든 일기를 최신순으로 돌려준다")
+    void listAllReturnsEveryDiaryNewestFirst() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        // 여러 달에 걸친 일기 — 월 경계와 무관하게 전부 와야 한다.
+        seedDiary(user, "9월 일기", null, Emotion.PROUD, null,
+                Instant.parse("2026-09-01T00:00:00Z"));
+        seedDiary(user, "8월 일기", "8월 리프레임", Emotion.DEPRESSED, Emotion.ANXIOUS,
+                Instant.parse("2026-08-14T02:00:00Z"));
+        seedDiary(user, "7월 일기", null, Emotion.CALM, null,
+                Instant.parse("2026-07-10T01:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/diaries/all")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.diaries.length()").value(3))
+                // 최신순: 9월 → 8월 → 7월
+                .andExpect(jsonPath("$.diaries[0].original").value("9월 일기"))
+                .andExpect(jsonPath("$.diaries[1].original").value("8월 일기"))
+                .andExpect(jsonPath("$.diaries[1].reframed").value("8월 리프레임"))
+                .andExpect(jsonPath("$.diaries[2].original").value("7월 일기"));
+    }
+
+    @Test
+    @DisplayName("전체 목록 — 남의 일기는 섞이지 않는다")
+    void listAllIsScopedToOwner() throws Exception {
+        User owner = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        seedDiary(owner, "내 일기", null, Emotion.DEPRESSED, null,
+                Instant.parse("2026-08-10T01:00:00Z"));
+        seedDiary(other, "남의 일기", null, Emotion.HAPPY, null,
+                Instant.parse("2026-08-11T01:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/diaries/all")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.diaries.length()").value(1))
+                .andExpect(jsonPath("$.diaries[0].original").value("내 일기"));
+    }
+
+    @Test
+    @DisplayName("전체 목록 — 일기가 없으면 빈 배열")
+    void listAllReturnsEmptyWhenNone() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(get("/api/v1/diaries/all")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.diaries.length()").value(0));
+    }
+
+    @Test
+    @DisplayName("전체 목록 — 인증 없으면 401")
+    void listAllRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/v1/diaries/all"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
     @DisplayName("단건 조회 — 전체 본문을 돌려준다")
     void getOneReturnsFullBody() throws Exception {
         User user = userRepository.saveAndFlush(User.create());

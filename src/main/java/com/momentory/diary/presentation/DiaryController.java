@@ -72,6 +72,24 @@ public class DiaryController {
         return DiaryListResponse.from(diaryQueryService.getMonthly(principal.userId(), year, month));
     }
 
+    @Operation(summary = "일기 전체 목록 조회",
+            description = "보관함 리스트 뷰용 — 이 사용자의 모든 일기를 최신순으로 돌려준다. 월 필터는 없다.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = DiaryListResponse.class))),
+            @ApiResponse(responseCode = "401", description = "인증 필요",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = @ExampleObject(name = "AUTHENTICATION_REQUIRED",
+                                    value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}")))
+    })
+    @GetMapping(value = "/all", produces = MediaType.APPLICATION_JSON_VALUE)
+    public DiaryListResponse getAll(@Login LoginPrincipal principal) {
+        return DiaryListResponse.from(diaryQueryService.getAll(principal.userId()));
+    }
+
     @Operation(summary = "일기 단건 조회")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
