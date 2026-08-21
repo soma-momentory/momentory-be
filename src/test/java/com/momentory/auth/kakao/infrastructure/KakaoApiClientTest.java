@@ -45,15 +45,43 @@ class KakaoApiClientTest {
     }
 
     @Test
-    void returnsNullEmailWhenKakaoDoesNotProvideOne() {
+    void rejectsLoginWhenKakaoDoesNotProvideEmail() {
         enqueueTokenInfo(1001L, KAKAO_APP_ID, 3600L);
         server.enqueue(jsonResponse("""
                 {"id":1001,"kakao_account":{}}
                 """));
 
-        KakaoUserInfo userInfo = client(Duration.ofSeconds(1)).getUserInfo("kakao-access-token");
+        assertError(KakaoApiErrorCode.EMAIL_UNAVAILABLE, () -> client(Duration.ofSeconds(1))
+                .getUserInfo("kakao-access-token"));
+    }
 
-        assertThat(userInfo.email()).isNull();
+    @Test
+    void rejectsKakaoEmailThatStillNeedsConsent() {
+        enqueueTokenInfo(1001L, KAKAO_APP_ID, 3600L);
+        server.enqueue(jsonResponse("""
+                {"id":1001,"kakao_account":{
+                  "email_needs_agreement":true
+                }}
+                """));
+
+        assertError(KakaoApiErrorCode.EMAIL_CONSENT_REQUIRED, () -> client(Duration.ofSeconds(1))
+                .getUserInfo("kakao-access-token"));
+    }
+
+    @Test
+    void rejectsUnverifiedKakaoEmail() {
+        enqueueTokenInfo(1001L, KAKAO_APP_ID, 3600L);
+        server.enqueue(jsonResponse("""
+                {"id":1001,"kakao_account":{
+                  "email_needs_agreement":false,
+                  "is_email_valid":true,
+                  "is_email_verified":false,
+                  "email":"user@example.com"
+                }}
+                """));
+
+        assertError(KakaoApiErrorCode.EMAIL_UNAVAILABLE, () -> client(Duration.ofSeconds(1))
+                .getUserInfo("kakao-access-token"));
     }
 
     @Test
@@ -109,6 +137,7 @@ class KakaoApiClientTest {
         KakaoApiProperties properties = new KakaoApiProperties(
                 server.url("/").toString(),
                 KAKAO_APP_ID,
+                "test-admin-key",
                 Duration.ofSeconds(1),
                 readTimeout
         );
@@ -120,6 +149,7 @@ class KakaoApiClientTest {
         KakaoApiProperties properties = new KakaoApiProperties(
                 "http://127.0.0.1:1",
                 KAKAO_APP_ID,
+                "test-admin-key",
                 Duration.ofMillis(100),
                 Duration.ofMillis(100)
         );
@@ -134,7 +164,14 @@ class KakaoApiClientTest {
     }
 
     private void enqueueUserInfo(Long userId, String email) {
-        String kakaoAccount = email == null ? "{}" : "{\"email\":\"" + email + "\"}";
+        String kakaoAccount = email == null ? "{}" : """
+                {
+                  "email_needs_agreement":false,
+                  "is_email_valid":true,
+                  "is_email_verified":true,
+                  "email":"%s"
+                }
+                """.formatted(email);
         server.enqueue(jsonResponse("""
                 {"id":%d,"kakao_account":%s}
                 """.formatted(userId, kakaoAccount)));

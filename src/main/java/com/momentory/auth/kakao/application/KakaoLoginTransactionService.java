@@ -45,7 +45,9 @@ public class KakaoLoginTransactionService {
     public KakaoLoginResult login(KakaoUserInfo kakaoUserInfo) {
         Long userId = findExistingUserId(kakaoUserInfo.providerUserId())
                 .orElseGet(() -> createOrFindUserId(kakaoUserInfo));
-        User user = userRepository.getReferenceById(userId);
+        User user = userRepository.findById(userId)
+                .orElseThrow(IllegalStateException::new);
+        user.updateEmail(kakaoUserInfo.email());
 
         IssuedAccessToken accessToken = accessTokenIssuer.issue(user.getId(), user.getRole());
         IssuedRefreshToken refreshToken = refreshTokenIssuer.issue();

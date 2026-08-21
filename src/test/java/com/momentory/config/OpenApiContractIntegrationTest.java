@@ -71,6 +71,8 @@ class OpenApiContractIntegrationTest {
         assertResponseSchema(apiDocs, "/api/v1/auth/kakao", "post", "200", "KakaoLoginResponse");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "accessToken은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "400", "ApiErrorResponse", "KAKAO_EMAIL_CONSENT_REQUIRED", "KAKAO_EMAIL_CONSENT_REQUIRED", "카카오계정 이메일 제공 동의가 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "400", "ApiErrorResponse", "KAKAO_EMAIL_UNAVAILABLE", "KAKAO_EMAIL_UNAVAILABLE", "유효하고 인증된 카카오계정 이메일이 필요합니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "401", "ApiErrorResponse", "KAKAO_TOKEN_INVALID", "KAKAO_TOKEN_INVALID", "카카오 인증에 실패했습니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "401", "ApiErrorResponse", "KAKAO_APP_ID_MISMATCH", "KAKAO_APP_ID_MISMATCH", "카카오 인증에 실패했습니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "401", "ApiErrorResponse", "KAKAO_USER_ID_MISMATCH", "KAKAO_USER_ID_MISMATCH", "카카오 인증에 실패했습니다.");
@@ -98,6 +100,12 @@ class OpenApiContractIntegrationTest {
 
         assertResponseSchema(apiDocs, "/api/v1/users/me", "get", "200", "UserMeResponse");
         assertErrorExample(apiDocs, "/api/v1/users/me", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertNoResponseContent(apiDocs, "/api/v1/users/me", "delete", "204");
+        assertErrorExample(apiDocs, "/api/v1/users/me", "delete", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/users/me", "delete", "502", "ApiErrorResponse", "KAKAO_API_SERVER_ERROR", "KAKAO_API_SERVER_ERROR", "카카오 서비스에 일시적인 오류가 발생했습니다.");
+        assertErrorExample(apiDocs, "/api/v1/users/me", "delete", "502", "ApiErrorResponse", "KAKAO_API_RESPONSE_ERROR", "KAKAO_API_RESPONSE_ERROR", "카카오 서비스 응답을 처리할 수 없습니다.");
+        assertErrorExample(apiDocs, "/api/v1/users/me", "delete", "503", "ApiErrorResponse", "KAKAO_API_NETWORK_ERROR", "KAKAO_API_NETWORK_ERROR", "카카오 서비스에 연결할 수 없습니다.");
+        assertOperationTag(apiDocs, "/api/v1/users/me", "delete", "Users");
 
         assertResponseSchema(apiDocs, "/api/v1/users/me/onboarding", "put", "200", "CompleteOnboardingResponse");
         assertOnboardingRequestProperties(apiDocs);
@@ -377,6 +385,7 @@ class OpenApiContractIntegrationTest {
         TOKEN_REISSUE("/api/v1/auth/reissue", "post"),
         LOGOUT("/api/v1/auth/logout", "post"),
         USER_ME("/api/v1/users/me", "get"),
+        USER_WITHDRAWAL("/api/v1/users/me", "delete"),
         ONBOARDING_COMPLETE("/api/v1/users/me/onboarding", "put"),
         ONBOARDING_OPTIONS("/api/v1/onboarding/options", "get"),
         SCHEDULES_GET("/api/v1/schedules", "get"),

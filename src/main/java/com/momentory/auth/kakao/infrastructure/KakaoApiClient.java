@@ -68,8 +68,30 @@ public class KakaoApiClient {
             );
         }
 
-        String email = userResponse.kakao_account() == null ? null : userResponse.kakao_account().email();
+        String email = requireVerifiedEmail(userResponse.kakao_account());
         return new KakaoUserInfo(userId.toString(), email);
+    }
+
+    private String requireVerifiedEmail(KakaoUserResponse.KakaoAccount account) {
+        if (account != null && Boolean.TRUE.equals(account.email_needs_agreement())) {
+            throw new KakaoApiException(
+                    KakaoApiErrorCode.EMAIL_CONSENT_REQUIRED,
+                    "Kakao account email consent is required."
+            );
+        }
+        String email = account == null ? null : account.email();
+        if (account == null
+                || !Boolean.TRUE.equals(account.is_email_valid())
+                || !Boolean.TRUE.equals(account.is_email_verified())
+                || email == null
+                || email.isBlank()
+                || email.length() > 320) {
+            throw new KakaoApiException(
+                    KakaoApiErrorCode.EMAIL_UNAVAILABLE,
+                    "A verified Kakao account email is required."
+            );
+        }
+        return email.trim();
     }
 
     private KakaoTokenInfoResponse getTokenInfo(String accessToken) {

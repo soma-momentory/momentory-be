@@ -46,21 +46,17 @@ public class OAuthAccount extends BaseTimeEntity {
     @Column(name = "provider_user_id", nullable = false, length = 255)
     private String providerUserId;
 
-    @Column(length = 320)
-    private String email;
-
     protected OAuthAccount() {
     }
 
-    private OAuthAccount(User user, OAuthProvider provider, String providerUserId, String email) {
+    private OAuthAccount(User user, OAuthProvider provider, String providerUserId) {
         this.user = Objects.requireNonNull(user);
         this.provider = Objects.requireNonNull(provider);
         this.providerUserId = requireProviderUserId(providerUserId);
-        this.email = email;
     }
 
-    public static OAuthAccount create(User user, OAuthProvider provider, String providerUserId, String email) {
-        return new OAuthAccount(user, provider, providerUserId, email);
+    public static OAuthAccount create(User user, OAuthProvider provider, String providerUserId) {
+        return new OAuthAccount(user, provider, providerUserId);
     }
 
     private String requireProviderUserId(String providerUserId) {
@@ -86,7 +82,4 @@ public class OAuthAccount extends BaseTimeEntity {
         return providerUserId;
     }
 
-    public String getEmail() {
-        return email;
-    }
 }

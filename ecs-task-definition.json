@@ -66,6 +66,10 @@
           "valueFrom": "/momentory/prod/KAKAO_APP_ID"
         },
         {
+          "name": "KAKAO_ADMIN_KEY",
+          "valueFrom": "/momentory/prod/KAKAO_ADMIN_KEY"
+        },
+        {
           "name": "GEMINI_API_KEY",
           "valueFrom": "/momentory/prod/GEMINI_API_KEY"
         }

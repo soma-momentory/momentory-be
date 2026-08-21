@@ -12,6 +12,7 @@ import java.time.Duration;
 public record KakaoApiProperties(
         @NotBlank String baseUrl,
         @NotNull Long appId,
+        @NotBlank String adminKey,
         @NotNull Duration connectTimeout,
         @NotNull Duration readTimeout
 ) {

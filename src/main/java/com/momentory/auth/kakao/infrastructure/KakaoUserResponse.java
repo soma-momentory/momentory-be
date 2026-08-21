@@ -5,6 +5,11 @@ record KakaoUserResponse(
         KakaoAccount kakao_account
 ) {
 
-    record KakaoAccount(String email) {
+    record KakaoAccount(
+            Boolean email_needs_agreement,
+            Boolean is_email_valid,
+            Boolean is_email_verified,
+            String email
+    ) {
     }
 }

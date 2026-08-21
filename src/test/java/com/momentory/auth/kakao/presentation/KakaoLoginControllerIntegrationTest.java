@@ -142,6 +142,26 @@ class KakaoLoginControllerIntegrationTest {
     }
 
     @Test
+    void rejectsKakaoLoginWithoutEmailConsent() throws Exception {
+        givenKakaoFailure(KakaoApiErrorCode.EMAIL_CONSENT_REQUIRED);
+
+        mockMvc.perform(loginRequest("token-without-email-consent"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("KAKAO_EMAIL_CONSENT_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("카카오계정 이메일 제공 동의가 필요합니다."));
+    }
+
+    @Test
+    void rejectsKakaoLoginWithUnavailableEmail() throws Exception {
+        givenKakaoFailure(KakaoApiErrorCode.EMAIL_UNAVAILABLE);
+
+        mockMvc.perform(loginRequest("token-with-unavailable-email"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("KAKAO_EMAIL_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value("유효하고 인증된 카카오계정 이메일이 필요합니다."));
+    }
+
+    @Test
     void mapsInvalidKakaoTokenToUnauthorized() throws Exception {
         givenKakaoFailure(KakaoApiErrorCode.INVALID_ACCESS_TOKEN);
 
