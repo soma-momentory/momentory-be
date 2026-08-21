@@ -30,6 +30,17 @@ public interface ActionCardRepository extends JpaRepository<ActionCard, Long> {
             Long userId, Instant start, Instant end);
 
     /**
+     * {@code [start, end)} 구간에 만들어진 카드 수 — 주간 리포트의 「이번 주 한눈에」가 쓴다.
+     * 월별 목록과 같은 {@code created_at} 기준이라 {@code idx_action_cards_user_created} 를 탄다.
+     */
+    long countByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            Long userId, Instant start, Instant end);
+
+    /** 위와 같은 구간에서 "해봤어요"까지 간 카드 수 — 완료 시각이 아니라 <b>생성</b> 시각으로 가른다. */
+    long countByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanAndDoneTrue(
+            Long userId, Instant start, Instant end);
+
+    /**
      * 상황 임베딩을 저장한다 — 카드 저장 직후 별도로 채운다(JPA 엔티티는 벡터 컬럼을 매핑하지
      * 않는다). {@code vec} 는 pgvector 리터럴 문자열({@code "[0.1,0.2,...]"}).
      */
