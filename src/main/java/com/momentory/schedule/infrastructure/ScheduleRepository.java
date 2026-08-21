@@ -41,4 +41,10 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
             LocalDate from,
             LocalDate to
     );
+
+    List<Schedule> findByUserIdAndScheduleDateBetweenAndHiddenFalseAndDeletedAtIsNullOrderByScheduleDateAscDisplayOrderAscIdAsc(
+            Long userId,
+            LocalDate from,
+            LocalDate to
+    );
 }

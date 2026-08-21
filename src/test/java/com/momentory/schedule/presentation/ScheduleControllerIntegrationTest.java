@@ -520,6 +520,9 @@ class ScheduleControllerIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"))
                 .andExpect(jsonPath("$.message").value("인증이 필요합니다."));
+        mockMvc.perform(get("/api/v1/schedules/period").param("from", "2026-08-01").param("to", "2026-08-31")
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/v1/schedules").header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"date\":\"2026-08-10\",\"title\":\"운동하기\"}"))
                 .andExpect(status().isUnauthorized());
@@ -546,6 +549,65 @@ class ScheduleControllerIntegrationTest {
 
         assertThat(scheduleRepository.findByUserIdAndScheduleDateAndDeletedAtIsNullOrderByDisplayOrderAscIdAsc(user.getId(), date))
                 .isEmpty();
+    }
+
+    @Test
+    void returnsActiveVisibleSchedulesWithinPeriodOrderedByDateThenDisplayOrder() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        User anotherUser = userRepository.saveAndFlush(User.create());
+        Schedule earlierSecond = scheduleRepository.saveAndFlush(Schedule.createManual(user.getId(), LocalDate.of(2026, 8, 5), "5일 뒤 순서", 1L));
+        Schedule earlierFirst = scheduleRepository.saveAndFlush(Schedule.createManual(user.getId(), LocalDate.of(2026, 8, 5), "5일 앞 순서", 0L));
+        Schedule later = scheduleRepository.saveAndFlush(Schedule.createCalendar(user.getId(), "cal-visible", LocalDate.of(2026, 8, 20), "캘린더 일정", 0L));
+        Schedule hidden = Schedule.createCalendar(user.getId(), "cal-hidden", LocalDate.of(2026, 8, 21), "숨긴 캘린더", 0L);
+        hidden.changeHidden(true);
+        scheduleRepository.saveAndFlush(hidden);
+        Schedule deleted = Schedule.createManual(user.getId(), LocalDate.of(2026, 8, 22), "삭제됨", 0L);
+        deleted.delete(java.time.Instant.now());
+        scheduleRepository.saveAndFlush(deleted);
+        scheduleRepository.saveAndFlush(Schedule.createManual(user.getId(), LocalDate.of(2026, 7, 31), "범위 밖 앞", 0L));
+        scheduleRepository.saveAndFlush(Schedule.createManual(user.getId(), LocalDate.of(2026, 9, 1), "범위 밖 뒤", 0L));
+        scheduleRepository.saveAndFlush(Schedule.createManual(anotherUser.getId(), LocalDate.of(2026, 8, 10), "다른 사용자", 0L));
+
+        mockMvc.perform(getPeriod(user, "2026-08-01", "2026-08-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schedules.length()").value(3))
+                .andExpect(jsonPath("$.schedules[0].id").value(earlierFirst.getId()))
+                .andExpect(jsonPath("$.schedules[1].id").value(earlierSecond.getId()))
+                .andExpect(jsonPath("$.schedules[2].id").value(later.getId()))
+                .andExpect(jsonPath("$.schedules[2].source").value("CALENDAR"))
+                .andExpect(jsonPath("$.schedules[2].hidden").value(false));
+        assertThat(hidden.getId()).isNotNull();
+    }
+
+    @Test
+    void rejectsInvalidPeriodRange() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(getPeriod(user, "2026-08-31", "2026-08-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("일정 조회 기간이 올바르지 않습니다."));
+        mockMvc.perform(getPeriod(user, "2026-01-01", "2027-01-02"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("일정 조회 기간이 올바르지 않습니다."));
+        mockMvc.perform(get("/api/v1/schedules/period").param("from", "2026-08-01").header(HttpHeaders.AUTHORIZATION, bearerToken(user)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("잘못된 요청입니다."));
+        mockMvc.perform(getPeriod(user, "2026-08-40", "2026-08-31"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("잘못된 요청입니다."));
+    }
+
+    @Test
+    void acceptsMaximumAllowedPeriodSpan() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(getPeriod(user, "2026-01-01", "2026-12-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schedules").isEmpty());
     }
 
     @Test
@@ -613,6 +675,13 @@ class ScheduleControllerIntegrationTest {
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder getSchedules(User user, LocalDate date) {
         return get("/api/v1/schedules")
                 .param("date", date.toString())
+                .header(HttpHeaders.AUTHORIZATION, bearerToken(user));
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder getPeriod(User user, String from, String to) {
+        return get("/api/v1/schedules/period")
+                .param("from", from)
+                .param("to", to)
                 .header(HttpHeaders.AUTHORIZATION, bearerToken(user));
     }
 
