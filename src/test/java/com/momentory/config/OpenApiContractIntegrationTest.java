@@ -71,6 +71,8 @@ class OpenApiContractIntegrationTest {
         assertResponseSchema(apiDocs, "/api/v1/auth/kakao", "post", "200", "KakaoLoginResponse");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "accessToken은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "400", "ApiErrorResponse", "KAKAO_EMAIL_CONSENT_REQUIRED", "KAKAO_EMAIL_CONSENT_REQUIRED", "카카오계정 이메일 제공 동의가 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "400", "ApiErrorResponse", "KAKAO_EMAIL_UNAVAILABLE", "KAKAO_EMAIL_UNAVAILABLE", "유효하고 인증된 카카오계정 이메일이 필요합니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "401", "ApiErrorResponse", "KAKAO_TOKEN_INVALID", "KAKAO_TOKEN_INVALID", "카카오 인증에 실패했습니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "401", "ApiErrorResponse", "KAKAO_APP_ID_MISMATCH", "KAKAO_APP_ID_MISMATCH", "카카오 인증에 실패했습니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "401", "ApiErrorResponse", "KAKAO_USER_ID_MISMATCH", "KAKAO_USER_ID_MISMATCH", "카카오 인증에 실패했습니다.");

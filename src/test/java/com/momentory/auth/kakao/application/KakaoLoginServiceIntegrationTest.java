@@ -100,10 +100,11 @@ class KakaoLoginServiceIntegrationTest {
         KakaoLoginResult result = kakaoLoginService.login("kakao-access-token");
 
         assertThat(userRepository.count()).isEqualTo(1);
+        assertThat(userRepository.findById(result.userId()).orElseThrow().getEmail())
+                .isEqualTo("user@example.com");
         assertThat(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.KAKAO, "1001"))
                 .hasValueSatisfying(account -> {
                     assertThat(account.getUser().getId()).isEqualTo(result.userId());
-                    assertThat(account.getEmail()).isEqualTo("user@example.com");
                 });
         assertThat(result.onboardingRequired()).isTrue();
     }
@@ -135,13 +136,27 @@ class KakaoLoginServiceIntegrationTest {
     }
 
     @Test
-    void createsUserWhenKakaoDoesNotProvideEmail() {
+    void doesNotCreateUserWhenKakaoDoesNotProvideEmail() {
         givenKakaoUser("1001", null);
 
-        kakaoLoginService.login("kakao-access-token");
+        assertThatThrownBy(() -> kakaoLoginService.login("kakao-access-token"))
+                .isInstanceOf(RuntimeException.class);
 
-        assertThat(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.KAKAO, "1001"))
-                .hasValueSatisfying(account -> assertThat(account.getEmail()).isNull());
+        assertThat(userRepository.count()).isZero();
+        assertThat(oauthAccountRepository.count()).isZero();
+        assertThat(refreshTokenRepository.count()).isZero();
+    }
+
+    @Test
+    void updatesExistingUsersEmailFromLatestKakaoResponse() {
+        givenKakaoUser("1001", "old@example.com");
+        Long userId = kakaoLoginService.login("first-token").userId();
+
+        givenKakaoUser("1001", "new@example.com");
+        kakaoLoginService.login("second-token");
+
+        assertThat(userRepository.findById(userId).orElseThrow().getEmail())
+                .isEqualTo("new@example.com");
     }
 
     @Test

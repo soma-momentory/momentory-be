@@ -75,6 +75,24 @@ public class KakaoLoginController {
                                                       "message": "잘못된 요청입니다."
                                                     }
                                                     """
+                                    ),
+                                    @ExampleObject(
+                                            name = "KAKAO_EMAIL_CONSENT_REQUIRED",
+                                            value = """
+                                                    {
+                                                      "code": "KAKAO_EMAIL_CONSENT_REQUIRED",
+                                                      "message": "카카오계정 이메일 제공 동의가 필요합니다."
+                                                    }
+                                                    """
+                                    ),
+                                    @ExampleObject(
+                                            name = "KAKAO_EMAIL_UNAVAILABLE",
+                                            value = """
+                                                    {
+                                                      "code": "KAKAO_EMAIL_UNAVAILABLE",
+                                                      "message": "유효하고 인증된 카카오계정 이메일이 필요합니다."
+                                                    }
+                                                    """
                                     )
                             }
                     )

@@ -25,8 +25,8 @@ public class OAuthAccountRegistrationService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long createUserAndAccount(String providerUserId, String email) {
-        User user = userRepository.save(User.create());
-        OAuthAccount account = OAuthAccount.create(user, OAuthProvider.KAKAO, providerUserId, email);
+        User user = userRepository.save(User.create(email));
+        OAuthAccount account = OAuthAccount.create(user, OAuthProvider.KAKAO, providerUserId);
         oauthAccountRepository.saveAndFlush(account);
         return user.getId();
     }

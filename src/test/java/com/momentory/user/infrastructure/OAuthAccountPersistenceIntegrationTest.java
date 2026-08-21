@@ -54,8 +54,7 @@ class OAuthAccountPersistenceIntegrationTest {
         OAuthAccount account = oauthAccountRepository.saveAndFlush(OAuthAccount.create(
                 firstUser,
                 OAuthProvider.KAKAO,
-                "123456789",
-                null
+                "123456789"
         ));
 
         assertThat(oauthAccountRepository.findByProviderAndProviderUserId(
@@ -68,8 +67,7 @@ class OAuthAccountPersistenceIntegrationTest {
         assertThatThrownBy(() -> oauthAccountRepository.saveAndFlush(OAuthAccount.create(
                 secondUser,
                 OAuthProvider.KAKAO,
-                "123456789",
-                null
+                "123456789"
         ))).isInstanceOf(DataIntegrityViolationException.class);
     }
 }

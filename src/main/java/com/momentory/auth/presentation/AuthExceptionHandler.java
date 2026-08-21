@@ -27,6 +27,8 @@ public class AuthExceptionHandler {
             case INVALID_ACCESS_TOKEN -> error(HttpStatus.UNAUTHORIZED, "KAKAO_TOKEN_INVALID", "카카오 인증에 실패했습니다.");
             case APP_ID_MISMATCH -> error(HttpStatus.UNAUTHORIZED, "KAKAO_APP_ID_MISMATCH", "카카오 인증에 실패했습니다.");
             case USER_ID_MISMATCH -> error(HttpStatus.UNAUTHORIZED, "KAKAO_USER_ID_MISMATCH", "카카오 인증에 실패했습니다.");
+            case EMAIL_CONSENT_REQUIRED -> error(HttpStatus.BAD_REQUEST, "KAKAO_EMAIL_CONSENT_REQUIRED", "카카오계정 이메일 제공 동의가 필요합니다.");
+            case EMAIL_UNAVAILABLE -> error(HttpStatus.BAD_REQUEST, "KAKAO_EMAIL_UNAVAILABLE", "유효하고 인증된 카카오계정 이메일이 필요합니다.");
             case KAKAO_API_SERVER_ERROR -> error(HttpStatus.BAD_GATEWAY, "KAKAO_API_SERVER_ERROR", "카카오 서비스에 일시적인 오류가 발생했습니다.");
             case KAKAO_API_NETWORK_ERROR -> error(HttpStatus.SERVICE_UNAVAILABLE, "KAKAO_API_NETWORK_ERROR", "카카오 서비스에 연결할 수 없습니다.");
             case UNEXPECTED_KAKAO_RESPONSE -> error(HttpStatus.BAD_GATEWAY, "KAKAO_API_RESPONSE_ERROR", "카카오 서비스 응답을 처리할 수 없습니다.");
