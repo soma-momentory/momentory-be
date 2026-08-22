@@ -26,6 +26,7 @@ import com.momentory.retrospect.domain.PriorActionCard;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.ScheduleItem;
 import com.momentory.retrospect.domain.SchedulePicker;
+import com.momentory.retrospect.domain.safety.AbuseGate;
 import com.momentory.retrospect.domain.safety.Guidance;
 import com.momentory.retrospect.domain.safety.PromptGuard;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
@@ -72,10 +73,17 @@ public class RetrospectEngine {
      */
     private final int reaskCap;
 
+    /**
+     * 연속 어뷰징 상한 — 욕만·상담사 대상 공격이 이 횟수만큼 이어지면 같은 되돌리기를 무한 반복하지
+     * 않고 부드럽게 종료한다(에스컬레이션). 비용이 아니라 UX·루프 차단용이다({@code AbuseGate}).
+     */
+    private final int abuseCap;
+
     public RetrospectEngine(SafetyPolicy safetyPolicy, UnderstandingChecker understandingChecker,
             TurnScripter turnScripter, DiaryWriter diaryWriter, LlmUsageLogger usage,
             ApplicationEventPublisher events,
-            @Value("${momentory.gate.reask-cap:1}") int reaskCap) {
+            @Value("${momentory.gate.reask-cap:1}") int reaskCap,
+            @Value("${momentory.gate.abuse-cap:3}") int abuseCap) {
         this.safetyPolicy = safetyPolicy;
         this.understandingChecker = understandingChecker;
         this.turnScripter = turnScripter;
@@ -83,6 +91,7 @@ public class RetrospectEngine {
         this.usage = usage;
         this.events = events;
         this.reaskCap = reaskCap;
+        this.abuseCap = abuseCap;
     }
 
     // ── 시작 — 1턴 공통 질문(템플릿, AI 0회) ─────────────────────────────
@@ -195,6 +204,16 @@ public class RetrospectEngine {
         if (attack.isPresent()) {
             return deflectReply(state, Phase.INTRO, attack.get());
         }
+
+        // 욕만 있는 한마디·상담사 대상 공격은 회고 가치가 0 — AI 없이 되돌린다. 단 위기 신호가
+        // 섞였으면(예: "닥쳐 살기싫어") 건너뛰어 아래 흐름이 위기를 잡게 둔다(위기 우선).
+        if (!scan.level().atLeast(SafetyLevel.RISK)) {
+            Optional<AbuseGate.Category> abuse = AbuseGate.inspect(command.content());
+            if (abuse.isPresent()) {
+                return abuseReply(state, Phase.INTRO, abuse.get());
+            }
+        }
+        state.resetAbuse(); // 어뷰징이 아닌 입력 — 연속 카운터를 푼다.
 
         // Layer 1(규칙 게이트): 명백한 비답변이면 AI 없이 되묻는다(캡 안에서).
         Optional<AnswerGate.HoldReason> ruleHold = AnswerGate.inspect(command.content());
@@ -372,6 +391,16 @@ public class RetrospectEngine {
             return deflectReply(state, Phase.SCRIPT, attack.get());
         }
 
+        // 욕만 있는 한마디·상담사 대상 공격은 회고 가치가 0 — AI 없이 되돌린다. 단 위기 신호가
+        // 섞였으면 건너뛰어 아래 흐름이 위기를 잡게 둔다(위기 우선). 기록·전진 없음.
+        if (!scan.level().atLeast(SafetyLevel.RISK)) {
+            Optional<AbuseGate.Category> abuse = AbuseGate.inspect(command.content());
+            if (abuse.isPresent()) {
+                return abuseReply(state, Phase.SCRIPT, abuse.get());
+            }
+        }
+        state.resetAbuse(); // 어뷰징이 아닌 입력 — 연속 카운터를 푼다.
+
         // Layer 1(규칙 게이트): 명백한 비답변이면 AI 없이 되묻는다(캡 안에서). 기록·전진 없음.
         Optional<AnswerGate.HoldReason> ruleHold = AnswerGate.inspect(command.content());
         if (ruleHold.isPresent() && state.reasks() < reaskCap) {
@@ -513,6 +542,28 @@ public class RetrospectEngine {
      */
     private ReplyDto deflectReply(RetrospectState state, Phase phase, PromptGuard.Category category) {
         String text = PromptGuard.message(category);
+        state.addAssistantMessage(text);
+        usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), phase.key());
+        return ReplyDto.question(text, phase, state.safety().level());
+    }
+
+    /**
+     * 어뷰징 되돌리기 — 욕만 있는 한마디·상담사 대상 공격에 정보 없이 회고로 되돌린다.
+     * {@link #deflectReply} 와 같이 답변으로 기록·전진하지 않고 AI 를 호출하지 않는다(가치 0 입력).
+     *
+     * <p>연속 횟수를 세어 {@code abuseCap} 에 닿으면 같은 되돌리기를 무한 반복하지 않고 부드럽게
+     * 종료한다(에스컬레이션). 정상 답변이 하나라도 들어오면 호출부가 {@code resetAbuse()} 로 푼다.
+     */
+    private ReplyDto abuseReply(RetrospectState state, Phase phase, AbuseGate.Category category) {
+        state.bumpAbuse();
+        if (abuseCap > 0 && state.abuseStreak() >= abuseCap) {
+            String text = AbuseGate.endMessage(category);
+            state.addAssistantMessage(text);
+            state.changePhase(Phase.ENDED);
+            usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.ENDED.key());
+            return ReplyDto.ended(text, state.safety().level());
+        }
+        String text = AbuseGate.message(category);
         state.addAssistantMessage(text);
         usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), phase.key());
         return ReplyDto.question(text, phase, state.safety().level());

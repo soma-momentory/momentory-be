@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient;
 
 import com.momentory.retrospect.application.metering.CallLog;
 import com.momentory.retrospect.application.metering.LlmCallRecorded;
+import com.momentory.retrospect.domain.safety.PromptLeakGuard;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -69,12 +70,30 @@ public class GeminiApiClient {
                     .body(GeminiResponse.class);
 
             long elapsedMs = elapsedMillis(startedAt);
+
+            // 출력 재검열(추가 호출 0회) — 생성 응답에 함께 온 안전 등급을 본다. 하드 차단이면
+            // 텍스트를 쓰지 않고 폴백(풀 대체)으로 되돌린다. 위기 대화 정상 응답이 확률만 높은
+            // 경우는 막지 않는다(GeminiResponse#blockedBySafety 참고).
+            if (response != null && response.blockedBySafety()) {
+                log.warn("Gemini 응답이 안전 필터에 막힘 role={} session={} reason={}",
+                        request.role().key(), request.sessionId(), response.safetyBlockReason());
+                return Optional.empty();
+            }
+
             String text = response == null ? null : response.firstText();
             if (text == null || text.isBlank()) {
                 log.warn("Gemini 응답에 구조화 출력이 없음 role={} session={}",
                         request.role().key(), request.sessionId());
                 return Optional.empty();
             }
+            // 출력 층 유출 검사(추가 호출 0회) — 인젝션이 하드닝을 뚫어 모델이 시스템 프롬프트를
+            // 뱉었으면 유저에게 보이지 않고 폴백으로 되돌린다. PromptGuard(입력 층)의 출력 짝.
+            if (PromptLeakGuard.leaks(text)) {
+                log.warn("Gemini 응답에 시스템 프롬프트 유출 흔적 role={} session={}",
+                        request.role().key(), request.sessionId());
+                return Optional.empty();
+            }
+
             T entity = objectMapper.readValue(text, type);
             publish(request, response, elapsedMs);
             return Optional.ofNullable(entity);

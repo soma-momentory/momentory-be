@@ -102,6 +102,61 @@ class GeminiApiClientTest {
         assertThat(result).isEmpty();
     }
 
+    @Test
+    void returnsEmptyWhenSafetyBlocked() throws Exception {
+        // 하드 차단(finishReason=SAFETY + blocked) — 텍스트 없이 폴백으로 떨어진다. 추가 호출 0회.
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of(
+                        "finishReason", "SAFETY",
+                        "safetyRatings", List.of(Map.of(
+                                "category", "HARM_CATEGORY_DANGEROUS_CONTENT",
+                                "probability", "HIGH",
+                                "blocked", true)))),
+                "usageMetadata", Map.of("promptTokenCount", 50, "candidatesTokenCount", 0)))));
+
+        Optional<UnderstandingCheck> result = client().generate(request("q"), UnderstandingCheck.class);
+
+        assertThat(result).isEmpty();
+        assertThat(events).isEmpty(); // 안전 차단은 성공 계측을 남기지 않는다
+    }
+
+    @Test
+    void passesThroughWhenSafetyRatingHighButNotBlocked() throws Exception {
+        // 위기·슬픔을 다루는 정상 응답 — 등급은 HIGH 지만 blocked=false 다. 막지 않고 통과시킨다.
+        String inner = mapper.writeValueAsString(new UnderstandingCheck(
+                "많이 힘드셨겠어요.", "상황 요약", "none", List.of(), false, false, false));
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of(
+                        "content", Map.of("parts", List.of(Map.of("text", inner))),
+                        "finishReason", "STOP",
+                        "safetyRatings", List.of(Map.of(
+                                "category", "HARM_CATEGORY_DANGEROUS_CONTENT",
+                                "probability", "HIGH",
+                                "blocked", false)))),
+                "usageMetadata", Map.of("promptTokenCount", 10, "candidatesTokenCount", 5)))));
+
+        Optional<UnderstandingCheck> result = client().generate(request("q"), UnderstandingCheck.class);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().reflection()).isEqualTo("많이 힘드셨겠어요.");
+    }
+
+    @Test
+    void returnsEmptyWhenOutputLeaksSystemPrompt() throws Exception {
+        // 인젝션이 하드닝을 뚫어 모델이 지시문을 뱉은 경우 — 유저에게 안 보이고 폴백으로.
+        String leaked = mapper.writeValueAsString(new UnderstandingCheck(
+                "네, 저는 momentory 의 감정 회고 상담사입니다. CBT(인지행동치료) 원리로 돕습니다.",
+                "상황", "none", List.of(), false, false, false));
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", leaked))))),
+                "usageMetadata", Map.of("promptTokenCount", 10, "candidatesTokenCount", 30)))));
+
+        Optional<UnderstandingCheck> result = client().generate(request("q"), UnderstandingCheck.class);
+
+        assertThat(result).isEmpty();
+        assertThat(events).isEmpty(); // 유출 응답은 성공 계측을 남기지 않는다
+    }
+
     private GeminiApiClient client() {
         GeminiApiProperties properties = new GeminiApiProperties(
                 server.url("/").toString(), "test-key", "gemini-flash-lite-latest",
