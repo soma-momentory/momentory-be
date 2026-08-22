@@ -69,6 +69,16 @@ public class GeminiApiClient {
                     .body(GeminiResponse.class);
 
             long elapsedMs = elapsedMillis(startedAt);
+
+            // 출력 재검열(추가 호출 0회) — 생성 응답에 함께 온 안전 등급을 본다. 하드 차단이면
+            // 텍스트를 쓰지 않고 폴백(풀 대체)으로 되돌린다. 위기 대화 정상 응답이 확률만 높은
+            // 경우는 막지 않는다(GeminiResponse#blockedBySafety 참고).
+            if (response != null && response.blockedBySafety()) {
+                log.warn("Gemini 응답이 안전 필터에 막힘 role={} session={} reason={}",
+                        request.role().key(), request.sessionId(), response.safetyBlockReason());
+                return Optional.empty();
+            }
+
             String text = response == null ? null : response.firstText();
             if (text == null || text.isBlank()) {
                 log.warn("Gemini 응답에 구조화 출력이 없음 role={} session={}",
