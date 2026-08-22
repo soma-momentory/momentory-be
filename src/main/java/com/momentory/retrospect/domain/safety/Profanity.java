@@ -37,6 +37,17 @@ public final class Profanity {
     private static final List<String> DIRECTED = List.of(
             "닥쳐", "닥치", "ㄷㅊ", "꺼져", "꺼저", "ㄲㅈ", "좆까", "엿먹어", "개소리하지마");
 
+    /**
+     * 2인칭 대명사 어절 — "너 병신이냐"처럼 상담사를 지목한 공격을 잡으려 쓴다. 부분일치는
+     * "너무"·"어머니"와 충돌해 못 쓰므로, <b>어절 단위 정확일치</b>로만 본다(아래
+     * {@link #hasSecondPersonWord}). 그래서 "너무"는 걸리지 않고 "너"·"너는"만 걸린다.
+     * "네"(=긍정 응답)는 어절 "네"와 겹쳐 일부러 뺐다.
+     */
+    private static final List<String> SECOND_PERSON = List.of(
+            "너", "넌", "너는", "너가", "너를", "너의", "너도", "너나", "너네", "너희", "너희들",
+            "니", "니가", "니는", "니를", "니네", "네가", "당신", "당신은", "당신이", "당신도",
+            "느그", "늬");
+
     /** 욕설을 걷어낸 뒤 남을 수 있는 감탄사·군더더기 — 이것만 남으면 실질 내용이 없다고 본다. */
     private static final List<String> FILLERS = List.of(
             "아", "악", "으", "윽", "흑", "흐", "하", "휴", "후", "헐", "와", "웅", "음", "엥",
@@ -50,10 +61,32 @@ public final class Profanity {
         return (text == null ? "" : text).toLowerCase().replaceAll("[^가-힣ㄱ-ㅎ0-9a-z]", "");
     }
 
-    /** 상담사를 향한 명령형 공격이 섞여 있는가 — 회고로 되돌릴(deflect) 대상. */
+    /**
+     * 상담사를 향한 공격이 섞여 있는가 — 회고로 되돌릴(deflect) 대상. 두 경로로 잡는다:
+     * (1) 명령형 공격("닥쳐"·"꺼져")은 듣는 이가 전제돼 그 자체로 지목이다.
+     * (2) 2인칭 어절("너"·"당신")과 욕이 함께 있으면 상담사를 겨눈 공격으로 본다("너 병신이냐").
+     * (2)는 어절 정확일치라 "너무 힘들었어"(욕도 2인칭도 아님)를 오탐하지 않는다.
+     */
     public static boolean isDirectedAbuse(String text) {
         String norm = normalize(text);
-        return containsAny(norm, DIRECTED);
+        if (containsAny(norm, DIRECTED)) {
+            return true;
+        }
+        return containsAny(norm, EXPLETIVES) && hasSecondPersonWord(text);
+    }
+
+    /** 원문을 공백으로 쪼개, 어절 하나가 2인칭 대명사와 정확히 일치하는지 본다(부분일치 금지). */
+    private static boolean hasSecondPersonWord(String text) {
+        if (text == null) {
+            return false;
+        }
+        for (String token : text.toLowerCase().split("\\s+")) {
+            String word = token.replaceAll("[^가-힣ㄱ-ㅎ0-9a-z]", "");
+            if (SECOND_PERSON.contains(word)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
