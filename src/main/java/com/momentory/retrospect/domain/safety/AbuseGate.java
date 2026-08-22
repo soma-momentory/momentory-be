@@ -61,4 +61,19 @@ public final class AbuseGate {
                     + "들려주실래요? 짧아도 괜찮아요.";
         };
     }
+
+    /**
+     * 어뷰징이 캡만큼 연속됐을 때의 종료 문구 — 같은 되돌리기를 무한 반복하지 않고 한 단계 위로
+     * 올린다(에스컬레이션). 처벌이 아니라 <b>부드러운 종료 + 휴식 넛지</b>다: 감정 표출형은 대개
+     * venting 이라 따뜻하게 접고, 상담사 대상 공격은 담담하게 닫는다. 위기 도움 자원은 여기서
+     * 재사용하지 않는다 — 그건 실제 위기(SafetyPolicy)에만 띄워 신호를 무디게 하지 않는다.
+     */
+    public static String endMessage(Category category) {
+        return switch (category) {
+            case DIRECTED_ABUSE -> "오늘은 여기서 잠시 멈출게요. 마음이 조금 가라앉으면, "
+                    + "그때 편하게 다시 찾아와 주세요.";
+            case PROFANITY_ONLY -> "오늘은 마음이 많이 무거우신 것 같아요. 여기서 잠깐 멈추고, "
+                    + "한숨 돌린 뒤에 다시 이어가도 좋아요. 언제든 다시 와주셔도 괜찮아요.";
+        };
+    }
 }

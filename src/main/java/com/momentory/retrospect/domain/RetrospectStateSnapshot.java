@@ -29,6 +29,7 @@ public record RetrospectStateSnapshot(
         int stepIndex,
         int turn,
         int reasks,
+        int abuseStreak,
         Map<String, String> answers,
         Map<String, Map<String, Integer>> measures,
         List<Message> messages,

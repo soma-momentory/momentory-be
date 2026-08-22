@@ -36,7 +36,7 @@ class RetrospectEngineTest {
     void setUp() {
         fake = new FakeAssistant();
         usage = new LlmUsageLogger(0.10, 0.40);
-        service = new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, usage, e -> { }, 1);
+        service = new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, usage, e -> { }, 1, 3);
         state = new RetrospectState("s1");
     }
 
@@ -840,6 +840,58 @@ class RetrospectEngineTest {
             ReplyDto r = service.handle(state,
                     TurnCommand.text("발표 때 사람들이 저를 무시하는 것 같아 힘들었어요."));
             assertThat(r.phase()).isEqualTo("await_direction");
+        }
+    }
+
+    /** 어뷰징 가드 — 욕만·상담사 대상 공격을 AI 없이 되돌리고, 연속되면 부드럽게 종료한다. */
+    @Nested
+    class AbuseGateEscalation {
+
+        @Test
+        @DisplayName("연속 어뷰징이 캡(3)에 닿으면 부드럽게 종료한다 — 그 전엔 되돌리기, AI 0회")
+        void escalatesAfterCap() {
+            start();
+
+            ReplyDto first = service.handle(state, TurnCommand.text("씨발"));
+            assertThat(first.phase()).isEqualTo("intro");
+            assertThat(first.done()).isFalse();
+
+            ReplyDto second = service.handle(state, TurnCommand.text("병신"));
+            assertThat(second.phase()).isEqualTo("intro");
+            assertThat(second.done()).isFalse();
+
+            ReplyDto third = service.handle(state, TurnCommand.text("꺼져"));
+            assertThat(third.phase()).isEqualTo("ended");
+            assertThat(third.done()).isTrue();
+
+            // 어뷰징 되돌리기·종료는 전부 규칙 층 — 유료 AI 는 한 번도 부르지 않는다.
+            assertThat(fake.understandingCalls).isZero();
+        }
+
+        @Test
+        @DisplayName("사이에 정상 답변이 들어오면 연속 카운터가 풀려 종료되지 않는다")
+        void normalAnswerResetsStreak() {
+            start();
+            service.handle(state, TurnCommand.text("씨발"));
+            service.handle(state, TurnCommand.text("씨발"));
+            assertThat(state.abuseStreak()).isEqualTo(2);
+
+            ReplyDto ok = service.handle(state,
+                    TurnCommand.text("모의 면접에서 답변을 제대로 못 했어요."));
+
+            assertThat(ok.phase()).isEqualTo("await_direction");
+            assertThat(state.abuseStreak()).isZero();
+        }
+
+        @Test
+        @DisplayName("감정 표출형 욕(내용 있는 답변)은 어뷰징이 아니라 정상 진행한다")
+        void ventingIsNotAbuse() {
+            start();
+            ReplyDto r = service.handle(state,
+                    TurnCommand.text("씨발 그 사람 때문에 하루종일 진짜 힘들었어요."));
+
+            assertThat(r.phase()).isEqualTo("await_direction");
+            assertThat(state.abuseStreak()).isZero();
         }
     }
 }

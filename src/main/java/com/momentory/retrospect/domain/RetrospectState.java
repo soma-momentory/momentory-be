@@ -50,6 +50,8 @@ public class RetrospectState {
     private int turn;
     /** 현재 스텝(또는 intro)에서 되물은 횟수 — 게이트 캡용. 전진할 때마다 0으로. */
     private int reasks;
+    /** 연속 어뷰징(욕만·상담사 대상 공격) 턴 수 — 캡 도달 시 부드럽게 종료. 정상 답변에 0으로. */
+    private int abuseStreak;
 
     // 기록
     private final Map<String, String> answers = new LinkedHashMap<>();
@@ -272,6 +274,18 @@ public class RetrospectState {
         reasks = 0;
     }
 
+    public int abuseStreak() {
+        return abuseStreak;
+    }
+
+    public void bumpAbuse() {
+        abuseStreak++;
+    }
+
+    public void resetAbuse() {
+        abuseStreak = 0;
+    }
+
     // ── 기록 ─────────────────────────────────────────────────────────────
 
     public void recordAnswer(String stepId, String value) {
@@ -350,7 +364,7 @@ public class RetrospectState {
         return new RetrospectStateSnapshot(
                 id, nickname, scheduleId, schedule, scheduleEmotion, currentEmotion, interest,
                 List.copyOf(restMethods),
-                List.copyOf(pendingSchedules), phase, mode, stepIndex, turn, reasks,
+                List.copyOf(pendingSchedules), phase, mode, stepIndex, turn, reasks, abuseStreak,
                 new LinkedHashMap<>(answers), measuresCopy, new ArrayList<>(messages),
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
@@ -374,6 +388,7 @@ public class RetrospectState {
         state.stepIndex = s.stepIndex();
         state.turn = s.turn();
         state.reasks = s.reasks();
+        state.abuseStreak = s.abuseStreak();
         if (s.answers() != null) {
             state.answers.putAll(s.answers());
         }
