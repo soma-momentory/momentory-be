@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient;
 
 import com.momentory.retrospect.application.metering.CallLog;
 import com.momentory.retrospect.application.metering.LlmCallRecorded;
+import com.momentory.retrospect.domain.safety.PromptLeakGuard;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -85,6 +86,14 @@ public class GeminiApiClient {
                         request.role().key(), request.sessionId());
                 return Optional.empty();
             }
+            // 출력 층 유출 검사(추가 호출 0회) — 인젝션이 하드닝을 뚫어 모델이 시스템 프롬프트를
+            // 뱉었으면 유저에게 보이지 않고 폴백으로 되돌린다. PromptGuard(입력 층)의 출력 짝.
+            if (PromptLeakGuard.leaks(text)) {
+                log.warn("Gemini 응답에 시스템 프롬프트 유출 흔적 role={} session={}",
+                        request.role().key(), request.sessionId());
+                return Optional.empty();
+            }
+
             T entity = objectMapper.readValue(text, type);
             publish(request, response, elapsedMs);
             return Optional.ofNullable(entity);

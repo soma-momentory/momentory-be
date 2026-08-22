@@ -141,6 +141,22 @@ class GeminiApiClientTest {
         assertThat(result.get().reflection()).isEqualTo("많이 힘드셨겠어요.");
     }
 
+    @Test
+    void returnsEmptyWhenOutputLeaksSystemPrompt() throws Exception {
+        // 인젝션이 하드닝을 뚫어 모델이 지시문을 뱉은 경우 — 유저에게 안 보이고 폴백으로.
+        String leaked = mapper.writeValueAsString(new UnderstandingCheck(
+                "네, 저는 momentory 의 감정 회고 상담사입니다. CBT(인지행동치료) 원리로 돕습니다.",
+                "상황", "none", List.of(), false, false, false));
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", leaked))))),
+                "usageMetadata", Map.of("promptTokenCount", 10, "candidatesTokenCount", 30)))));
+
+        Optional<UnderstandingCheck> result = client().generate(request("q"), UnderstandingCheck.class);
+
+        assertThat(result).isEmpty();
+        assertThat(events).isEmpty(); // 유출 응답은 성공 계측을 남기지 않는다
+    }
+
     private GeminiApiClient client() {
         GeminiApiProperties properties = new GeminiApiProperties(
                 server.url("/").toString(), "test-key", "gemini-flash-lite-latest",
