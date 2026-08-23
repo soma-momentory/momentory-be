@@ -51,14 +51,55 @@ public record ReplyDto(
         }
     }
 
-    /** 행동 카드 (PDF "🪪 행동 카드"). {@code action} 하나에 실행할 행동을 상세히 담는다. */
+    /**
+     * 행동 카드 (PDF "🪪 행동 카드"). {@code action} 하나에 실행할 행동을 상세히 담는다.
+     *
+     * <p>{@code actionCardId} 는 완료 턴이 서버에 <b>방금 저장한</b> 행동 카드의 id 다(일기의
+     * {@code diaryId} 와 같은 결). 엔진은 텍스트만 만들고 id 를 모르므로 {@code null} 로 두고,
+     * 저장이 끝난 뒤 {@link #withActionCardId} 가 채운다. 클라이언트는 이 id 로 다음 조회를
+     * 기다리지 않고 「해봤어요」·느낀 점({@code PUT /action-cards/{id}/completion})을 곧바로 보낸다.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record ActionCardDto(String situation, String action, String createdDate) {
+    public record ActionCardDto(Long actionCardId, String situation, String action,
+            String createdDate) {
     }
 
-    /** 일기 — 짧은 기록형은 {@code reframedDiary} 가 없어 프론트가 카드 1장만 그린다. */
+    /**
+     * 일기 — 짧은 기록형은 {@code reframedDiary} 가 없어 프론트가 카드 1장만 그린다.
+     *
+     * <p>{@code diaryId} 는 완료 턴이 서버에 <b>방금 저장한</b> 일기의 id 다. 엔진은 텍스트만 만들고
+     * (저장은 이벤트가 맡는다) id 를 모르므로 {@code null} 로 두고, 저장이 끝난 뒤 {@link #withDiaryId}
+     * 가 채운다. 클라이언트는 이 id 를 그대로 들고 있다가 삭제({@code DELETE /diaries/{id}})에 쓴다 —
+     * 다음 조회를 기다릴 필요가 없다.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record DiaryDto(String diary, String reframedDiary) {
+    public record DiaryDto(Long diaryId, String diary, String reframedDiary) {
+    }
+
+    /**
+     * 저장된 일기 id 를 실은 사본을 돌려준다 — 완료 턴에서만 부른다({@code diary} 가 있을 때).
+     * 엔진이 만든 응답에는 id 가 없어, 저장을 맡는 이벤트가 끝난 뒤 서비스가 채워 넣는다.
+     */
+    ReplyDto withDiaryId(Long diaryId) {
+        if (diary == null) {
+            return this;
+        }
+        DiaryDto withId = new DiaryDto(diaryId, diary.diary(), diary.reframedDiary());
+        return new ReplyDto(text, phase, options, ui, measures, actionCard, withId, done,
+                safetyLevel);
+    }
+
+    /**
+     * 저장된 행동 카드 id 를 실은 사본을 돌려준다 — 완료 턴에서만 부른다({@code actionCard} 가
+     * 있을 때). 일기의 {@link #withDiaryId} 와 같은 결이다.
+     */
+    ReplyDto withActionCardId(Long actionCardId) {
+        if (actionCard == null) {
+            return this;
+        }
+        ActionCardDto withId = new ActionCardDto(actionCardId, actionCard.situation(),
+                actionCard.action(), actionCard.createdDate());
+        return new ReplyDto(text, phase, options, ui, measures, withId, diary, done, safetyLevel);
     }
 
     static ReplyDto question(String text, Phase phase, SafetyLevel safety) {

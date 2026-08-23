@@ -1,12 +1,15 @@
 package com.momentory.actioncard.presentation;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.momentory.auth.security.Login;
@@ -126,5 +129,30 @@ public class ActionCardController {
             @Valid @RequestBody ActionCardCompletionRequest request) {
         return ActionCardCompletionResponse.from(actionCardService.changeCompletion(
                 principal.userId(), id, request.done(), request.reflection()));
+    }
+
+    @Operation(summary = "행동 카드 삭제",
+            description = "행동 카드 한 장을 지운다. 회고를 막 끝낸 카드도 완료 응답이 준 서버 id 로 "
+                    + "그 자리에서 지울 수 있다. 일기 삭제와 같은 결이다.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "삭제 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 필요",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = @ExampleObject(name = "AUTHENTICATION_REQUIRED",
+                                    value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}"))),
+            @ApiResponse(responseCode = "404", description = "행동 카드 없음",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = @ExampleObject(name = "ACTION_CARD_NOT_FOUND",
+                                    value = "{\"code\":\"ACTION_CARD_NOT_FOUND\",\"message\":\"행동 카드를 찾을 수 없습니다.\"}")))
+    })
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{id}")
+    public void delete(
+            @Login LoginPrincipal principal,
+            @Parameter(example = "1") @PathVariable Long id) {
+        actionCardService.delete(principal.userId(), id);
     }
 }

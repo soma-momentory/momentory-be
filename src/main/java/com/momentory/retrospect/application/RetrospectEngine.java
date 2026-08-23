@@ -1,6 +1,5 @@
 package com.momentory.retrospect.application;
 
-import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
+import com.momentory.common.time.DayBoundary;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.application.event.CrisisDetected;
 import com.momentory.retrospect.application.event.RetrospectCompleted;
@@ -579,13 +579,15 @@ public class RetrospectEngine {
             String situation = state.situationSummary() != null
                     ? state.situationSummary()
                     : state.hasSchedule() ? state.schedule() + "에서 있었던 일" : "오늘 하루 있었던 일";
-            card = new ReplyDto.ActionCardDto(situation, actionText(state.chosenAction()),
-                    LocalDate.now().format(CARD_DATE));
+            // id 는 아직 없다 — 저장(이벤트)이 끝난 뒤 RetrospectService.withActionCardId 가 채운다.
+            card = new ReplyDto.ActionCardDto(null, situation, actionText(state.chosenAction()),
+                    DayBoundary.today().format(CARD_DATE));
         }
 
         // AI-G4: 일기 생성 (한 호출). 실패하면 답변 기록으로 최소한의 일기를 조립한다.
         DiaryOutput out = diaryWriter.write(state).orElseGet(() -> fallbackDiary(state));
-        ReplyDto.DiaryDto diary = new ReplyDto.DiaryDto(out.diary(),
+        // id 는 아직 없다 — 저장(이벤트)이 끝난 뒤 RetrospectService.withDiaryId 가 채운다.
+        ReplyDto.DiaryDto diary = new ReplyDto.DiaryDto(null, out.diary(),
                 state.mode().hasReframedDiary() ? out.reframedDiary() : null);
 
         String text = card != null

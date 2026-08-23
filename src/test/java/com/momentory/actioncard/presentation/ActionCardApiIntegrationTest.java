@@ -1,6 +1,7 @@
 package com.momentory.actioncard.presentation;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -93,16 +94,16 @@ class ActionCardApiIntegrationTest {
     void monthlyListReturnsThatMonthNewestFirst() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
 
-        // 8월(KST) — 셋. 하나는 8/1 00:00 KST 경계(포함).
+        // 8월(KST · 04:00 하루 경계) — 셋. 하나는 8/1 04:00 KST 경계(포함).
         seedCard(user, "8월 늦은 상황", "8월 늦은 행동",
                 Instant.parse("2026-08-20T10:00:00Z"));
         seedCard(user, "8월 중간 상황", "8월 중간 행동",
                 Instant.parse("2026-08-14T02:23:47Z"));
         seedCard(user, "8월 경계 포함", "8월 경계 행동",
-                Instant.parse("2026-07-31T15:00:00Z")); // = 2026-08-01T00:00 KST
-        // 7월(KST) 경계 제외 — 2026-07-31 23:59:59 KST.
+                Instant.parse("2026-07-31T19:00:00Z")); // = 2026-08-01T04:00 KST (하루 경계)
+        // 7월(KST) 경계 제외 — 2026-08-01 03:59:59 KST 는 4시 전이라 아직 7/31 이다.
         seedCard(user, "7월 경계 제외", "7월 행동",
-                Instant.parse("2026-07-31T14:59:59Z"));
+                Instant.parse("2026-07-31T18:59:59Z"));
         // 9월(KST) 제외.
         seedCard(user, "9월 상황", "9월 행동",
                 Instant.parse("2026-09-01T00:00:00Z"));
@@ -311,6 +312,57 @@ class ActionCardApiIntegrationTest {
         mockMvc.perform(put("/api/v1/action-cards/{id}/completion", 1)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"done\":true}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    @DisplayName("삭제 — 그 카드 한 장만 지운다")
+    void deleteRemovesCard() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long cardId = seedCard(user, "상황", "행동", Instant.parse("2026-08-14T02:00:00Z"));
+
+        mockMvc.perform(delete("/api/v1/action-cards/{id}", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNoContent());
+
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM action_cards WHERE id = ?", Integer.class, cardId);
+        org.junit.jupiter.api.Assertions.assertEquals(0, count);
+    }
+
+    @Test
+    @DisplayName("삭제 — 남의 카드는 404, 지워지지 않는다")
+    void deletingAnotherUsersCardIs404() throws Exception {
+        User owner = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        long cardId = seedCard(owner, "상황", "행동", Instant.parse("2026-08-14T02:00:00Z"));
+
+        mockMvc.perform(delete("/api/v1/action-cards/{id}", cardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(other)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ACTION_CARD_NOT_FOUND"));
+
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM action_cards WHERE id = ?", Integer.class, cardId);
+        org.junit.jupiter.api.Assertions.assertEquals(1, count);
+    }
+
+    @Test
+    @DisplayName("삭제 — 없는 카드는 404")
+    void deletingMissingCardIs404() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(delete("/api/v1/action-cards/{id}", 999_999)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ACTION_CARD_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("삭제는 인증이 필요하다 — 없으면 401")
+    void deleteRequiresAuthentication() throws Exception {
+        mockMvc.perform(delete("/api/v1/action-cards/{id}", 1))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     }

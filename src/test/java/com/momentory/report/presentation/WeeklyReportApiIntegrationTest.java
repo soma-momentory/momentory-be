@@ -107,15 +107,15 @@ class WeeklyReportApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
 
-        // 마음 — 월(주 경계 00:00 KST)·화·수·금·일(주 경계 23:59:59 KST). 평온이 둘로 최다.
-        seedDiary(user, Emotion.DEPRESSED, Instant.parse("2026-08-16T15:00:00Z"));
+        // 마음 — 월(주 경계 04:00 KST)·화·수·금·일(주 경계 다음날 03:59:59 KST). 평온이 둘로 최다.
+        seedDiary(user, Emotion.DEPRESSED, Instant.parse("2026-08-16T19:00:00Z")); // 8/17 04:00 KST
         seedDiary(user, Emotion.HAPPY, Instant.parse("2026-08-18T01:00:00Z"));
         seedDiary(user, Emotion.CALM, Instant.parse("2026-08-19T01:00:00Z"));
         seedDiary(user, Emotion.CALM, Instant.parse("2026-08-21T01:00:00Z"));
         seedDiary(user, Emotion.TIRED, Instant.parse("2026-08-23T14:59:59Z"));
-        // 주 밖 — 지난주 일요일 23:59:59 KST, 다음주 월요일 00:00 KST. 섞이면 최다 감정이 바뀐다.
-        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-16T14:59:59Z"));
-        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-23T15:00:00Z"));
+        // 주 밖 — 지난주(월 경계 03:59:59 KST), 다음주 월요일 04:00 KST. 섞이면 최다 감정이 바뀐다.
+        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-16T18:59:59Z")); // 8/17 03:59:59 KST → 아직 8/16
+        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-23T19:00:00Z")); // 8/24 04:00 KST → 다음 주
         // 남의 일기도 섞이면 안 된다.
         seedDiary(other, Emotion.ANXIOUS, Instant.parse("2026-08-20T01:00:00Z"));
 

@@ -119,16 +119,24 @@ class RetrospectActionCardPersistenceIntegrationTest {
         driveProblemSolvingToActionStep(user, sessionId);
 
         // 마지막 턴(측정) → 완료. 카드가 응답에 실린다.
-        mockMvc.perform(message(user, sessionId, """
+        MvcResult completion = mockMvc.perform(message(user, sessionId, """
                         {"measures":{"schedule_emotion":8,"current_emotion":6}}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.done").value(true))
-                .andExpect(jsonPath("$.actionCard.action").value("보기1"));
+                .andExpect(jsonPath("$.actionCard.action").value("보기1"))
+                // 방금 저장된 행동 카드 id 가 완료 응답에 실려 온다 — 클라이언트가 다음 조회를
+                // 기다리지 않고 이 id 로 「해봤어요」·느낀 점을 보낼 수 있다(일기 diaryId 와 같은 결).
+                .andExpect(jsonPath("$.actionCard.actionCardId").isNumber())
+                .andReturn();
 
         // 그리고 실제로 DB 에 남아 있어야 한다.
         Optional<ActionCard> saved = actionCardRepository.findByRetrospectId(sessionId);
         assertThat(saved).as("완주한 문제 해결형 회고는 행동 카드를 남겨야 한다").isPresent();
         assertThat(saved.get().getTargetAction()).isEqualTo("보기1");
+        // 응답에 실린 actionCardId 가 실제 저장된 카드 id 와 같다.
+        int responseCardId = com.jayway.jsonpath.JsonPath.read(
+                completion.getResponse().getContentAsString(), "$.actionCard.actionCardId");
+        assertThat((long) responseCardId).isEqualTo(saved.get().getId());
 
         Retrospect done = retrospectRepository.findById(sessionId).orElseThrow();
         assertThat(done.getStatus().name()).isEqualTo("COMPLETED");
