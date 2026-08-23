@@ -252,12 +252,17 @@ class RetrospectApiIntegrationTest {
                         {"measures":{"schedule_emotion":8,"current_emotion":6}}"""))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(message(user, sessionId, "{\"content\":\"불안했고 우울해졌다.\"}"))
+        MvcResult completion = mockMvc.perform(
+                        message(user, sessionId, "{\"content\":\"불안했고 우울해졌다.\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.done").value(true))
+                // 방금 저장된 일기의 id 가 완료 응답에 실려 온다 — 클라이언트가 다음 조회를 기다리지
+                // 않고 이 id 로 삭제할 수 있다.
+                .andExpect(jsonPath("$.diary.diaryId").isNumber())
                 .andExpect(jsonPath("$.diary.diary").value("그냥 일기."))
                 // 짧은 기록형은 리프레이밍 일기가 내려가지 않는다.
-                .andExpect(jsonPath("$.diary.reframedDiary").doesNotExist());
+                .andExpect(jsonPath("$.diary.reframedDiary").doesNotExist())
+                .andReturn();
 
         Retrospect done = retrospectRepository.findById(sessionId).orElseThrow();
         assertThat(done.getStatus().name()).isEqualTo("COMPLETED");
@@ -265,6 +270,10 @@ class RetrospectApiIntegrationTest {
 
         // 일기는 별도 테이블에 남고, 진입 감정 두 종과 생성 시기도 함께 저장된다.
         Diary diary = diaryRepository.findByRetrospectId(sessionId).orElseThrow();
+        // 응답에 실린 diaryId 가 실제로 저장된 일기 id 와 같다.
+        int responseDiaryId = com.jayway.jsonpath.JsonPath.read(
+                completion.getResponse().getContentAsString(), "$.diary.diaryId");
+        assertThat((long) responseDiaryId).isEqualTo(diary.getId());
         assertThat(diary.getOriginal()).isEqualTo("그냥 일기.");
         assertThat(diary.getReframed()).isNull(); // 짧은 기록형은 리프레임 일기가 없다
         assertThat(diary.getCurrentEmotion()).isEqualTo(Emotion.DEPRESSED);

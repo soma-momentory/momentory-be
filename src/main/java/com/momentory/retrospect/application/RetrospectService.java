@@ -1,8 +1,6 @@
 package com.momentory.retrospect.application;
 
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -11,7 +9,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.momentory.common.time.TimeZonePolicy;
+import com.momentory.actioncard.application.ActionCardQueryService;
+import com.momentory.common.time.DayBoundary;
 import com.momentory.diary.application.DiaryQueryService;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
@@ -36,12 +35,10 @@ import com.momentory.user.infrastructure.UserRepository;
 @Service
 public class RetrospectService {
 
-    /** "하루 한 번" 가드의 하루 경계 기준 — 일기 월별 조회와 같은 KST. */
-    private static final ZoneId ZONE = TimeZonePolicy.DEFAULT_ZONE_ID;
-
     private final RetrospectEngine engine;
     private final RetrospectRepository retrospectRepository;
     private final DiaryQueryService diaryQueryService;
+    private final ActionCardQueryService actionCardQueryService;
     private final PriorActionCardRecommender priorActionCardRecommender;
     private final RetrospectStateCodec codec;
     private final UserRepository userRepository;
@@ -50,13 +47,15 @@ public class RetrospectService {
     private final ApplicationEventPublisher eventPublisher;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
-            DiaryQueryService diaryQueryService, PriorActionCardRecommender priorActionCardRecommender,
+            DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
+            PriorActionCardRecommender priorActionCardRecommender,
             RetrospectStateCodec codec, UserRepository userRepository,
             UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
             ApplicationEventPublisher eventPublisher) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
+        this.actionCardQueryService = actionCardQueryService;
         this.priorActionCardRecommender = priorActionCardRecommender;
         this.codec = codec;
         this.userRepository = userRepository;
@@ -110,7 +109,27 @@ public class RetrospectService {
         ReplyDto reply = engine.handle(state, command);
         sync(entity, state, reply);
 
-        return reply;
+        // 완료 턴이면 방금 저장된 일기·행동 카드의 id 를 응답에 실어 보낸다 — sync 가 발행한 이벤트가
+        // 같은 트랜잭션에서 둘을 이미 저장했으므로 여기서 id 를 찾을 수 있다. 클라이언트는 다음 조회를
+        // 기다리지 않고 이 id 로 곧바로 삭제·완료 반영을 할 수 있다.
+        return withSavedIds(entity.getId(), reply);
+    }
+
+    /**
+     * 응답의 일기·행동 카드에 저장된 서버 id 를 채운다 — 완료 턴(각 산출물이 있을 때)에서만 조회한다.
+     * 저장이 아직 안 됐으면(있을 수 없지만 방어적으로) id 없이 그대로 보낸다.
+     */
+    private ReplyDto withSavedIds(Long retrospectId, ReplyDto reply) {
+        ReplyDto enriched = reply;
+        if (enriched.diary() != null) {
+            enriched = enriched.withDiaryId(
+                    diaryQueryService.findDiaryIdByRetrospect(retrospectId).orElse(null));
+        }
+        if (enriched.actionCard() != null) {
+            enriched = enriched.withActionCardId(
+                    actionCardQueryService.findIdByRetrospect(retrospectId).orElse(null));
+        }
+        return enriched;
     }
 
     private void sync(Retrospect entity, RetrospectState state, ReplyDto reply) {
@@ -156,11 +175,13 @@ public class RetrospectService {
     }
 
     /**
-     * 오늘(KST) 이미 완주한 일기가 있으면 새 회고 시작을 막는다 — 회고는 하루 한 번이다. 일기는
-     * 회고 완료 때만 생기므로, 중도 이탈(일기 미저장)이면 오늘 안에 다시 시작할 수 있다.
+     * 오늘(KST · 04:00 하루 경계) 이미 완주한 일기가 있으면 새 회고 시작을 막는다 — 회고는 하루
+     * 한 번이다. 하루가 자정이 아니라 새벽 4시에 넘어가므로({@link DayBoundary}), 밤 11시와 다음날
+     * 새벽 2시는 같은 「하루」다. 일기는 회고 완료 때만 생기므로, 중도 이탈(일기 미저장)이면 오늘
+     * 안에 다시 시작할 수 있다.
      */
     private void requireNoDiaryToday(Long userId) {
-        if (diaryQueryService.hasDiaryOn(userId, LocalDate.now(ZONE))) {
+        if (diaryQueryService.hasDiaryOn(userId, DayBoundary.today())) {
             throw new AlreadyRetrospectedTodayException();
         }
     }

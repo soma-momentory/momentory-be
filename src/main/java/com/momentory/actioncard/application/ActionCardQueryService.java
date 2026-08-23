@@ -3,13 +3,12 @@ package com.momentory.actioncard.application;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.ZoneId;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.momentory.common.time.TimeZonePolicy;
+import com.momentory.common.time.DayBoundary;
 import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 
 /**
@@ -20,8 +19,6 @@ import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 @Service
 public class ActionCardQueryService {
 
-    private static final ZoneId ZONE = TimeZonePolicy.DEFAULT_ZONE_ID;
-
     private final ActionCardRepository actionCardRepository;
 
     public ActionCardQueryService(ActionCardRepository actionCardRepository) {
@@ -29,16 +26,16 @@ public class ActionCardQueryService {
     }
 
     /**
-     * 한 달치 행동 카드(최신순). 월 경계는 KST 기준으로 잡아 {@code [해당 월 1일 00:00,
-     * 다음 달 1일 00:00)} 반열림 구간으로 조회한다.
+     * 한 달치 행동 카드(최신순). 월 경계는 KST 04:00 하루 경계로 잡아 {@code [해당 월 1일 04:00,
+     * 다음 달 1일 04:00)} 반열림 구간으로 조회한다({@link DayBoundary} · 일기와 같은 경계).
      *
      * @throws java.time.DateTimeException 월이 1~12 범위를 벗어나면(표현 계층이 400 으로 번역)
      */
     @Transactional(readOnly = true)
     public List<ActionCardView> getMonthly(Long userId, int year, int month) {
         YearMonth target = YearMonth.of(year, month);
-        Instant start = target.atDay(1).atStartOfDay(ZONE).toInstant();
-        Instant end = target.plusMonths(1).atDay(1).atStartOfDay(ZONE).toInstant();
+        Instant start = DayBoundary.startOfDay(target.atDay(1));
+        Instant end = DayBoundary.startOfDay(target.plusMonths(1).atDay(1));
         return actionCardRepository
                 .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
                         userId, start, end)
@@ -54,8 +51,8 @@ public class ActionCardQueryService {
      */
     @Transactional(readOnly = true)
     public ActionCardPeriodCount countInPeriod(Long userId, LocalDate from, LocalDate to) {
-        Instant start = from.atStartOfDay(ZONE).toInstant();
-        Instant end = to.plusDays(1).atStartOfDay(ZONE).toInstant();
+        Instant start = DayBoundary.startOfDay(from);
+        Instant end = DayBoundary.startOfDay(to.plusDays(1));
         long created = actionCardRepository
                 .countByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(userId, start, end);
         long completed = actionCardRepository
@@ -70,6 +67,16 @@ public class ActionCardQueryService {
         return actionCardRepository.findByIdAndUserId(id, userId)
                 .map(ActionCardView::from)
                 .orElseThrow(ActionCardNotFoundException::new);
+    }
+
+    /**
+     * 그 회고가 남긴 행동 카드의 id — 회고 완료 직후 서비스가 응답에 실어 보낼 때 쓴다(방금 저장된
+     * 카드를 찾는다). 회고 한 벌에 카드 하나라 유일하다. 없으면(카드 없는 방향·저장 실패) 빈 값.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Long> findIdByRetrospect(Long retrospectId) {
+        return actionCardRepository.findByRetrospectId(retrospectId)
+                .map(com.momentory.actioncard.domain.ActionCard::getId);
     }
 
 }

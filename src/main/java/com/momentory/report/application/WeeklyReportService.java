@@ -2,7 +2,6 @@ package com.momentory.report.application;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.momentory.actioncard.application.ActionCardPeriodCount;
 import com.momentory.actioncard.application.ActionCardQueryService;
-import com.momentory.common.time.TimeZonePolicy;
+import com.momentory.common.time.DayBoundary;
 import com.momentory.diary.application.DiaryQueryService;
 import com.momentory.report.domain.DailyMood;
 import com.momentory.report.domain.WeeklyMood;
@@ -31,7 +30,6 @@ import com.momentory.schedule.application.ScheduleService;
 @Service
 public class WeeklyReportService {
 
-    private static final ZoneId ZONE = TimeZonePolicy.DEFAULT_ZONE_ID;
     private static final int WEEK_LENGTH = 7;
 
     private final DiaryQueryService diaryQueryService;
@@ -46,12 +44,12 @@ public class WeeklyReportService {
     }
 
     /**
-     * {@code date} 가 속한 주(월~일, KST)의 리포트. {@code date} 가 null 이면 오늘(KST)이 속한 주 —
-     * 클라이언트가 주 이동 없이 처음 열 때다.
+     * {@code date} 가 속한 주(월~일, KST)의 리포트. {@code date} 가 null 이면 오늘(KST · 04:00 하루
+     * 경계)이 속한 주 — 클라이언트가 주 이동 없이 처음 열 때다.
      */
     @Transactional(readOnly = true)
     public WeeklyReport getWeekly(Long userId, LocalDate date) {
-        LocalDate target = date == null ? LocalDate.now(ZONE) : date;
+        LocalDate target = date == null ? DayBoundary.today() : date;
         LocalDate startDate = target.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate endDate = startDate.plusDays(WEEK_LENGTH - 1L);
 

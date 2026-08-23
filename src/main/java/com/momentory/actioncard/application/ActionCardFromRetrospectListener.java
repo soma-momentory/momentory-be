@@ -1,7 +1,5 @@
 package com.momentory.actioncard.application;
 
-import java.time.LocalDate;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -9,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.momentory.common.time.DayBoundary;
 import com.momentory.actioncard.domain.ActionCard;
 import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 import com.momentory.retrospect.application.RetrospectCompleted;
@@ -45,8 +44,9 @@ public class ActionCardFromRetrospectListener {
         if (card == null || actionCardRepository.existsByRetrospectId(event.retrospectId())) {
             return;
         }
+        // 카드의 날짜도 04:00 하루 경계를 따른다 — 새벽 1시에 마친 회고의 카드는 어제로 남는다.
         ActionCard saved = actionCardRepository.save(ActionCard.create(event.userId(),
-                event.retrospectId(), card.situation(), card.action(), LocalDate.now(),
+                event.retrospectId(), card.situation(), card.action(), DayBoundary.today(),
                 card.fromRestPreference()));
         scheduleEmbedding(saved.getId(), card.situation());
     }

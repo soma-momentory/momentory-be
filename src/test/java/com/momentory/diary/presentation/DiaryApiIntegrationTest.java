@@ -96,16 +96,16 @@ class DiaryApiIntegrationTest {
     void monthlyListReturnsThatMonthNewestFirst() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
 
-        // 8월(KST) — 셋. 하나는 8/1 00:00 KST 경계(포함).
+        // 8월(KST · 04:00 하루 경계) — 셋. 하나는 8/1 04:00 KST 경계(포함).
         seedDiary(user, "8월 늦은 일기", "8월 늦은 리프레임", Emotion.DEPRESSED, Emotion.ANXIOUS,
                 Instant.parse("2026-08-20T10:00:00Z"));
         seedDiary(user, "8월 중간 일기", "8월 중간 리프레임", Emotion.ANGRY, Emotion.STUCK,
                 Instant.parse("2026-08-14T02:23:47Z"));
         seedDiary(user, "8월 경계 포함", null, Emotion.CALM, null,
-                Instant.parse("2026-07-31T15:00:00Z")); // = 2026-08-01T00:00 KST
-        // 7월(KST) 경계 제외 — 2026-07-31 23:59:59 KST.
+                Instant.parse("2026-07-31T19:00:00Z")); // = 2026-08-01T04:00 KST (하루 경계)
+        // 7월(KST) 경계 제외 — 2026-08-01 03:59:59 KST 는 4시 전이라 아직 7/31 이다.
         seedDiary(user, "7월 경계 제외", null, Emotion.TIRED, null,
-                Instant.parse("2026-07-31T14:59:59Z"));
+                Instant.parse("2026-07-31T18:59:59Z"));
         // 9월(KST) 제외.
         seedDiary(user, "9월 일기", null, Emotion.PROUD, null,
                 Instant.parse("2026-09-01T00:00:00Z"));

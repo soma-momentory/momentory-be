@@ -3,7 +3,6 @@ package com.momentory.diary.application;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.ZoneId;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,7 +11,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.momentory.common.time.TimeZonePolicy;
+import com.momentory.common.time.DayBoundary;
 import com.momentory.diary.domain.Diary;
 import com.momentory.diary.infrastructure.DiaryRepository;
 import com.momentory.retrospect.domain.Emotion;
@@ -25,8 +24,6 @@ import com.momentory.retrospect.domain.Emotion;
 @Service
 public class DiaryQueryService {
 
-    private static final ZoneId ZONE = TimeZonePolicy.DEFAULT_ZONE_ID;
-
     private final DiaryRepository diaryRepository;
 
     public DiaryQueryService(DiaryRepository diaryRepository) {
@@ -34,16 +31,17 @@ public class DiaryQueryService {
     }
 
     /**
-     * 한 달치 일기(최신순). 월 경계는 KST 기준으로 잡아 {@code [해당 월 1일 00:00, 다음 달 1일 00:00)}
-     * 반열림 구간으로 조회한다.
+     * 한 달치 일기(최신순). 월 경계는 KST 04:00 하루 경계로 잡아 {@code [해당 월 1일 04:00,
+     * 다음 달 1일 04:00)} 반열림 구간으로 조회한다 — 8/1 새벽 3시에 남긴 일기는 아직 7월에
+     * 속한다({@link DayBoundary}).
      *
      * @throws java.time.DateTimeException 월이 1~12 범위를 벗어나면(표현 계층이 400 으로 번역)
      */
     @Transactional(readOnly = true)
     public List<DiaryView> getMonthly(Long userId, int year, int month) {
         YearMonth target = YearMonth.of(year, month);
-        Instant start = target.atDay(1).atStartOfDay(ZONE).toInstant();
-        Instant end = target.plusMonths(1).atDay(1).atStartOfDay(ZONE).toInstant();
+        Instant start = DayBoundary.startOfDay(target.atDay(1));
+        Instant end = DayBoundary.startOfDay(target.plusMonths(1).atDay(1));
         return diaryRepository
                 .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
                         userId, start, end)
@@ -72,17 +70,26 @@ public class DiaryQueryService {
      */
     @Transactional(readOnly = true)
     public Map<LocalDate, Emotion> getDailyEmotions(Long userId, LocalDate from, LocalDate to) {
-        Instant start = from.atStartOfDay(ZONE).toInstant();
-        Instant end = to.plusDays(1).atStartOfDay(ZONE).toInstant();
+        Instant start = DayBoundary.startOfDay(from);
+        Instant end = DayBoundary.startOfDay(to.plusDays(1));
         Map<LocalDate, Emotion> byDate = new LinkedHashMap<>();
         // 최신순으로 오므로, 같은 날에 둘이 있으면 먼저 담기는 최신 것이 남는다.
         for (Diary diary : diaryRepository
                 .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
                         userId, start, end)) {
-            byDate.putIfAbsent(LocalDate.ofInstant(diary.getCreatedAt(), ZONE),
+            byDate.putIfAbsent(DayBoundary.toLocalDate(diary.getCreatedAt()),
                     diary.getCurrentEmotion());
         }
         return Collections.unmodifiableMap(byDate);
+    }
+
+    /**
+     * 그 회고가 남긴 일기의 id — 회고 완료 직후 서비스가 응답에 실어 보낼 때 쓴다(방금 저장된 일기를
+     * 찾는다). 회고 한 벌에 일기 하나라 유일하다. 아직 없으면(저장 실패 등) 빈 값.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Long> findDiaryIdByRetrospect(Long retrospectId) {
+        return diaryRepository.findByRetrospectId(retrospectId).map(Diary::getId);
     }
 
     /** 일기 단건 — 소유권을 함께 검증한다. */
@@ -94,13 +101,13 @@ public class DiaryQueryService {
     }
 
     /**
-     * 그 날(KST)에 이 사용자의 일기가 있는가 — "회고 하루 한 번" 가드가 쓴다. 일기의 날짜 경계
-     * 계산(KST 반열림 구간)은 diary 의 몫이라 여기에 둔다.
+     * 그 날(KST · 04:00 경계)에 이 사용자의 일기가 있는가 — "회고 하루 한 번" 가드가 쓴다. 일기의
+     * 날짜 경계 계산({@code [date 04:00, 다음날 04:00)} 반열림 구간)은 diary 의 몫이라 여기에 둔다.
      */
     @Transactional(readOnly = true)
     public boolean hasDiaryOn(Long userId, LocalDate date) {
-        Instant start = date.atStartOfDay(ZONE).toInstant();
-        Instant end = date.plusDays(1).atStartOfDay(ZONE).toInstant();
+        Instant start = DayBoundary.startOfDay(date);
+        Instant end = DayBoundary.startOfDay(date.plusDays(1));
         return diaryRepository.existsByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
                 userId, start, end);
     }
