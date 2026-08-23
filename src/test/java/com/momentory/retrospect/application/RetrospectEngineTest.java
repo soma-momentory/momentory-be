@@ -190,7 +190,7 @@ class RetrospectEngineTest {
     class EmotionSortingFlow {
 
         @Test
-        @DisplayName("감정 정리형 풀 코스 — 텍스트3 → 3택 → 텍스트 → 슬라이더2 → 행동 2택+직접입력 → 일기 2종 + 행동 카드")
+        @DisplayName("감정 정리형 풀 코스 — 텍스트4 → 슬라이더2 → 행동 2택+직접입력 → 일기 2종 + 행동 카드")
         void fullPath() {
             answerIntro();
             ReplyDto r = service.handle(state, TurnCommand.option("1")); // 감정 정리형
@@ -202,9 +202,6 @@ class RetrospectEngineTest {
             assertThat(r.text()).isEqualTo("[AI] body_behavior 질문");
             r = service.handle(state, TurnCommand.text("몸에 힘이 없고 침대에 누워 있었어요."));
 
-            // 필요한 것 3택
-            assertThat(r.options()).hasSize(3);
-            r = service.handle(state, TurnCommand.option("2"));
             assertThat(r.text()).isEqualTo("[AI] self_message 질문");
             r = service.handle(state, TurnCommand.text("고생했다고 말해주고 싶어요."));
 
@@ -280,7 +277,6 @@ class RetrospectEngineTest {
             service.handle(state, TurnCommand.text("피드백을 받을 때요."));
             service.handle(state, TurnCommand.text("집에 오는 길에 계속 생각났어요."));
             service.handle(state, TurnCommand.text("몸에 힘이 없고 침대에 누워 있었어요."));
-            service.handle(state, TurnCommand.option("2")); // need_now 3택
             service.handle(state, TurnCommand.text("고생했다고 말해주고 싶어요."));
             // 이제 pending 은 슬라이더 턴 — 다음 measures 가 care_action 을 낸다.
         }
@@ -470,7 +466,7 @@ class RetrospectEngineTest {
     // ── 폴백·가드·안전 ───────────────────────────────────────────────────
 
     @Test
-    @DisplayName("턴 AI 실패 → PDF 원형 폴백 문구·보기로 계속된다")
+    @DisplayName("턴 AI 실패 → PDF 원형 폴백 문구로 계속된다")
     void turnFallback() {
         fake.failTurns = true;
         answerIntro();
@@ -479,12 +475,9 @@ class RetrospectEngineTest {
         assertThat(r.text()).isEqualTo(
                 "그 순간부터 면접 스터디가 끝날 때까지, 불안이 가장 크게 올라왔던 장면은 언제였나요?");
 
-        // 3택 턴까지 진행 — 폴백 보기가 나온다.
-        service.handle(state, TurnCommand.text("피드백 때요."));
-        service.handle(state, TurnCommand.text("집에 와서요."));
-        ReplyDto choice = service.handle(state, TurnCommand.text("몸에 힘이 없어요."));
-        assertThat(choice.options()).hasSize(3);
-        assertThat(choice.options().get(1).label()).isEqualTo("오늘 힘들었던 마음을 충분히 알아주는 것");
+        // 다음 텍스트 턴도 폴백 문구로 이어진다.
+        r = service.handle(state, TurnCommand.text("피드백 때요."));
+        assertThat(r.text()).isNotBlank();
     }
 
     @Test
@@ -677,8 +670,7 @@ class RetrospectEngineTest {
             service.handle(state, TurnCommand.option("1"));            // 감정 정리형
             service.handle(state, TurnCommand.text("피드백 때요."));      // → emotion_flow
             service.handle(state, TurnCommand.text("집에 와서요."));      // → body_behavior
-            service.handle(state, TurnCommand.text("힘이 없었어요."));    // → need_now(3택)
-            service.handle(state, TurnCommand.option("2"));            // → self_message(text)
+            service.handle(state, TurnCommand.text("힘이 없었어요."));    // → self_message(text)
 
             // self_message 다음은 after_intensity(measure). 판정을 켜도 되묻지 않고 바로 측정으로.
             fake.turnOffTopic = true;

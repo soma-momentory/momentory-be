@@ -14,25 +14,22 @@ import com.momentory.user.domain.RestMethod;
 class ScriptsTest {
 
     @Test
-    @DisplayName("감정 정리형 — 텍스트4 · 선택2(필요한 것 3택, 행동 2택) · 측정1(슬라이더 2개)")
+    @DisplayName("감정 정리형 — 텍스트4 · 선택1(행동 2택) · 측정1(슬라이더 2개)")
     void emotionSortingScript() {
         List<ScriptStep> steps = Scripts.stepsOf(RetroMode.EMOTION_SORTING);
 
         assertThat(steps).extracting(ScriptStep::id).containsExactly(
-                "peak_moment", "emotion_flow", "body_behavior", "need_now", "self_message",
+                "peak_moment", "emotion_flow", "body_behavior", "self_message",
                 "after_intensity", "care_action");
         assertThat(steps).extracting(ScriptStep::kind).containsExactly(
-                StepKind.TEXT, StepKind.TEXT, StepKind.TEXT, StepKind.CHOICE, StepKind.TEXT,
+                StepKind.TEXT, StepKind.TEXT, StepKind.TEXT, StepKind.TEXT,
                 StepKind.MEASURE, StepKind.CHOICE);
-        assertThat(byId(steps, "need_now").optionCount()).isEqualTo(3);
         assertThat(byId(steps, "care_action").optionCount()).isEqualTo(2);
         // 마지막 돌봄 행동(care_action)이 행동 카드가 된다 — 감정 정리형도 카드를 남긴다.
-        // need_now(필요한 것 3택)는 행동 스텝이 아니다(정리용 선택).
         assertThat(byId(steps, "care_action").actionStep()).isTrue();
         assertThat(byId(steps, "care_action").describedOptions()).isTrue();
         // care_action 은 '쉬는' 행동 카드라 온보딩 쉬는 방법 선호를 반영하는 스텝으로 표시된다.
         assertThat(byId(steps, "care_action").restAction()).isTrue();
-        assertThat(byId(steps, "need_now").actionStep()).isFalse();
         assertThat(byId(steps, "after_intensity").measures()).containsExactly(
                 MeasureField.SCHEDULE_EMOTION, MeasureField.CURRENT_EMOTION);
         assertThat(RetroMode.EMOTION_SORTING.hasActionCard()).isTrue();
