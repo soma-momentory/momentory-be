@@ -80,6 +80,18 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "502", "ApiErrorResponse", "KAKAO_API_RESPONSE_ERROR", "KAKAO_API_RESPONSE_ERROR", "카카오 서비스 응답을 처리할 수 없습니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/kakao", "post", "503", "ApiErrorResponse", "KAKAO_API_NETWORK_ERROR", "KAKAO_API_NETWORK_ERROR", "카카오 서비스에 연결할 수 없습니다.");
 
+        assertResponseSchema(apiDocs, "/api/v1/auth/apple", "post", "200", "AppleLoginResponse");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "identityToken은 필수입니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "400", "ApiErrorResponse", "APPLE_EMAIL_UNAVAILABLE", "APPLE_EMAIL_UNAVAILABLE", "유효하고 인증된 애플계정 이메일이 필요합니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "401", "ApiErrorResponse", "APPLE_TOKEN_INVALID", "APPLE_TOKEN_INVALID", "애플 인증에 실패했습니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "401", "ApiErrorResponse", "APPLE_NONCE_MISMATCH", "APPLE_NONCE_MISMATCH", "애플 인증에 실패했습니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "401", "ApiErrorResponse", "APPLE_CLIENT_ID_MISMATCH", "APPLE_CLIENT_ID_MISMATCH", "애플 인증에 실패했습니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "502", "ApiErrorResponse", "APPLE_API_SERVER_ERROR", "APPLE_API_SERVER_ERROR", "애플 서비스에 일시적인 오류가 발생했습니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "502", "ApiErrorResponse", "APPLE_API_RESPONSE_ERROR", "APPLE_API_RESPONSE_ERROR", "애플 서비스 응답을 처리할 수 없습니다.");
+        assertErrorExample(apiDocs, "/api/v1/auth/apple", "post", "503", "ApiErrorResponse", "APPLE_API_NETWORK_ERROR", "APPLE_API_NETWORK_ERROR", "애플 서비스에 연결할 수 없습니다.");
+        assertOperationTag(apiDocs, "/api/v1/auth/apple", "post", "Authentication");
+
         assertResponseSchema(apiDocs, "/api/v1/auth/reissue", "post", "200", "RefreshTokenReissueResponse");
         assertErrorExample(apiDocs, "/api/v1/auth/reissue", "post", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "refreshToken은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/auth/reissue", "post", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
@@ -408,6 +420,7 @@ class OpenApiContractIntegrationTest {
 
     private enum ApiOperation {
         KAKAO_LOGIN("/api/v1/auth/kakao", "post"),
+        APPLE_LOGIN("/api/v1/auth/apple", "post"),
         TOKEN_REISSUE("/api/v1/auth/reissue", "post"),
         LOGOUT("/api/v1/auth/logout", "post"),
         USER_ME("/api/v1/users/me", "get"),

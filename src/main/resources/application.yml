@@ -33,6 +33,15 @@ kakao:
     connect-timeout: ${KAKAO_CONNECT_TIMEOUT:3s}
     read-timeout: ${KAKAO_READ_TIMEOUT:5s}
 
+apple:
+  auth:
+    jwk-set-uri: ${APPLE_JWK_SET_URI:https://appleid.apple.com/auth/keys}
+    issuer: ${APPLE_ISSUER:https://appleid.apple.com}
+    # iOS 앱 번들 ID. identity token 의 aud 와 대조한다.
+    client-id: ${APPLE_CLIENT_ID}
+    connect-timeout: ${APPLE_CONNECT_TIMEOUT:3s}
+    read-timeout: ${APPLE_READ_TIMEOUT:5s}
+
 gemini:
   api:
     base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com}
