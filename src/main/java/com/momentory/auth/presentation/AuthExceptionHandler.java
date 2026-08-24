@@ -1,5 +1,7 @@
 package com.momentory.auth.presentation;
 
+import com.momentory.auth.apple.infrastructure.AppleApiException;
+import com.momentory.auth.apple.presentation.AppleLoginController;
 import com.momentory.auth.kakao.infrastructure.KakaoApiErrorCode;
 import com.momentory.auth.kakao.infrastructure.KakaoApiException;
 import com.momentory.auth.kakao.presentation.KakaoLoginController;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = {
         KakaoLoginController.class,
+        AppleLoginController.class,
         RefreshTokenReissueController.class,
         LogoutController.class,
         UserWithdrawalController.class
@@ -32,6 +35,19 @@ public class AuthExceptionHandler {
             case KAKAO_API_SERVER_ERROR -> error(HttpStatus.BAD_GATEWAY, "KAKAO_API_SERVER_ERROR", "카카오 서비스에 일시적인 오류가 발생했습니다.");
             case KAKAO_API_NETWORK_ERROR -> error(HttpStatus.SERVICE_UNAVAILABLE, "KAKAO_API_NETWORK_ERROR", "카카오 서비스에 연결할 수 없습니다.");
             case UNEXPECTED_KAKAO_RESPONSE -> error(HttpStatus.BAD_GATEWAY, "KAKAO_API_RESPONSE_ERROR", "카카오 서비스 응답을 처리할 수 없습니다.");
+        };
+    }
+
+    @ExceptionHandler(AppleApiException.class)
+    ResponseEntity<ApiErrorResponse> handleAppleApiException(AppleApiException exception) {
+        return switch (exception.getErrorCode()) {
+            case INVALID_IDENTITY_TOKEN -> error(HttpStatus.UNAUTHORIZED, "APPLE_TOKEN_INVALID", "애플 인증에 실패했습니다.");
+            case NONCE_MISMATCH -> error(HttpStatus.UNAUTHORIZED, "APPLE_NONCE_MISMATCH", "애플 인증에 실패했습니다.");
+            case CLIENT_ID_MISMATCH -> error(HttpStatus.UNAUTHORIZED, "APPLE_CLIENT_ID_MISMATCH", "애플 인증에 실패했습니다.");
+            case EMAIL_UNAVAILABLE -> error(HttpStatus.BAD_REQUEST, "APPLE_EMAIL_UNAVAILABLE", "유효하고 인증된 애플계정 이메일이 필요합니다.");
+            case APPLE_API_SERVER_ERROR -> error(HttpStatus.BAD_GATEWAY, "APPLE_API_SERVER_ERROR", "애플 서비스에 일시적인 오류가 발생했습니다.");
+            case APPLE_API_NETWORK_ERROR -> error(HttpStatus.SERVICE_UNAVAILABLE, "APPLE_API_NETWORK_ERROR", "애플 서비스에 연결할 수 없습니다.");
+            case UNEXPECTED_APPLE_RESPONSE -> error(HttpStatus.BAD_GATEWAY, "APPLE_API_RESPONSE_ERROR", "애플 서비스 응답을 처리할 수 없습니다.");
         };
     }
 
