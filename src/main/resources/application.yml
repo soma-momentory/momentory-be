@@ -38,7 +38,9 @@ apple:
     jwk-set-uri: ${APPLE_JWK_SET_URI:https://appleid.apple.com/auth/keys}
     issuer: ${APPLE_ISSUER:https://appleid.apple.com}
     # iOS 앱 번들 ID. identity token 의 aud 와 대조한다.
-    client-id: ${APPLE_CLIENT_ID}
+    # 비밀이 아니라 **공개 식별자**다(앱 바이너리·스토어에 그대로 있다) — 위 jwk-set-uri·
+    # issuer 와 같은 등급이라 기본값을 둔다. 다른 번들 ID로 띄울 때만 환경변수로 덮는다.
+    client-id: ${APPLE_CLIENT_ID:kr.momentory.app}
     connect-timeout: ${APPLE_CONNECT_TIMEOUT:3s}
     read-timeout: ${APPLE_READ_TIMEOUT:5s}
 
