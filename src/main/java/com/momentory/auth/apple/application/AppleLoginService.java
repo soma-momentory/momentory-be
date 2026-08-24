@@ -17,8 +17,8 @@ public class AppleLoginService {
         this.transactionService = transactionService;
     }
 
-    public AppleLoginResult login(String identityToken, String nonce) {
+    public AppleLoginResult login(String identityToken, String nonce, String authorizationCode) {
         AppleUserInfo appleUserInfo = identityTokenVerifier.verify(identityToken, nonce);
-        return transactionService.login(appleUserInfo);
+        return transactionService.login(appleUserInfo, authorizationCode);
     }
 }
