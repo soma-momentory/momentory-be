@@ -72,10 +72,6 @@
         {
           "name": "GEMINI_API_KEY",
           "valueFrom": "/momentory/prod/GEMINI_API_KEY"
-        },
-        {
-          "name": "APPLE_CLIENT_ID",
-          "valueFrom": "/momentory/prod/APPLE_CLIENT_ID"
         }
       ],
       "ulimits": [],
