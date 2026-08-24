@@ -173,7 +173,8 @@ public class AppleLoginController {
     })
     @PostMapping(value = "/apple", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public AppleLoginResponse login(@Valid @RequestBody AppleLoginRequest request) {
-        AppleLoginResult result = appleLoginService.login(request.identityToken(), request.nonce());
+        AppleLoginResult result = appleLoginService.login(
+                request.identityToken(), request.nonce(), request.authorizationCode());
         return AppleLoginResponse.from(result);
     }
 }

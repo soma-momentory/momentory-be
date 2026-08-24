@@ -48,6 +48,8 @@ public class AuthExceptionHandler {
             case APPLE_API_SERVER_ERROR -> error(HttpStatus.BAD_GATEWAY, "APPLE_API_SERVER_ERROR", "애플 서비스에 일시적인 오류가 발생했습니다.");
             case APPLE_API_NETWORK_ERROR -> error(HttpStatus.SERVICE_UNAVAILABLE, "APPLE_API_NETWORK_ERROR", "애플 서비스에 연결할 수 없습니다.");
             case UNEXPECTED_APPLE_RESPONSE -> error(HttpStatus.BAD_GATEWAY, "APPLE_API_RESPONSE_ERROR", "애플 서비스 응답을 처리할 수 없습니다.");
+            // 우리 설정 문제다 — .p8 이 없거나 읽을 수 없다. 사용자가 할 수 있는 일이 없다
+            case REVOKE_NOT_CONFIGURED -> error(HttpStatus.INTERNAL_SERVER_ERROR, "APPLE_REVOKE_UNAVAILABLE", "애플 연결 해제를 처리할 수 없습니다.");
         };
     }
 

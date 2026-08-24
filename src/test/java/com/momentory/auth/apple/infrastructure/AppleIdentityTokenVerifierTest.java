@@ -218,7 +218,10 @@ class AppleIdentityTokenVerifierTest {
                 ISSUER,
                 CLIENT_ID,
                 Duration.ofSeconds(1),
-                Duration.ofSeconds(1)
+                Duration.ofSeconds(1),
+                null, null, null,
+                "https://appleid.apple.com/auth/token",
+                "https://appleid.apple.com/auth/revoke"
         ));
     }
 
@@ -228,7 +231,10 @@ class AppleIdentityTokenVerifierTest {
                 ISSUER,
                 CLIENT_ID,
                 Duration.ofMillis(100),
-                Duration.ofMillis(100)
+                Duration.ofMillis(100),
+                null, null, null,
+                "https://appleid.apple.com/auth/token",
+                "https://appleid.apple.com/auth/revoke"
         ));
     }
 

@@ -2,6 +2,7 @@ package com.momentory.user.withdrawal.presentation;
 
 import com.momentory.auth.kakao.infrastructure.KakaoApiErrorCode;
 import com.momentory.auth.kakao.infrastructure.KakaoApiException;
+import com.momentory.auth.apple.infrastructure.AppleRevokeClient;
 import com.momentory.auth.kakao.infrastructure.KakaoUnlinkClient;
 import com.momentory.auth.token.application.AccessTokenIssuer;
 import com.momentory.auth.token.application.RefreshTokenIssuer;
@@ -54,7 +55,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "KAKAO_APP_ID=123456789"
 })
 @Testcontainers(disabledWithoutDocker = true)
-@Import(UserWithdrawalControllerIntegrationTest.KakaoUnlinkClientTestConfiguration.class)
+@Import({
+        UserWithdrawalControllerIntegrationTest.KakaoUnlinkClientTestConfiguration.class,
+        UserWithdrawalControllerIntegrationTest.AppleRevokeClientTestConfiguration.class
+})
 class UserWithdrawalControllerIntegrationTest {
 
     private static final List<String> USER_OWNED_TABLES = List.of(
@@ -89,6 +93,7 @@ class UserWithdrawalControllerIntegrationTest {
     @Autowired AccessTokenIssuer accessTokenIssuer;
     @Autowired UserDeletionService userDeletionService;
     @Autowired KakaoUnlinkClient kakaoUnlinkClient;
+    @Autowired AppleRevokeClient appleRevokeClient;
     @Autowired JdbcTemplate jdbcTemplate;
 
     private MockMvc mockMvc;
@@ -102,7 +107,7 @@ class UserWithdrawalControllerIntegrationTest {
 
     @AfterEach
     void cleanUp() {
-        reset(kakaoUnlinkClient);
+        reset(kakaoUnlinkClient, appleRevokeClient);
         jdbcTemplate.update("DELETE FROM users");
     }
 
@@ -264,9 +269,67 @@ class UserWithdrawalControllerIntegrationTest {
         return count == null ? 0 : count;
     }
 
+    @Test
+    void revokesAppleLinkWithTheStoredRefreshToken() throws Exception {
+        AppleFixture target = createAppleUserFixture("apple-target");
+        String accessToken = accessTokenIssuer.issueAccessToken(
+                target.fixture().userId(), target.fixture().user().getRole());
+
+        mockMvc.perform(delete("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isNoContent());
+
+        // 계정이 사라지기 전에 보관해 둔 토큰으로 끊어야 한다 — 지운 뒤에는 알 수 없다
+        verify(appleRevokeClient).revoke(target.appleRefreshToken());
+        assertThat(count("users", target.fixture().userId())).isZero();
+    }
+
+    @Test
+    void keepsInternalDataWhenAppleRevokeFails() throws Exception {
+        AppleFixture target = createAppleUserFixture("apple-fail");
+        String accessToken = accessTokenIssuer.issueAccessToken(
+                target.fixture().userId(), target.fixture().user().getRole());
+        doThrow(new com.momentory.auth.apple.infrastructure.AppleApiException(
+                com.momentory.auth.apple.infrastructure.AppleApiErrorCode.APPLE_API_NETWORK_ERROR,
+                "unreachable"))
+                .when(appleRevokeClient).revoke(target.appleRefreshToken());
+
+        mockMvc.perform(delete("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().is5xxServerError());
+
+        // 연결을 못 끊었으면 계정도 남아야 한다 — 지워 버리면 되돌릴 방법이 없다
+        assertThat(count("users", target.fixture().userId())).isEqualTo(1);
+    }
+
+    /** 애플로 가입한 사용자 — 카카오 행 대신 애플 행과 보관된 refresh token 을 둔다 */
+    private AppleFixture createAppleUserFixture(String key) {
+        UserFixture fixture = createUserFixture(key);
+        String appleRefreshToken = "apple-refresh-" + fixture.providerUserId();
+        jdbcTemplate.update("DELETE FROM oauth_accounts WHERE user_id = ?", fixture.userId());
+        jdbcTemplate.update("""
+                INSERT INTO oauth_accounts (user_id, provider, provider_user_id, apple_refresh_token)
+                VALUES (?, 'APPLE', ?, ?)
+                """, fixture.userId(), fixture.providerUserId(), appleRefreshToken);
+        return new AppleFixture(fixture, appleRefreshToken);
+    }
+
+    private record AppleFixture(UserFixture fixture, String appleRefreshToken) {
+    }
+
     private record UserFixture(User user, String refreshToken, String providerUserId) {
         Long userId() {
             return user.getId();
+        }
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class AppleRevokeClientTestConfiguration {
+
+        @Bean
+        @Primary
+        AppleRevokeClient mockAppleRevokeClient() {
+            return org.mockito.Mockito.mock(AppleRevokeClient.class);
         }
     }
 

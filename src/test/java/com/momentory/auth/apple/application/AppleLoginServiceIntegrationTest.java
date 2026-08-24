@@ -59,6 +59,9 @@ class AppleLoginServiceIntegrationTest {
     /** 이번 인가의 nonce 원문. 이 테스트는 verifier 를 목으로 두므로 값 자체는 통과 재료다 */
     private static final String NONCE = "3f1a9c00deadbeef";
 
+    /** 애플 authorization code — 이 테스트는 교환 클라이언트를 목으로 둔다 */
+    private static final String AUTH_CODE = "apple-authorization-code";
+
     @Container
     private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
             DockerImageName.parse("pgvector/pgvector:pg17")
@@ -101,7 +104,7 @@ class AppleLoginServiceIntegrationTest {
     void createsUserAndOAuthAccountForFirstLogin() {
         givenAppleUser("001234.abc", "user@example.com");
 
-        AppleLoginResult result = appleLoginService.login("apple-identity-token", NONCE);
+        AppleLoginResult result = appleLoginService.login("apple-identity-token", NONCE, AUTH_CODE);
 
         assertThat(userRepository.count()).isEqualTo(1);
         assertThat(userRepository.findById(result.userId()).orElseThrow().getEmail())
@@ -115,9 +118,9 @@ class AppleLoginServiceIntegrationTest {
     @Test
     void reusesExistingUserForExistingOAuthAccount() {
         givenAppleUser("001234.abc", "user@example.com");
-        AppleLoginResult firstLogin = appleLoginService.login("first-token", NONCE);
+        AppleLoginResult firstLogin = appleLoginService.login("first-token", NONCE, AUTH_CODE);
 
-        AppleLoginResult secondLogin = appleLoginService.login("second-token", NONCE);
+        AppleLoginResult secondLogin = appleLoginService.login("second-token", NONCE, AUTH_CODE);
 
         assertThat(secondLogin.userId()).isEqualTo(firstLogin.userId());
         assertThat(userRepository.count()).isEqualTo(1);
@@ -132,7 +135,7 @@ class AppleLoginServiceIntegrationTest {
                 OAuthAccount.create(kakaoUser, OAuthProvider.KAKAO, "001234.abc"));
         givenAppleUser("001234.abc", "apple@example.com");
 
-        AppleLoginResult result = appleLoginService.login("apple-identity-token", NONCE);
+        AppleLoginResult result = appleLoginService.login("apple-identity-token", NONCE, AUTH_CODE);
 
         assertThat(result.userId()).isNotEqualTo(kakaoUser.getId());
         assertThat(userRepository.count()).isEqualTo(2);
@@ -142,12 +145,12 @@ class AppleLoginServiceIntegrationTest {
     @Test
     void returnsOnboardingNotRequiredForCompletedUser() {
         givenAppleUser("001234.abc", "user@example.com");
-        Long userId = appleLoginService.login("first-token", NONCE).userId();
+        Long userId = appleLoginService.login("first-token", NONCE, AUTH_CODE).userId();
         User user = userRepository.findById(userId).orElseThrow();
         user.completeOnboarding();
         userRepository.saveAndFlush(user);
 
-        AppleLoginResult result = appleLoginService.login("second-token", NONCE);
+        AppleLoginResult result = appleLoginService.login("second-token", NONCE, AUTH_CODE);
 
         assertThat(result.onboardingRequired()).isFalse();
     }
@@ -155,10 +158,10 @@ class AppleLoginServiceIntegrationTest {
     @Test
     void updatesExistingUsersEmailFromLatestIdentityToken() {
         givenAppleUser("001234.abc", "old@example.com");
-        Long userId = appleLoginService.login("first-token", NONCE).userId();
+        Long userId = appleLoginService.login("first-token", NONCE, AUTH_CODE).userId();
 
         givenAppleUser("001234.abc", "new@example.com");
-        appleLoginService.login("second-token", NONCE);
+        appleLoginService.login("second-token", NONCE, AUTH_CODE);
 
         assertThat(userRepository.findById(userId).orElseThrow().getEmail())
                 .isEqualTo("new@example.com");
@@ -171,8 +174,8 @@ class AppleLoginServiceIntegrationTest {
         when(identityTokenVerifier.verify("second-token", NONCE))
                 .thenReturn(new AppleUserInfo("005678.def", "shared@example.com"));
 
-        AppleLoginResult firstLogin = appleLoginService.login("first-token", NONCE);
-        AppleLoginResult secondLogin = appleLoginService.login("second-token", NONCE);
+        AppleLoginResult firstLogin = appleLoginService.login("first-token", NONCE, AUTH_CODE);
+        AppleLoginResult secondLogin = appleLoginService.login("second-token", NONCE, AUTH_CODE);
 
         assertThat(firstLogin.userId()).isNotEqualTo(secondLogin.userId());
         assertThat(userRepository.count()).isEqualTo(2);
@@ -184,7 +187,7 @@ class AppleLoginServiceIntegrationTest {
         givenAppleUser("001234.abc", "user@example.com");
         Instant beforeLogin = Instant.now();
 
-        AppleLoginResult result = appleLoginService.login("apple-identity-token", NONCE);
+        AppleLoginResult result = appleLoginService.login("apple-identity-token", NONCE, AUTH_CODE);
         Instant afterLogin = Instant.now();
         RefreshToken refreshToken = refreshTokenRepository.findAll().getFirst();
 
@@ -212,8 +215,8 @@ class AppleLoginServiceIntegrationTest {
 
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
             List<Future<AppleLoginResult>> logins = executor.invokeAll(List.of(
-                    () -> appleLoginService.login("first-token", NONCE),
-                    () -> appleLoginService.login("second-token", NONCE)
+                    () -> appleLoginService.login("first-token", NONCE, AUTH_CODE),
+                    () -> appleLoginService.login("second-token", NONCE, AUTH_CODE)
             ));
             Long firstUserId = logins.getFirst().get(10, TimeUnit.SECONDS).userId();
             Long secondUserId = logins.get(1).get(10, TimeUnit.SECONDS).userId();
@@ -233,7 +236,7 @@ class AppleLoginServiceIntegrationTest {
                 "Apple identity token is invalid."
         ));
 
-        assertThatThrownBy(() -> appleLoginService.login("invalid-token", NONCE))
+        assertThatThrownBy(() -> appleLoginService.login("invalid-token", NONCE, AUTH_CODE))
                 .isInstanceOf(AppleApiException.class);
 
         assertThat(userRepository.count()).isZero();
