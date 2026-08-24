@@ -18,7 +18,7 @@ import com.momentory.retrospect.domain.Emotion;
 /** 「이번 주의 마음」 멘트 규칙 — AI 없이 고정 규칙으로만 만든다. */
 class WeeklyMoodTest {
 
-    private static final LocalDate MONDAY = LocalDate.of(2026, 8, 17);
+    private static final LocalDate WEEK_START = LocalDate.of(2026, 8, 16);
     private static final String MIXED_MESSAGE = "여러 마음이 번갈아 찾아온 한 주였어요.";
 
     @Test
@@ -113,8 +113,8 @@ class WeeklyMoodTest {
         days.clear();
 
         assertThat(mood.days()).hasSize(7);
-        assertThat(mood.days().getFirst().date()).isEqualTo(MONDAY);
-        assertThat(mood.days().get(6).date()).isEqualTo(MONDAY.plusDays(6));
+        assertThat(mood.days().getFirst().date()).isEqualTo(WEEK_START);
+        assertThat(mood.days().get(6).date()).isEqualTo(WEEK_START.plusDays(6));
         assertThatThrownBy(() -> mood.days().clear())
                 .isInstanceOf(UnsupportedOperationException.class);
     }
@@ -122,7 +122,7 @@ class WeeklyMoodTest {
     private static List<DailyMood> week(Emotion... emotions) {
         List<Emotion> values = Arrays.asList(emotions);
         return java.util.stream.IntStream.range(0, values.size())
-                .mapToObj(offset -> new DailyMood(MONDAY.plusDays(offset), values.get(offset)))
+                .mapToObj(offset -> new DailyMood(WEEK_START.plusDays(offset), values.get(offset)))
                 .toList();
     }
 }

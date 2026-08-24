@@ -11,12 +11,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * 주간 리포트 응답 — 「이번 주의 마음」과 「이번 주 한눈에」를 한 벌로 담는다.
  *
- * <p>{@code dailyMoods} 는 언제나 일곱 칸(월→일)이고, 기록이 없는 날은 {@code emotion} 이 null 이다.
+ * <p>{@code dailyMoods} 는 언제나 일곱 칸(일→토)이고, 기록이 없는 날은 {@code emotion} 이 null 이다.
  */
 public record WeeklyReportResponse(
-        @Schema(description = "주 시작일(월요일, KST)", example = "2026-08-17") LocalDate startDate,
-        @Schema(description = "주 종료일(일요일, KST)", example = "2026-08-23") LocalDate endDate,
-        @Schema(description = "월요일부터 일요일까지 일곱 칸의 마음") List<DailyMoodResponse> dailyMoods,
+        @Schema(description = "주 시작일(일요일, KST)", example = "2026-08-16") LocalDate startDate,
+        @Schema(description = "주 종료일(토요일, KST)", example = "2026-08-22") LocalDate endDate,
+        @Schema(description = "일요일부터 토요일까지 일곱 칸의 마음") List<DailyMoodResponse> dailyMoods,
         @Schema(description = "가장 자주 느낀 감정 키 — 최다가 여럿이거나 기록이 없으면 null",
                 example = "calm") String dominantEmotion,
         @Schema(description = "마음 요약 멘트 — 가장 많이 느낀 감정에 따라 정해진 문장",

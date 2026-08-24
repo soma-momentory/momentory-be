@@ -21,7 +21,7 @@ import com.momentory.schedule.application.ScheduleResult;
 import com.momentory.schedule.application.ScheduleService;
 
 /**
- * 주간 리포트 조회 유스케이스 — 한 주(월~일, KST)의 마음·일정·행동 카드·일기를 한 벌로 모은다.
+ * 주간 리포트 조회 유스케이스 — 한 주(일~토, KST)의 마음·일정·행동 카드·일기를 한 벌로 모은다.
  *
  * <p>리포트는 <b>세는</b> 화면이라 제 테이블을 갖지 않는다. 각 도메인의 조회 유스케이스에서 필요한
  * 만큼만 받아 합칠 뿐이라, 일정의 숨김·삭제 규칙이나 일기의 하루 경계 같은 판단은 그 도메인에 그대로
@@ -44,13 +44,13 @@ public class WeeklyReportService {
     }
 
     /**
-     * {@code date} 가 속한 주(월~일, KST)의 리포트. {@code date} 가 null 이면 오늘(KST · 04:00 하루
+     * {@code date} 가 속한 주(일~토, KST)의 리포트. {@code date} 가 null 이면 오늘(KST · 04:00 하루
      * 경계)이 속한 주 — 클라이언트가 주 이동 없이 처음 열 때다.
      */
     @Transactional(readOnly = true)
     public WeeklyReport getWeekly(Long userId, LocalDate date) {
         LocalDate target = date == null ? DayBoundary.today() : date;
-        LocalDate startDate = target.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate startDate = target.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
         LocalDate endDate = startDate.plusDays(WEEK_LENGTH - 1L);
 
         Map<LocalDate, Emotion> emotionsByDate =

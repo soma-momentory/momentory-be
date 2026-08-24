@@ -24,7 +24,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
-/** 주간 리포트 조회 API — 한 주(월~일, KST)에 한 벌. */
+/** 주간 리포트 조회 API — 한 주(일~토, KST)에 한 벌. */
 @Tag(name = "Reports", description = "주간 리포트 API")
 @RestController
 @RequestMapping("/api/v1/reports")
@@ -37,8 +37,8 @@ public class WeeklyReportController {
     }
 
     @Operation(summary = "주간 리포트 조회",
-            description = "그 주(월~일, KST)의 마음 일곱 칸과 요약 멘트, 일정·행동 카드·일기 셈을 돌려준다. "
-                    + "date 는 그 주에 속한 아무 날이나 넣으면 되고, 서버가 해당 주의 월요일로 맞춘다. "
+            description = "그 주(일~토, KST)의 마음 일곱 칸과 요약 멘트, 일정·행동 카드·일기 셈을 돌려준다. "
+                    + "date 는 그 주에 속한 아무 날이나 넣으면 되고, 서버가 해당 주의 일요일로 맞춘다. "
                     + "생략하면 오늘(KST)이 속한 주다.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
