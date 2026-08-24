@@ -45,7 +45,7 @@ import com.momentory.user.domain.User;
 import com.momentory.user.infrastructure.UserRepository;
 
 /**
- * 주간 리포트 조회 API 통합 검증 — 실제 HTTP + 인증 + DB 로 한 주(월~일, KST)의 마음 일곱 칸과
+ * 주간 리포트 조회 API 통합 검증 — 실제 HTTP + 인증 + DB 로 한 주(일~토, KST)의 마음 일곱 칸과
  * 「이번 주 한눈에」 셈을 본다.
  *
  * <p>주 경계를 보려면 {@code created_at} 을 마음대로 심어야 하는데 엔티티는 {@code @PrePersist} 로
@@ -60,9 +60,9 @@ import com.momentory.user.infrastructure.UserRepository;
 @Testcontainers(disabledWithoutDocker = true)
 class WeeklyReportApiIntegrationTest {
 
-    /** 대상 주 — 2026-08-17(월) ~ 2026-08-23(일), KST. */
-    private static final LocalDate MONDAY = LocalDate.of(2026, 8, 17);
-    private static final LocalDate SUNDAY = LocalDate.of(2026, 8, 23);
+    /** 대상 주 — 2026-08-16(일) ~ 2026-08-22(토), KST. */
+    private static final LocalDate WEEK_START = LocalDate.of(2026, 8, 16);
+    private static final LocalDate WEEK_END = LocalDate.of(2026, 8, 22);
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES =
@@ -107,59 +107,59 @@ class WeeklyReportApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
 
-        // 마음 — 월(주 경계 04:00 KST)·화·수·금·일(주 경계 다음날 03:59:59 KST). 평온이 둘로 최다.
-        seedDiary(user, Emotion.DEPRESSED, Instant.parse("2026-08-16T19:00:00Z")); // 8/17 04:00 KST
-        seedDiary(user, Emotion.HAPPY, Instant.parse("2026-08-18T01:00:00Z"));
-        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-19T01:00:00Z"));
-        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-21T01:00:00Z"));
-        seedDiary(user, Emotion.TIRED, Instant.parse("2026-08-23T14:59:59Z"));
-        // 주 밖 — 지난주(월 경계 03:59:59 KST), 다음주 월요일 04:00 KST. 섞이면 최다 감정이 바뀐다.
-        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-16T18:59:59Z")); // 8/17 03:59:59 KST → 아직 8/16
-        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-23T19:00:00Z")); // 8/24 04:00 KST → 다음 주
+        // 마음 — 일(주 경계 04:00 KST)·월·화·목·토(주 경계 다음날 03:59:59 KST). 평온이 둘로 최다.
+        seedDiary(user, Emotion.DEPRESSED, Instant.parse("2026-08-15T19:00:00Z")); // 8/16 04:00 KST
+        seedDiary(user, Emotion.HAPPY, Instant.parse("2026-08-17T01:00:00Z"));
+        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-18T01:00:00Z"));
+        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-20T01:00:00Z"));
+        seedDiary(user, Emotion.TIRED, Instant.parse("2026-08-22T14:59:59Z"));
+        // 주 밖 — 지난주(일 경계 03:59:59 KST), 다음주 일요일 04:00 KST. 섞이면 최다 감정이 바뀐다.
+        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-15T18:59:59Z")); // 8/16 03:59:59 KST → 아직 8/15
+        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-22T19:00:00Z")); // 8/23 04:00 KST → 다음 주
         // 남의 일기도 섞이면 안 된다.
-        seedDiary(other, Emotion.ANXIOUS, Instant.parse("2026-08-20T01:00:00Z"));
+        seedDiary(other, Emotion.ANXIOUS, Instant.parse("2026-08-19T01:00:00Z"));
 
         // 일정 — 이번 주 다섯(완료 셋), 그리고 숨김·삭제·주 밖·남의 것은 빠진다.
-        seedSchedule(user, MONDAY, "월 일정", true);
-        seedSchedule(user, MONDAY, "월 미완료", false);
-        seedSchedule(user, LocalDate.of(2026, 8, 20), "목 일정", true);
-        seedSchedule(user, SUNDAY, "일 일정", true);
-        seedSchedule(user, SUNDAY, "일 미완료", false);
-        seedHiddenCalendarSchedule(user, LocalDate.of(2026, 8, 19), "숨긴 캘린더 일정");
-        seedDeletedSchedule(user, LocalDate.of(2026, 8, 19), "지운 일정");
-        seedSchedule(user, LocalDate.of(2026, 8, 24), "다음 주 일정", true);
-        seedSchedule(other, MONDAY, "남의 일정", true);
+        seedSchedule(user, WEEK_START, "일 일정", true);
+        seedSchedule(user, WEEK_START, "일 미완료", false);
+        seedSchedule(user, LocalDate.of(2026, 8, 19), "수 일정", true);
+        seedSchedule(user, WEEK_END, "토 일정", true);
+        seedSchedule(user, WEEK_END, "토 미완료", false);
+        seedHiddenCalendarSchedule(user, LocalDate.of(2026, 8, 18), "숨긴 캘린더 일정");
+        seedDeletedSchedule(user, LocalDate.of(2026, 8, 18), "지운 일정");
+        seedSchedule(user, LocalDate.of(2026, 8, 23), "다음 주 일정", true);
+        seedSchedule(other, WEEK_START, "남의 일정", true);
 
         // 행동 카드 — 이번 주 생성 넷(그중 실천 둘).
-        seedActionCard(user, Instant.parse("2026-08-17T01:00:00Z"), null);
-        seedActionCard(user, Instant.parse("2026-08-18T01:00:00Z"),
-                Instant.parse("2026-08-18T05:00:00Z"));
-        seedActionCard(user, Instant.parse("2026-08-20T01:00:00Z"),
-                Instant.parse("2026-08-20T05:00:00Z"));
-        seedActionCard(user, Instant.parse("2026-08-23T14:59:59Z"), null);
-        // 지난주에 만들어 이번 주에 해본 카드 — 생성 기준이라 어느 쪽에도 잡히지 않는다.
-        seedActionCard(user, Instant.parse("2026-08-10T01:00:00Z"),
+        seedActionCard(user, Instant.parse("2026-08-16T01:00:00Z"), null);
+        seedActionCard(user, Instant.parse("2026-08-17T01:00:00Z"),
+                Instant.parse("2026-08-17T05:00:00Z"));
+        seedActionCard(user, Instant.parse("2026-08-19T01:00:00Z"),
                 Instant.parse("2026-08-19T05:00:00Z"));
-        seedActionCard(user, Instant.parse("2026-08-24T01:00:00Z"), null);
-        seedActionCard(other, Instant.parse("2026-08-19T01:00:00Z"), null);
+        seedActionCard(user, Instant.parse("2026-08-22T14:59:59Z"), null);
+        // 지난주에 만들어 이번 주에 해본 카드 — 생성 기준이라 어느 쪽에도 잡히지 않는다.
+        seedActionCard(user, Instant.parse("2026-08-09T01:00:00Z"),
+                Instant.parse("2026-08-18T05:00:00Z"));
+        seedActionCard(user, Instant.parse("2026-08-23T01:00:00Z"), null);
+        seedActionCard(other, Instant.parse("2026-08-18T01:00:00Z"), null);
 
         mockMvc.perform(get("/api/v1/reports/weekly")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user))
-                        .param("date", "2026-08-21"))
+                        .param("date", "2026-08-20"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.startDate").value("2026-08-17"))
-                .andExpect(jsonPath("$.endDate").value("2026-08-23"))
+                .andExpect(jsonPath("$.startDate").value("2026-08-16"))
+                .andExpect(jsonPath("$.endDate").value("2026-08-22"))
                 .andExpect(jsonPath("$.dailyMoods.length()").value(7))
-                .andExpect(jsonPath("$.dailyMoods[0].date").value("2026-08-17"))
+                .andExpect(jsonPath("$.dailyMoods[0].date").value("2026-08-16"))
                 .andExpect(jsonPath("$.dailyMoods[0].emotion").value("depressed"))
                 .andExpect(jsonPath("$.dailyMoods[1].emotion").value("happy"))
                 .andExpect(jsonPath("$.dailyMoods[2].emotion").value("calm"))
                 // 기록이 없는 날은 칸이 남되 감정만 비어 온다(필드는 사라지지 않는다).
-                .andExpect(jsonPath("$.dailyMoods[3].date").value("2026-08-20"))
+                .andExpect(jsonPath("$.dailyMoods[3].date").value("2026-08-19"))
                 .andExpect(jsonPath("$.dailyMoods[3].emotion").isEmpty())
                 .andExpect(jsonPath("$.dailyMoods[4].emotion").value("calm"))
                 .andExpect(jsonPath("$.dailyMoods[5].emotion").isEmpty())
-                .andExpect(jsonPath("$.dailyMoods[6].date").value("2026-08-23"))
+                .andExpect(jsonPath("$.dailyMoods[6].date").value("2026-08-22"))
                 .andExpect(jsonPath("$.dailyMoods[6].emotion").value("tired"))
                 .andExpect(jsonPath("$.dominantEmotion").value("calm"))
                 .andExpect(jsonPath("$.moodMessage")
@@ -173,18 +173,18 @@ class WeeklyReportApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("주에 속한 아무 날을 넣어도 같은 주(월~일)로 맞춰진다")
+    @DisplayName("주에 속한 아무 날을 넣어도 같은 주(일~토)로 맞춰진다")
     void anyDayInTheWeekResolvesToTheSameWeek() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        seedDiary(user, Emotion.PROUD, Instant.parse("2026-08-19T01:00:00Z"));
+        seedDiary(user, Emotion.PROUD, Instant.parse("2026-08-18T01:00:00Z"));
 
-        for (String date : new String[] {"2026-08-17", "2026-08-20", "2026-08-23"}) {
+        for (String date : new String[] {"2026-08-16", "2026-08-19", "2026-08-22"}) {
             mockMvc.perform(get("/api/v1/reports/weekly")
                             .header(HttpHeaders.AUTHORIZATION, bearer(user))
                             .param("date", date))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.startDate").value("2026-08-17"))
-                    .andExpect(jsonPath("$.endDate").value("2026-08-23"))
+                    .andExpect(jsonPath("$.startDate").value("2026-08-16"))
+                    .andExpect(jsonPath("$.endDate").value("2026-08-22"))
                     .andExpect(jsonPath("$.diaryCount").value(1))
                     .andExpect(jsonPath("$.dominantEmotion").value("proud"));
         }
@@ -194,14 +194,14 @@ class WeeklyReportApiIntegrationTest {
     @DisplayName("date 를 빼면 오늘(KST)이 속한 주를 돌려준다")
     void omittedDateFallsBackToThisWeek() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        LocalDate thisMonday = LocalDate.now(TimeZonePolicy.DEFAULT_ZONE_ID)
-                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate thisSunday = LocalDate.now(TimeZonePolicy.DEFAULT_ZONE_ID)
+                .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
 
         mockMvc.perform(get("/api/v1/reports/weekly")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.startDate").value(thisMonday.toString()))
-                .andExpect(jsonPath("$.endDate").value(thisMonday.plusDays(6).toString()));
+                .andExpect(jsonPath("$.startDate").value(thisSunday.toString()))
+                .andExpect(jsonPath("$.endDate").value(thisSunday.plusDays(6).toString()));
     }
 
     @Test
