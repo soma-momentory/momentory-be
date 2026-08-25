@@ -493,13 +493,14 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("위기 발화는 규칙층에서 AI 호출 전에 차단된다 — 유료 0회, ended")
+    @DisplayName("위기 발화는 규칙층에서 AI 호출 전에 멈춘다 — 유료 0회, safety_hold(종결 아님)")
     void crisisBlocksBeforeAi() {
         start();
         ReplyDto reply = service.handle(state, TurnCommand.text("이제 다 그만하고 죽고 싶어요"));
 
-        assertThat(reply.done()).isTrue();
-        assertThat(reply.phase()).isEqualTo("ended");
+        // 멈추되 끝내지 않는다 — done=false 라야 프론트가 「이어서 얘기하기」를 띄운다.
+        assertThat(reply.done()).isFalse();
+        assertThat(reply.phase()).isEqualTo("safety_hold");
         assertThat(reply.safetyLevel()).isEqualTo("imminent");
         assertThat(reply.text()).contains("109");
         assertThat(fake.understandingCalls).isZero();
@@ -507,15 +508,43 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("AI 턴 안전 판정(risk)도 회고를 중단시킨다")
+    @DisplayName("AI 턴 안전 판정(risk)도 회고를 멈춘다 — safety_hold")
     void aiSafetyStops() {
         answerIntro();
         fake.turnSafetyLevel = "risk";
         ReplyDto reply = service.handle(state, TurnCommand.option("1"));
 
-        assertThat(reply.done()).isTrue();
-        assertThat(reply.phase()).isEqualTo("ended");
+        assertThat(reply.done()).isFalse();
+        assertThat(reply.phase()).isEqualTo("safety_hold");
         assertThat(reply.safetyLevel()).isEqualTo("risk");
+    }
+
+    @Test
+    @DisplayName("「이어서 얘기하기」 — 안내 뒤 멈춘 회고를 이어가면 intro 로 되돌아가 정상 처리된다")
+    void resumeAfterSafetyHold() {
+        start();
+        ReplyDto held = service.handle(state, TurnCommand.text("이제 다 그만하고 죽고 싶어요"));
+        assertThat(held.phase()).isEqualTo("safety_hold");
+
+        // 사용자가 이어가기를 고르고 다음 발화를 보낸다 — 멈추기 전 phase(intro)에서 답변으로 처리된다.
+        ReplyDto resumed = service.handle(state,
+                TurnCommand.text("모의 면접에서 답변을 제대로 못 했어요."));
+
+        assertThat(resumed.phase()).isEqualTo("await_direction");
+        assertThat(resumed.done()).isFalse();
+        // 이어간 발화가 깨끗하면 정지 신호는 거둬진다 — 다시 멈추지 않는다.
+        assertThat(resumed.safetyLevel()).isEqualTo("none");
+    }
+
+    @Test
+    @DisplayName("이어가기 뒤에도 새 위기 발화면 그 자리에서 다시 멈춘다")
+    void resumeThenCrisisHoldsAgain() {
+        start();
+        service.handle(state, TurnCommand.text("죽고 싶어요"));
+        ReplyDto again = service.handle(state, TurnCommand.text("그냥 다 사라지고 싶어"));
+
+        assertThat(again.phase()).isEqualTo("safety_hold");
+        assertThat(again.safetyLevel()).isEqualTo("imminent");
     }
 
     @Test

@@ -129,6 +129,16 @@ public record ReplyDto(
                 safety.key());
     }
 
+    /**
+     * 위기 안내 후 멈춤 — 안내 문안을 담되 {@code done=false} 다(종결 아님). 프론트는 이 phase 를 보고
+     * 「홈으로 돌아가기」와 「이어서 얘기하기」를 함께 띄운다. 이어가기를 고르면 다음 발화가 그대로
+     * 다음 턴으로 가서 멈추기 전 phase 에서 이어진다.
+     */
+    static ReplyDto safetyHold(String text, SafetyLevel safety) {
+        return new ReplyDto(text, Phase.SAFETY_HOLD.key(), null, null, null, null, null, false,
+                safety.key());
+    }
+
     static ReplyDto alreadyFinished(Phase phase) {
         return new ReplyDto("이번 회고는 이미 마무리됐어요.", phase.key(), null, null, null, null,
                 null, true, SafetyLevel.NONE.key());
