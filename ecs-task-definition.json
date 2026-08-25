@@ -35,6 +35,14 @@
         {
           "name": "KAKAO_CONNECT_TIMEOUT",
           "value": "3s"
+        },
+        {
+          "name": "APPLE_TEAM_ID",
+          "value": "U8R7H6ASTS"
+        },
+        {
+          "name": "APPLE_KEY_ID",
+          "value": "5A9C8XNK3A"
         }
       ],
       "environmentFiles": [],
@@ -72,6 +80,10 @@
         {
           "name": "GEMINI_API_KEY",
           "valueFrom": "/momentory/prod/GEMINI_API_KEY"
+        },
+        {
+          "name": "APPLE_PRIVATE_KEY",
+          "valueFrom": "/momentory/prod/APPLE_PRIVATE_KEY"
         }
       ],
       "ulimits": [],
