@@ -52,6 +52,21 @@ apple:
     key-id: ${APPLE_KEY_ID:}
     private-key: ${APPLE_PRIVATE_KEY:}
 
+google:
+  auth:
+    jwk-set-uri: ${GOOGLE_JWK_SET_URI:https://www.googleapis.com/oauth2/v3/certs}
+    # 구글은 iss 를 스킴 있는 형태와 없는 형태로 모두 발급한다. 하나만 받으면
+    # 어느 날 절반이 거절되므로 둘 다 둔다(GoogleIdTokenVerifier 머리말).
+    issuers: ${GOOGLE_ISSUERS:https://accounts.google.com,accounts.google.com}
+    # 받아들일 aud — 우리 프로젝트의 클라이언트 ID 전부다. 플랫폼마다 다른 값이
+    # 앉는다: Android 는 웹 클라이언트, iOS 는 iOS 클라이언트.
+    #
+    # 애플 client-id 와 같은 등급의 **공개 식별자**다(앱 바이너리에 그대로 있다) —
+    # 그래서 기본값을 둔다. 발급 전인 값을 필수로 걸면 배포가 통째로 막힌다.
+    allowed-audiences: ${GOOGLE_ALLOWED_AUDIENCES:719283265966-q0sbodjlssdou6g9jla0qfs2j1mbi972.apps.googleusercontent.com,719283265966-s6jo83of0u5jno0n7nsqell72ao0tglm.apps.googleusercontent.com,719283265966-sbcn188a2mhoqv1f0pt54s6dnjde6of1.apps.googleusercontent.com}
+    connect-timeout: ${GOOGLE_CONNECT_TIMEOUT:3s}
+    read-timeout: ${GOOGLE_READ_TIMEOUT:5s}
+
 gemini:
   api:
     base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com}
