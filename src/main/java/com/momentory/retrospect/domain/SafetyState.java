@@ -35,6 +35,18 @@ public class SafetyState {
      *
      * @return 레벨이 올라갔으면 true — 호출자가 이걸 보고 도메인 이벤트를 낸다
      */
+    /**
+     * 누적 안전 상태를 초기 상태로 내린다 — <b>사용자가 「이어서 얘기하기」를 명시적으로 고른</b>
+     * 경우에만 부른다. 단조 증가 불변식({@link #merge})의 유일한 예외다: 안내를 본 뒤 이어가겠다는
+     * 선택이 곧 정지 신호를 거두는 것이라, 다음 발화는 그 자체로 다시 판정받는다(새 위기면 다시 멈춘다).
+     * 위기 자체의 감사 흔적은 이미 {@code CrisisDetected} 이벤트로 남는다.
+     */
+    public void reset() {
+        this.level = SafetyLevel.NONE;
+        this.flags.clear();
+        this.lastFlaggedMsgId = null;
+    }
+
     public boolean merge(SafetyLevel incoming, Collection<String> incomingFlags, String msgId) {
         SafetyLevel previous = this.level;
         SafetyLevel merged = SafetyLevel.max(previous, incoming);

@@ -25,6 +25,8 @@ public record RetrospectStateSnapshot(
         List<String> restMethods,
         List<ScheduleItem> pendingSchedules,
         Phase phase,
+        /** 안전 hold 중일 때 「이어서 얘기하기」가 되돌아갈 phase. hold 가 아니면 null. */
+        Phase heldFrom,
         RetroMode mode,
         int stepIndex,
         int turn,

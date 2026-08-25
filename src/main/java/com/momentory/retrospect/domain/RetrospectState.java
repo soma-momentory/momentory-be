@@ -48,6 +48,8 @@ public class RetrospectState {
     /** 현재 '물어본' 스텝의 인덱스. 스크립트 진입 전엔 -1. */
     private int stepIndex = -1;
     private int turn;
+    /** 위기 안내로 멈췄을 때, 「이어서 얘기하기」가 되돌아갈 phase. hold 중이 아니면 null. */
+    private Phase heldFrom;
     /** 현재 스텝(또는 intro)에서 되물은 횟수 — 게이트 캡용. 전진할 때마다 0으로. */
     private int reasks;
     /** 연속 어뷰징(욕만·상담사 대상 공격) 턴 수 — 캡 도달 시 부드럽게 종료. 정상 답변에 0으로. */
@@ -226,6 +228,29 @@ public class RetrospectState {
         this.phase = phase;
     }
 
+    /**
+     * 위기 안내로 멈춘다 — 지금 phase 를 기억해 두고 {@link Phase#SAFETY_HOLD} 로 넘어간다.
+     * 안전 상태는 여기서 건드리지 않는다(안내 문안이 방금 그 레벨로 골라졌으므로). 되돌리기는
+     * {@link #resumeFromHold} 가 맡는다.
+     */
+    public void holdForSafety() {
+        this.heldFrom = this.phase;
+        this.phase = Phase.SAFETY_HOLD;
+    }
+
+    /**
+     * 「이어서 얘기하기」 — 멈추기 전 phase 로 되돌리고 정지 신호를 거둔다. 되돌아간 phase 를 준다
+     * (기억이 없으면 {@link Phase#INTRO} 로 안전하게 떨어진다). 다음 발화는 그 phase 에서 정상 처리되며
+     * 새 위기면 그 자리에서 다시 멈춘다.
+     */
+    public Phase resumeFromHold() {
+        Phase target = heldFrom != null ? heldFrom : Phase.INTRO;
+        this.phase = target;
+        this.heldFrom = null;
+        this.safety.reset();
+        return target;
+    }
+
     /** 방향이 확정됐다 — 모드 스크립트를 걸고 script phase 로 넘어간다. */
     public void applyMode(RetroMode mode) {
         this.mode = mode;
@@ -364,7 +389,8 @@ public class RetrospectState {
         return new RetrospectStateSnapshot(
                 id, nickname, scheduleId, schedule, scheduleEmotion, currentEmotion, interest,
                 List.copyOf(restMethods),
-                List.copyOf(pendingSchedules), phase, mode, stepIndex, turn, reasks, abuseStreak,
+                List.copyOf(pendingSchedules), phase, heldFrom, mode, stepIndex, turn, reasks,
+                abuseStreak,
                 new LinkedHashMap<>(answers), measuresCopy, new ArrayList<>(messages),
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
@@ -383,6 +409,7 @@ public class RetrospectState {
         state.pendingSchedules = s.pendingSchedules() == null ? List.of()
                 : List.copyOf(s.pendingSchedules());
         state.phase = s.phase();
+        state.heldFrom = s.heldFrom();
         state.mode = s.mode();
         state.steps = s.mode() == null ? List.of() : Scripts.stepsOf(s.mode());
         state.stepIndex = s.stepIndex();

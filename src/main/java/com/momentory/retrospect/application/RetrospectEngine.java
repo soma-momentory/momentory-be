@@ -162,6 +162,7 @@ public class RetrospectEngine {
             case AWAIT_DIRECTION -> handleDirection(state, command);
             case AWAIT_SUB_DIRECTION -> handleSubDirection(state, command);
             case SCRIPT -> handleScriptTurn(state, command);
+            case SAFETY_HOLD -> handleSafetyResume(state, command);
             default -> ReplyDto.alreadyFinished(phase);
         };
     }
@@ -821,7 +822,21 @@ public class RetrospectEngine {
         String text = guidance != null ? guidance.render() : "잠시 멈추고 안전을 먼저 챙겨요.";
 
         state.addAssistantMessage(text);
-        state.changePhase(Phase.ENDED);
-        return ReplyDto.ended(text, level);
+        state.holdForSafety(); // 종결이 아니라 멈춤 — 「이어서 얘기하기」로 되돌릴 수 있다.
+        return ReplyDto.safetyHold(text, level);
+    }
+
+    /**
+     * 「이어서 얘기하기」 — 멈추기 전 phase 로 되돌린 뒤, 사용자의 이 발화를 그 phase 의 정상 답변으로
+     * 처리한다. {@link RetrospectState#resumeFromHold} 가 정지 신호를 거두므로, 이 발화가 다시 위기면
+     * 해당 핸들러 안에서 그 자리에 다시 멈춘다(누적이 아니라 이 턴 기준으로 판정된다).
+     */
+    private ReplyDto handleSafetyResume(RetrospectState state, TurnCommand command) {
+        Phase resumed = state.resumeFromHold();
+        return switch (resumed) {
+            case SCRIPT -> handleScriptTurn(state, command);
+            case INTRO -> handleFirstAnswer(state, command);
+            default -> handleFirstAnswer(state, command);
+        };
     }
 }
