@@ -2,6 +2,8 @@ package com.momentory.auth.presentation;
 
 import com.momentory.auth.apple.infrastructure.AppleApiException;
 import com.momentory.auth.apple.presentation.AppleLoginController;
+import com.momentory.auth.google.infrastructure.GoogleApiException;
+import com.momentory.auth.google.presentation.GoogleLoginController;
 import com.momentory.auth.kakao.infrastructure.KakaoApiErrorCode;
 import com.momentory.auth.kakao.infrastructure.KakaoApiException;
 import com.momentory.auth.kakao.presentation.KakaoLoginController;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = {
         KakaoLoginController.class,
         AppleLoginController.class,
+        GoogleLoginController.class,
         RefreshTokenReissueController.class,
         LogoutController.class,
         UserWithdrawalController.class
@@ -50,6 +53,23 @@ public class AuthExceptionHandler {
             case UNEXPECTED_APPLE_RESPONSE -> error(HttpStatus.BAD_GATEWAY, "APPLE_API_RESPONSE_ERROR", "애플 서비스 응답을 처리할 수 없습니다.");
             // 우리 설정 문제다 — .p8 이 없거나 읽을 수 없다. 사용자가 할 수 있는 일이 없다
             case REVOKE_NOT_CONFIGURED -> error(HttpStatus.INTERNAL_SERVER_ERROR, "APPLE_REVOKE_UNAVAILABLE", "애플 연결 해제를 처리할 수 없습니다.");
+        };
+    }
+
+    /**
+     * ⚠ <b>nonce 불일치가 없다</b> — 구글 요청에는 nonce 가 없다
+     * ({@code GoogleLoginRequest}). 대신 {@code azp} 가 남의 것일 때가
+     * {@code CLIENT_ID_MISMATCH} 로 온다.
+     */
+    @ExceptionHandler(GoogleApiException.class)
+    ResponseEntity<ApiErrorResponse> handleGoogleApiException(GoogleApiException exception) {
+        return switch (exception.getErrorCode()) {
+            case INVALID_ID_TOKEN -> error(HttpStatus.UNAUTHORIZED, "GOOGLE_TOKEN_INVALID", "구글 인증에 실패했습니다.");
+            case CLIENT_ID_MISMATCH -> error(HttpStatus.UNAUTHORIZED, "GOOGLE_CLIENT_ID_MISMATCH", "구글 인증에 실패했습니다.");
+            case EMAIL_UNAVAILABLE -> error(HttpStatus.BAD_REQUEST, "GOOGLE_EMAIL_UNAVAILABLE", "유효하고 인증된 구글계정 이메일이 필요합니다.");
+            case GOOGLE_API_SERVER_ERROR -> error(HttpStatus.BAD_GATEWAY, "GOOGLE_API_SERVER_ERROR", "구글 서비스에 일시적인 오류가 발생했습니다.");
+            case GOOGLE_API_NETWORK_ERROR -> error(HttpStatus.SERVICE_UNAVAILABLE, "GOOGLE_API_NETWORK_ERROR", "구글 서비스에 연결할 수 없습니다.");
+            case UNEXPECTED_GOOGLE_RESPONSE -> error(HttpStatus.BAD_GATEWAY, "GOOGLE_API_RESPONSE_ERROR", "구글 서비스 응답을 처리할 수 없습니다.");
         };
     }
 
