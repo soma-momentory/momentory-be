@@ -61,9 +61,20 @@ google:
     # 받아들일 aud — 우리 프로젝트의 클라이언트 ID 전부다. 플랫폼마다 다른 값이
     # 앉는다: Android 는 웹 클라이언트, iOS 는 iOS 클라이언트.
     #
+    # ⚠ **Android 는 서명 지문마다 클라이언트가 따로다.** 구글은 Android 앱을
+    # 패키지명 + SHA-1 로 알아보므로 지문 하나당 클라이언트 하나가 생기고, 그 값이
+    # 토큰의 `azp` 에 앉는다 — `requireOurClient` 가 aud 뿐 아니라 azp 도 이 목록과
+    # 대조하기 때문에(GoogleIdTokenVerifier 「nonce 가 없다」), 지문이 빠지면
+    # **그 키로 서명된 빌드에서만** CLIENT_ID_MISMATCH 로 닫힌다. 2026-08-26 에
+    # 실제로 그렇게 막혔다: debug 만 있던 목록에 release 빌드가 부딪혔고, 카카오는
+    # 이 검증을 지나지 않아 멀쩡해서 원인이 앱에 있는 것처럼 보였다.
+    #
+    # 그래서 Android 는 셋이다 — debug · 업로드 키 · Play 앱 서명.
+    # 새 지문(새 키스토어·키 재설정)을 만들면 여기도 함께 늘린다.
+    #
     # 애플 client-id 와 같은 등급의 **공개 식별자**다(앱 바이너리에 그대로 있다) —
     # 그래서 기본값을 둔다. 발급 전인 값을 필수로 걸면 배포가 통째로 막힌다.
-    allowed-audiences: ${GOOGLE_ALLOWED_AUDIENCES:719283265966-q0sbodjlssdou6g9jla0qfs2j1mbi972.apps.googleusercontent.com,719283265966-s6jo83of0u5jno0n7nsqell72ao0tglm.apps.googleusercontent.com,719283265966-sbcn188a2mhoqv1f0pt54s6dnjde6of1.apps.googleusercontent.com}
+    allowed-audiences: ${GOOGLE_ALLOWED_AUDIENCES:719283265966-q0sbodjlssdou6g9jla0qfs2j1mbi972.apps.googleusercontent.com,719283265966-s6jo83of0u5jno0n7nsqell72ao0tglm.apps.googleusercontent.com,719283265966-sbcn188a2mhoqv1f0pt54s6dnjde6of1.apps.googleusercontent.com,719283265966-8ali2jjss29dqkrkfp8ajps4co83mars.apps.googleusercontent.com,719283265966-56os4edgbpkar5dh3p1j7l7kv4imv3v6.apps.googleusercontent.com}
     connect-timeout: ${GOOGLE_CONNECT_TIMEOUT:3s}
     read-timeout: ${GOOGLE_READ_TIMEOUT:5s}
 
