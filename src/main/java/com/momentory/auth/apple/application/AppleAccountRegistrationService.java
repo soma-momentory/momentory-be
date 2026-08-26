@@ -25,7 +25,9 @@ public class AppleAccountRegistrationService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long createUserAndAccount(String providerUserId, String email) {
-        User user = userRepository.save(User.create(email));
+        // Apple 은 최초 승인 이후 이메일을 다시 주지 않을 수 있다. 계정의 신원은
+        // 검증된 providerUserId(sub)로 정하고, 이메일은 제공된 경우에만 보관한다.
+        User user = userRepository.save(email == null ? User.create() : User.create(email));
         OAuthAccount account = OAuthAccount.create(user, OAuthProvider.APPLE, providerUserId);
         oauthAccountRepository.saveAndFlush(account);
         return user.getId();

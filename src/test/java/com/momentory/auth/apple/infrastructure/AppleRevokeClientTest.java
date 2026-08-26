@@ -55,29 +55,59 @@ class AppleRevokeClientTest {
 
     @Test
     void sendsTokenAndSignedClientSecret() throws Exception {
+        server.enqueue(jsonResponse("""
+                {"access_token":"apple-access-token","token_type":"Bearer","expires_in":3600}
+                """));
         server.enqueue(new MockResponse().setResponseCode(200));
 
         client(pem).revoke(REFRESH_TOKEN);
 
-        RecordedRequest request = server.takeRequest();
-        String body = request.getBody().readUtf8();
-        assertThat(body).contains("token=" + REFRESH_TOKEN);
-        assertThat(body).contains("token_type_hint=refresh_token");
-        assertThat(body).contains("client_id=" + CLIENT_ID);
-        assertThat(body).contains("client_secret=");
+        RecordedRequest validationRequest = server.takeRequest();
+        String validationBody = validationRequest.getBody().readUtf8();
+        assertThat(validationRequest.getPath()).isEqualTo("/auth/token");
+        assertThat(validationBody).contains("grant_type=refresh_token");
+        assertThat(validationBody).contains("refresh_token=" + REFRESH_TOKEN);
+        assertThat(validationBody).contains("client_id=" + CLIENT_ID);
+        assertThat(validationBody).contains("client_secret=");
+
+        RecordedRequest revokeRequest = server.takeRequest();
+        String revokeBody = revokeRequest.getBody().readUtf8();
+        assertThat(revokeRequest.getPath()).isEqualTo("/auth/revoke");
+        assertThat(revokeBody).contains("token=" + REFRESH_TOKEN);
+        assertThat(revokeBody).contains("token_type_hint=refresh_token");
+        assertThat(revokeBody).contains("client_id=" + CLIENT_ID);
+        assertThat(revokeBody).contains("client_secret=");
         // client_secret 자리에는 우리가 서명한 JWT 가 들어간다 — 고정 문자열이 아니다
-        assertThat(body).doesNotContain("client_secret=&");
+        assertThat(validationBody).doesNotContain("client_secret=&");
+        assertThat(revokeBody).doesNotContain("client_secret=&");
     }
 
     @Test
     void throwsWhenAppleRejects() {
+        server.enqueue(jsonResponse("""
+                {"access_token":"apple-access-token","token_type":"Bearer","expires_in":3600}
+                """));
         server.enqueue(new MockResponse().setResponseCode(400));
 
         assertError(AppleApiErrorCode.UNEXPECTED_APPLE_RESPONSE, () -> client(pem).revoke(REFRESH_TOKEN));
     }
 
     @Test
+    void doesNotRevokeWhenStoredRefreshTokenIsInvalid() {
+        server.enqueue(jsonResponse(400, """
+                {"error":"invalid_grant"}
+                """));
+
+        assertError(AppleApiErrorCode.UNEXPECTED_APPLE_RESPONSE, () -> client(pem).revoke(REFRESH_TOKEN));
+
+        assertThat(server.getRequestCount()).isEqualTo(1);
+    }
+
+    @Test
     void mapsServerErrorAsAppleServerError() {
+        server.enqueue(jsonResponse("""
+                {"access_token":"apple-access-token","token_type":"Bearer","expires_in":3600}
+                """));
         server.enqueue(new MockResponse().setResponseCode(500));
 
         assertError(AppleApiErrorCode.APPLE_API_SERVER_ERROR, () -> client(pem).revoke(REFRESH_TOKEN));
@@ -126,5 +156,16 @@ class AppleRevokeClientTest {
                 server.url("/auth/revoke").toString()
         );
         return new AppleRevokeClient(properties, new AppleClientSecretGenerator(properties));
+    }
+
+    private MockResponse jsonResponse(String body) {
+        return jsonResponse(200, body);
+    }
+
+    private MockResponse jsonResponse(int status, String body) {
+        return new MockResponse()
+                .setResponseCode(status)
+                .addHeader("Content-Type", "application/json")
+                .setBody(body);
     }
 }

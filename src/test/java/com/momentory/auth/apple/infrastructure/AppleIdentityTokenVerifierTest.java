@@ -131,10 +131,13 @@ class AppleIdentityTokenVerifierTest {
     }
 
     @Test
-    void rejectsIdentityTokenWithoutEmail() {
+    void acceptsIdentityTokenWithoutEmail() {
         String identityToken = signedToken(appleKey, claims().claim("email_verified", true));
 
-        assertError(AppleApiErrorCode.EMAIL_UNAVAILABLE, () -> verifier().verify(identityToken, RAW_NONCE));
+        AppleUserInfo userInfo = verifier().verify(identityToken, RAW_NONCE);
+
+        assertThat(userInfo.providerUserId()).isEqualTo(PROVIDER_USER_ID);
+        assertThat(userInfo.email()).isNull();
     }
 
     @Test
