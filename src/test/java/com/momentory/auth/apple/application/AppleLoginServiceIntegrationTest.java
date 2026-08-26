@@ -130,6 +130,21 @@ class AppleLoginServiceIntegrationTest {
     }
 
     @Test
+    void createsUserWithoutEmailWhenAppleOmitsItAfterAccountDeletion() {
+        givenAppleUser("001234.abc", null);
+
+        AppleLoginResult result = appleLoginService.login("token-without-email", NONCE, AUTH_CODE);
+
+        assertThat(userRepository.findById(result.userId()).orElseThrow().getEmail()).isNull();
+        assertThat(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.APPLE, "001234.abc"))
+                .hasValueSatisfying(account -> {
+                    assertThat(account.getUser().getId()).isEqualTo(result.userId());
+                    assertThat(account.getAppleRefreshToken()).isEqualTo(APPLE_REFRESH_TOKEN);
+                });
+        assertThat(result.onboardingRequired()).isTrue();
+    }
+
+    @Test
     void reusesExistingUserForExistingOAuthAccount() {
         givenAppleUser("001234.abc", "user@example.com");
         AppleLoginResult firstLogin = appleLoginService.login("first-token", NONCE, AUTH_CODE);
@@ -179,6 +194,18 @@ class AppleLoginServiceIntegrationTest {
 
         assertThat(userRepository.findById(userId).orElseThrow().getEmail())
                 .isEqualTo("new@example.com");
+    }
+
+    @Test
+    void keepsExistingEmailWhenAppleOmitsItOnLaterLogin() {
+        givenAppleUser("001234.abc", "user@example.com");
+        Long userId = appleLoginService.login("first-token", NONCE, AUTH_CODE).userId();
+
+        givenAppleUser("001234.abc", null);
+        appleLoginService.login("second-token", NONCE, AUTH_CODE);
+
+        assertThat(userRepository.findById(userId).orElseThrow().getEmail())
+                .isEqualTo("user@example.com");
     }
 
     @Test

@@ -58,7 +58,9 @@ public class AppleLoginTransactionService {
                 .orElseGet(() -> createOrFindUserId(appleUserInfo));
         User user = userRepository.findById(userId)
                 .orElseThrow(IllegalStateException::new);
-        user.updateEmail(appleUserInfo.email());
+        if (appleUserInfo.email() != null) {
+            user.updateEmail(appleUserInfo.email());
+        }
 
         storeAppleRefreshToken(appleUserInfo.providerUserId(), authorizationCode);
 

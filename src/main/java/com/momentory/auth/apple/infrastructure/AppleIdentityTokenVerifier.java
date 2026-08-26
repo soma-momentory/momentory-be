@@ -25,6 +25,8 @@ import java.util.concurrent.TimeoutException;
 /**
  * Apple ID 서버가 발급한 identity token(JWT)을 Apple 공개키(JWKS)로 검증한다.
  * 서명·발급자·만료는 Nimbus 디코더가, 대상(aud)과 이메일 신뢰성은 이 클래스가 확인한다.
+ * Apple 은 최초 승인 뒤의 로그인에서는 이메일 클레임을 생략할 수 있으므로, 이메일은
+ * <b>있을 때만</b> 검증한다. 사용자를 식별하는 값은 이메일이 아니라 검증된 {@code sub}다.
  */
 @Component
 public class AppleIdentityTokenVerifier {
@@ -85,7 +87,7 @@ public class AppleIdentityTokenVerifier {
             );
         }
 
-        return new AppleUserInfo(providerUserId, requireVerifiedEmail(jwt));
+        return new AppleUserInfo(providerUserId, verifiedEmailIfPresent(jwt));
     }
 
     /**
@@ -149,15 +151,15 @@ public class AppleIdentityTokenVerifier {
         }
     }
 
-    private String requireVerifiedEmail(Jwt jwt) {
+    private String verifiedEmailIfPresent(Jwt jwt) {
         String email = jwt.getClaimAsString(EMAIL_CLAIM);
-        if (!isEmailVerified(jwt)
-                || email == null
-                || email.isBlank()
-                || email.length() > MAX_EMAIL_LENGTH) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        if (!isEmailVerified(jwt) || email.length() > MAX_EMAIL_LENGTH) {
             throw new AppleApiException(
                     AppleApiErrorCode.EMAIL_UNAVAILABLE,
-                    "A verified Apple account email is required."
+                    "Apple identity token contains an unusable email."
             );
         }
         return email.trim();
