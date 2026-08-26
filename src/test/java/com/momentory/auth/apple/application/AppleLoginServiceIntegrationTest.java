@@ -4,6 +4,7 @@ import com.momentory.MomentoryApplication;
 import com.momentory.auth.apple.infrastructure.AppleApiErrorCode;
 import com.momentory.auth.apple.infrastructure.AppleApiException;
 import com.momentory.auth.apple.infrastructure.AppleIdentityTokenVerifier;
+import com.momentory.auth.apple.infrastructure.AppleTokenClient;
 import com.momentory.auth.security.JwtProperties;
 import com.momentory.auth.token.domain.RefreshToken;
 import com.momentory.auth.token.infrastructure.RefreshTokenRepository;
@@ -13,6 +14,7 @@ import com.momentory.user.domain.User;
 import com.momentory.user.infrastructure.OAuthAccountRepository;
 import com.momentory.user.infrastructure.UserRepository;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -61,6 +64,7 @@ class AppleLoginServiceIntegrationTest {
 
     /** 애플 authorization code — 이 테스트는 교환 클라이언트를 목으로 둔다 */
     private static final String AUTH_CODE = "apple-authorization-code";
+    private static final String APPLE_REFRESH_TOKEN = "apple-refresh-token";
 
     @Container
     private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
@@ -80,6 +84,9 @@ class AppleLoginServiceIntegrationTest {
     @Autowired
     private AppleIdentityTokenVerifier identityTokenVerifier;
 
+    @MockitoBean
+    private AppleTokenClient appleTokenClient;
+
     @Autowired
     private UserRepository userRepository;
 
@@ -92,9 +99,14 @@ class AppleLoginServiceIntegrationTest {
     @Autowired
     private JwtProperties jwtProperties;
 
+    @BeforeEach
+    void prepareAppleTokenExchange() {
+        when(appleTokenClient.exchangeRefreshToken(AUTH_CODE)).thenReturn(APPLE_REFRESH_TOKEN);
+    }
+
     @AfterEach
     void cleanUp() {
-        reset(identityTokenVerifier);
+        reset(identityTokenVerifier, appleTokenClient);
         refreshTokenRepository.deleteAllInBatch();
         oauthAccountRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
@@ -110,8 +122,10 @@ class AppleLoginServiceIntegrationTest {
         assertThat(userRepository.findById(result.userId()).orElseThrow().getEmail())
                 .isEqualTo("user@example.com");
         assertThat(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.APPLE, "001234.abc"))
-                .hasValueSatisfying(account ->
-                        assertThat(account.getUser().getId()).isEqualTo(result.userId()));
+                .hasValueSatisfying(account -> {
+                    assertThat(account.getUser().getId()).isEqualTo(result.userId());
+                    assertThat(account.getAppleRefreshToken()).isEqualTo(APPLE_REFRESH_TOKEN);
+                });
         assertThat(result.onboardingRequired()).isTrue();
     }
 
