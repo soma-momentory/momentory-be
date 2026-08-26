@@ -41,8 +41,10 @@ public class UserWithdrawalService {
                 .ifPresent(kakaoUnlinkClient::unlink);
 
         oauthAccountRepository.findByUser_IdAndProvider(userId, OAuthProvider.APPLE)
-                .map(OAuthAccount::getAppleRefreshToken)
-                .ifPresent(appleRevokeClient::revoke);
+                // map(getAppleRefreshToken)은 null을 Optional.empty로 바꿔 revoke 호출과
+                // 그 안의 진단 로그까지 건너뛴다. 계정 행이 있으면 null도 명시적으로
+                // 넘겨, 레거시 계정의 토큰 누락을 운영에서 식별할 수 있게 한다.
+                .ifPresent(account -> appleRevokeClient.revoke(account.getAppleRefreshToken()));
 
         userDeletionService.delete(userId);
     }

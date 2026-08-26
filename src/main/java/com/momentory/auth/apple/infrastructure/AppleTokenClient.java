@@ -1,14 +1,21 @@
 package com.momentory.auth.apple.infrastructure;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.net.http.HttpClient;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 애플 authorization code 를 <b>refresh token</b> 으로 바꾼다 —
@@ -26,7 +33,19 @@ import java.net.http.HttpClient;
 @Component
 public class AppleTokenClient {
 
+    private static final Logger log = LoggerFactory.getLogger(AppleTokenClient.class);
     private static final String GRANT_TYPE = "authorization_code";
+    private static final Pattern ERROR_CODE_PATTERN = Pattern.compile(
+            "\\\"error\\\"\\s*:\\s*\\\"([a-z_]+)\\\""
+    );
+    private static final Set<String> KNOWN_ERROR_CODES = Set.of(
+            "invalid_request",
+            "invalid_client",
+            "invalid_grant",
+            "unauthorized_client",
+            "unsupported_grant_type",
+            "invalid_scope"
+    );
 
     private final RestClient restClient;
     private final AppleAuthProperties properties;
@@ -49,20 +68,22 @@ public class AppleTokenClient {
      */
     public String exchangeRefreshToken(String authorizationCode) {
         if (authorizationCode == null || authorizationCode.isBlank()) {
+            log.warn("애플 refresh token 교환을 건너뛴다. reason=authorization_code_missing");
             return null;
         }
         if (!properties.revokeConfigured()) {
             // .p8 이 아직 없다. 로그인은 그대로 되고, 이 사용자는 다음 로그인에서 채워진다
+            log.error("애플 refresh token 교환을 건너뛴다. reason=revoke_credentials_missing");
             return null;
         }
 
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("grant_type", GRANT_TYPE);
-        form.add("code", authorizationCode);
-        form.add("client_id", properties.clientId());
-        form.add("client_secret", clientSecretGenerator.generate());
-
         try {
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("grant_type", GRANT_TYPE);
+            form.add("code", authorizationCode);
+            form.add("client_id", properties.clientId());
+            form.add("client_secret", clientSecretGenerator.generate());
+
             AppleTokenResponse response = restClient.post()
                     .uri(properties.tokenUri())
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
@@ -71,11 +92,42 @@ public class AppleTokenClient {
                     .retrieve()
                     .body(AppleTokenResponse.class);
 
-            return response == null ? null : response.refreshToken();
-        } catch (RestClientException | AppleApiException exception) {
-            // 본문을 남기지 않는다 — 여기 오는 응답에는 토큰이 실려 있을 수 있다
+            String refreshToken = response == null ? null : response.refreshToken();
+            if (refreshToken == null || refreshToken.isBlank()) {
+                log.warn("애플 refresh token 교환 응답에 토큰이 없다. reason=refresh_token_missing");
+                return null;
+            }
+            return refreshToken;
+        } catch (RestClientResponseException exception) {
+            // 본문 전체를 남기지 않는다. Apple 표준 오류 코드만 허용 목록으로 걸러 기록한다.
+            log.warn(
+                    "애플 refresh token 교환을 거절당했다. reason=apple_rejected status={} apple_error={}",
+                    exception.getStatusCode().value(),
+                    appleErrorCode(exception)
+            );
+            return null;
+        } catch (ResourceAccessException exception) {
+            log.warn("애플 refresh token 교환에 실패했다. reason=network");
+            return null;
+        } catch (AppleApiException exception) {
+            log.error(
+                    "애플 refresh token 교환에 실패했다. reason=client_secret error_code={}",
+                    exception.getErrorCode()
+            );
+            return null;
+        } catch (RestClientException exception) {
+            log.warn("애플 refresh token 교환 응답을 처리하지 못했다. reason=unexpected_response");
             return null;
         }
+    }
+
+    private String appleErrorCode(RestClientResponseException exception) {
+        Matcher matcher = ERROR_CODE_PATTERN.matcher(exception.getResponseBodyAsString());
+        if (!matcher.find()) {
+            return "unknown";
+        }
+        String errorCode = matcher.group(1);
+        return KNOWN_ERROR_CODES.contains(errorCode) ? errorCode : "unknown";
     }
 
     private static JdkClientHttpRequestFactory requestFactory(AppleAuthProperties properties) {
