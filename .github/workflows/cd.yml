@@ -1,12 +1,24 @@
 name: CD
 
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        type: string
 
   # Parameter Store 값만 바꾼 뒤
   # 코드 변경 없이 수동 재배포할 때 사용
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        type: choice
+        options:
+          - development
+          - production
 
 permissions:
   id-token: write
@@ -14,17 +26,31 @@ permissions:
 
 jobs:
   deploy:
-    name: Build and deploy to ECS
+    if: >-
+      (inputs.environment == 'development' && github.ref_name == 'dev') ||
+      (inputs.environment == 'production' && github.ref_name == 'main')
+    name: Build and deploy to ${{ inputs.environment }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    concurrency:
+      group: backend-deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.environment == 'production' && 'https://api.momentory.co.kr' || 'https://dev.momentory.co.kr' }}
 
     env:
-      ECS_TASK_DEFINITION: ecs-task-definition.json
+      DEPLOY_SHA: ${{ github.sha }}
+      ECS_TASK_DEFINITION: ${{ inputs.environment == 'production' && 'ecs-task-definition.json' || 'ecs-task-definition-dev.json' }}
+      ECS_SERVICE: ${{ inputs.environment == 'production' && vars.ECS_SERVICE || vars.ECS_DEV_SERVICE }}
       ECS_CONTAINER_NAME: Main
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -41,7 +67,7 @@ jobs:
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: ${{ env.DEPLOY_SHA }}
         run: |
           set -euo pipefail
 
@@ -68,6 +94,6 @@ jobs:
         with:
           task-definition: ${{ steps.task-definition.outputs.task-definition }}
           cluster: ${{ vars.ECS_CLUSTER }}
-          service: ${{ vars.ECS_SERVICE }}
+          service: ${{ env.ECS_SERVICE }}
           wait-for-service-stability: true
           wait-max-delay-seconds: 15

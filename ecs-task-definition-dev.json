@@ -50,46 +50,46 @@
       "secrets": [
         {
           "name": "DB_URL",
-          "valueFrom": "/momentory/prod/DB_URL"
+          "valueFrom": "/momentory/dev/DB_URL"
         },
         {
           "name": "DB_USERNAME",
-          "valueFrom": "/momentory/prod/DB_USERNAME"
+          "valueFrom": "/momentory/dev/DB_USERNAME"
         },
         {
           "name": "DB_PASSWORD",
-          "valueFrom": "/momentory/prod/DB_PASSWORD"
+          "valueFrom": "/momentory/dev/DB_PASSWORD"
         },
         {
           "name": "JWT_SECRET",
-          "valueFrom": "/momentory/prod/JWT_SECRET"
+          "valueFrom": "/momentory/dev/JWT_SECRET"
         },
         {
           "name": "JWT_REFRESH_EXPIRATION",
-          "valueFrom": "/momentory/prod/JWT_REFRESH_EXPIRATION"
+          "valueFrom": "/momentory/dev/JWT_REFRESH_EXPIRATION"
         },
         {
           "name": "KAKAO_APP_ID",
-          "valueFrom": "/momentory/prod/KAKAO_APP_ID"
+          "valueFrom": "/momentory/dev/KAKAO_APP_ID"
         },
         {
           "name": "KAKAO_ADMIN_KEY",
-          "valueFrom": "/momentory/prod/KAKAO_ADMIN_KEY"
+          "valueFrom": "/momentory/dev/KAKAO_ADMIN_KEY"
         },
         {
           "name": "GEMINI_API_KEY",
-          "valueFrom": "/momentory/prod/GEMINI_API_KEY"
+          "valueFrom": "/momentory/dev/GEMINI_API_KEY"
         },
         {
           "name": "APPLE_PRIVATE_KEY",
-          "valueFrom": "/momentory/prod/APPLE_PRIVATE_KEY"
+          "valueFrom": "/momentory/dev/APPLE_PRIVATE_KEY"
         }
       ],
       "ulimits": [],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/momentory-core-task",
+          "awslogs-group": "/ecs/momentory-core-dev-task",
           "awslogs-create-group": "true",
           "awslogs-region": "ap-northeast-2",
           "awslogs-stream-prefix": "ecs"
@@ -99,7 +99,7 @@
       "systemControls": []
     }
   ],
-  "family": "momentory-core-task",
+  "family": "momentory-core-dev-task",
   "executionRoleArn": "arn:aws:iam::184974285238:role/ecsTaskExecutionRole",
   "networkMode": "awsvpc",
   "volumes": [],
@@ -111,7 +111,7 @@
   "requiresCompatibilities": [
     "FARGATE"
   ],
-  "cpu": "1024",
-  "memory": "3072",
+  "cpu": "512",
+  "memory": "2048",
   "enableFaultInjection": false
 }
