@@ -417,7 +417,7 @@ class DiaryApiIntegrationTest {
     private long seedDiary(User user, String original, String reframed, Emotion current,
             Emotion schedule, Instant createdAt) {
         Retrospect retrospect = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
-                RetrospectStatus.COMPLETED, RetroMode.REFRAME, null, current, "{}"));
+                RetrospectStatus.COMPLETED, null, "{}"));
         OffsetDateTime at = OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC);
         jdbcTemplate.update("""
                 INSERT INTO diaries (user_id, retrospect_id, original, reframed, current_emotion,

@@ -5,21 +5,23 @@ import java.util.List;
 import java.util.Map;
 
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
-import com.momentory.retrospect.domain.assistant.TurnScript;
-import com.momentory.retrospect.domain.assistant.UnderstandingCheck;
+import com.momentory.retrospect.domain.assistant.DiaryTurn;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiActions;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiEmotions;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
 
 /**
- * Gemini {@code generationConfig.responseSchema} 로 넘길 응답 스키마.
+ * Gemini {@code generationConfig.responseSchema} 로 넘길 응답 스키마 (v2 구조화 출력).
  *
- * <p>원본은 Spring AI 가 record 로부터 스키마를 자동 생성했다. RestClient 직접 호출로 바꾸면서
- * 그 스키마를 손으로 만든다(OpenAPI 서브셋, 타입명 대문자). 필드가 record 컴포넌트명과 맞아야
- * Jackson 이 {@code parts[0].text} JSON 을 record 로 역직렬화한다.
+ * <p>필드가 대상 record 컴포넌트명과 맞아야 Jackson 이 {@code parts[0].text} JSON 을 역직렬화한다.
  */
 final class GeminiResponseSchemas {
 
     private static final Map<Class<?>, Map<String, Object>> BY_TYPE = Map.of(
-            UnderstandingCheck.class, understandingSchema(),
-            TurnScript.class, turnSchema(),
+            DiaryTurn.class, diaryTurnSchema(),
+            GeminiEmotions.class, emotionsSchema(),
+            GeminiNeeds.class, needsSchema(),
+            GeminiActions.class, actionsSchema(),
             DiaryOutput.class, diarySchema());
 
     private GeminiResponseSchemas() {
@@ -30,35 +32,42 @@ final class GeminiResponseSchemas {
         return BY_TYPE.get(type);
     }
 
-    private static Map<String, Object> understandingSchema() {
+    private static Map<String, Object> diaryTurnSchema() {
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
-        props.put("reflection", str());
-        props.put("situation", str());
+        props.put("event", str());
+        props.put("secondaryEvents", arrayOf(str()));
+        props.put("meaning", str());
+        props.put("emotionPresent", bool());
+        props.put("question", str());
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
         props.put("offTopic", bool());
         props.put("vague", bool());
-        props.put("userAsked", bool());
-        return object(props, List.of("reflection", "situation", "safetyLevel"));
+        return object(props, List.of("question"));
     }
 
-    private static Map<String, Object> turnSchema() {
-        LinkedHashMap<String, Object> optionProps = new LinkedHashMap<>();
-        optionProps.put("label", str());
-        optionProps.put("description", str());
-        // 쉬는 행동 카드에서만 의미가 있다 — 그 보기가 온보딩 쉬는 방법 선호를 반영했는지(분석용 내부 표식).
-        optionProps.put("restPreference", bool());
-        Map<String, Object> optionObject = object(optionProps, List.of("label"));
-
+    private static Map<String, Object> emotionsSchema() {
+        LinkedHashMap<String, Object> item = new LinkedHashMap<>();
+        item.put("raw", str());
+        item.put("normalized", str());
+        item.put("timing", str());
+        item.put("cause", str());
+        item.put("evidence", str());
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
-        props.put("message", str());
-        props.put("options", arrayOf(optionObject));
-        props.put("safetyLevel", str());
-        props.put("safetyFlags", arrayOf(str()));
-        props.put("offTopic", bool());
-        props.put("vague", bool());
-        props.put("userAsked", bool());
-        return object(props, List.of("message"));
+        props.put("emotions", arrayOf(object(item, List.of("raw"))));
+        return object(props, List.of());
+    }
+
+    private static Map<String, Object> needsSchema() {
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        props.put("words", arrayOf(str()));
+        return object(props, List.of());
+    }
+
+    private static Map<String, Object> actionsSchema() {
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        props.put("actions", arrayOf(str()));
+        return object(props, List.of());
     }
 
     private static Map<String, Object> diarySchema() {

@@ -107,8 +107,7 @@ class ActionCardRepositoryIntegrationTest {
 
     private Long newRetrospect(Long userId) {
         return retrospectRepository.saveAndFlush(Retrospect.start(userId,
-                RetrospectStatus.IN_PROGRESS, RetroMode.REFRAME, null,
-                Emotion.DEPRESSED, "{}")).getId();
+                RetrospectStatus.IN_PROGRESS, null, "{}")).getId();
     }
 
     /** 한 축만 1인 768차원 단위 벡터 리터럴 — 코사인 거리 검증용. */

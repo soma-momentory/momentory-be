@@ -177,9 +177,9 @@ class RetrospectApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
         // 오늘 완주한 일기 한 벌 — Diary 의 @PrePersist 가 created_at 을 지금(=오늘 KST)으로 박는다.
         Retrospect done = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
-                RetrospectStatus.COMPLETED, RetroMode.REFRAME, null, Emotion.DEPRESSED, "{}"));
+                RetrospectStatus.COMPLETED, null, "{}"));
         diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(), "오늘 일기", null,
-                Emotion.DEPRESSED, null));
+                Emotion.DEPRESSED, null, null));
 
         mockMvc.perform(post("/api/v1/retrospect")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user))
@@ -200,9 +200,9 @@ class RetrospectApiIntegrationTest {
     void startAllowedWhenOnlyYesterdayDiaryExists() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         Retrospect done = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
-                RetrospectStatus.COMPLETED, RetroMode.REFRAME, null, Emotion.DEPRESSED, "{}"));
+                RetrospectStatus.COMPLETED, null, "{}"));
         Diary yesterday = diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(),
-                "어제 일기", null, Emotion.DEPRESSED, null));
+                "어제 일기", null, Emotion.DEPRESSED, null, null));
         // created_at 을 어제로 되돌린다(@PrePersist 가 now 로 박으므로 직접 UPDATE).
         java.time.OffsetDateTime yesterdayAt = java.time.OffsetDateTime.ofInstant(
                 Instant.now().minus(java.time.Duration.ofDays(1)), java.time.ZoneOffset.UTC);

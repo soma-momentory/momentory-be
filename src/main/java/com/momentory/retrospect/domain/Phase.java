@@ -15,6 +15,15 @@ package com.momentory.retrospect.domain;
  */
 public enum Phase {
 
+    // ── v2 (채팅흐름_v2): 일기 작성(≤6턴) → 분기점 → 감정 탐색(고정 3턴) → 종료 ──
+    /** 일기 작성 채팅 진행 중 — 사건·감정·의미 슬롯을 최대 6턴 안에서 모은다. */
+    DIARY_CHAT("diary_chat"),
+    /** 일기 초안을 만든 뒤 「감정을 더 알아볼까?」 2택을 기다린다. */
+    AWAIT_BRANCH("await_branch"),
+    /** 감정 탐색 채팅 진행 중 — 감정 확인 → 바람 확인 → 작은 행동, 고정 3턴. */
+    EMOTION_EXPLORATION("emotion_exploration"),
+
+    // ── 레거시(v1 스크립트 상태머신) — 엔진 스왑 시 제거 예정 ──
     /** 일정이 여러 개라 어떤 일정을 이야기할지 선택을 기다린다. */
     AWAIT_SCHEDULE("await_schedule"),
     /** 1턴(구체적인 순간) 질문이 나갔고 첫 답변을 기다린다. */
@@ -27,7 +36,7 @@ public enum Phase {
     SCRIPT("script"),
     /** 위기 발화 안내 후 멈춤 — 「이어서 얘기하기」로 되돌릴 수 있다(종결 아님). */
     SAFETY_HOLD("safety_hold"),
-    /** 정상 종료 — 일기(·행동 카드)까지 나갔다. */
+    /** 정상 종료 — 일기(·바람 카드)까지 나갔다. */
     COMPLETE("complete"),
     /** 어뷰징 캡 도달로 종료. */
     ENDED("ended");

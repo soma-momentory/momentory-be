@@ -2,80 +2,90 @@ package com.momentory.retrospect.domain;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
-import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
-import com.momentory.retrospect.domain.script.OptionItem;
-import com.momentory.retrospect.domain.script.RetroMode;
-import com.momentory.retrospect.domain.script.ScriptStep;
-import com.momentory.retrospect.domain.script.Scripts;
 
 /**
- * 회고 세션 애그리거트 루트 (채팅 최적 시나리오 기준 전면 재설계).
+ * 회고 세션 애그리거트 루트 (채팅흐름_v2).
  *
- * <p>세션 스코프 상태를 전부 소유한다 — 진입 선택(일정·감정 2종·닉네임), 진행 위치(phase·step),
- * 답변·측정 기록, 안전 상태, 대화 로그. 상태 변경은 이 클래스의 메서드로만 한다.
+ * <p>세션 스코프 상태를 전부 소유한다 — 진입 컨텍스트(일정·닉네임·관심사), 진행 위치(phase),
+ * 일기 작성 슬롯(사건·감정·의미), 감정 탐색 슬롯(감정·바람·바랐던 모습·작은 행동), 대화 로그, 안전
+ * 상태. 상태 변경은 이 클래스의 메서드로만 한다.
+ *
+ * <p>흐름: {@code diary_chat}(≤6턴, 사건·감정·의미 수집) → {@code await_branch}(감정 더 알아볼까)
+ * → (선택 시) {@code emotion_exploration}(고정 3턴) → {@code complete}. 종료·다음 슬롯 선택은
+ * 서버(엔진)가 이 슬롯 상태로 결정한다.
  */
 public class RetrospectState {
 
+    /** 일기 작성 최대 턴 (채팅흐름_v2). */
+    public static final int DIARY_MAX_TURNS = 6;
+    /** 감정 탐색 고정 턴 (감정 확인 → 바람 → 작은 행동). */
+    public static final int EXPLORATION_MAX_TURNS = 3;
+
     private final String id;
 
-    // 진입 선택 (시작 후 불변)
+    // 진입 컨텍스트 (시작 후 불변)
     private String nickname;
-    /** 대상 일정의 schedules 테이블 id — 영속 시 retrospects.schedule_id 로 저장된다. 없으면 null. */
+    /** 개인화 소재로 고른 일정의 schedules 테이블 id — 없으면(오늘 하루·자유 입력) null. */
     private Long scheduleId;
+    /** 개인화 소재로 고른 일정 이름 — 없으면 null('오늘 하루' 회고). */
     private String schedule;
+    /** 그 일정에 사용자가 홈에서 단 감정 — 대화 소재로만 쓴다(없으면 null). */
     private Emotion scheduleEmotion;
-    private Emotion currentEmotion;
-    /** 온보딩 관심분야 — 일정 선택 규칙, 그리고 일정 없는 회고의 질문 구체화에 쓴다. */
     private String interest;
-    /**
-     * 온보딩에서 고른 '평소 선호하는 쉬는 방법'의 한글 라벨들 — 쉬는 행동 카드(care_action)를 만들 때
-     * 프롬프트에 실어 선호를 반영한다. 시작 시 서비스가 프로필에서 채워 넣는다(없으면 빈 목록).
-     */
+    /** 온보딩 '평소 쉬는 방법' 라벨 — 작은 행동 제안에 선호를 반영한다(없으면 빈 목록). */
     private List<String> restMethods = List.of();
-    /** 아직 대상 일정을 못 골랐을 때의 후보 목록 (await_schedule 에서만 사용). */
-    private List<ScheduleItem> pendingSchedules = List.of();
 
     // 진행 위치
-    private Phase phase = Phase.INTRO;
-    private RetroMode mode;
-    private List<ScriptStep> steps = List.of();
-    /** 현재 '물어본' 스텝의 인덱스. 스크립트 진입 전엔 -1. */
-    private int stepIndex = -1;
-    private int turn;
-    /** 위기 안내로 멈췄을 때, 「이어서 얘기하기」가 되돌아갈 phase. hold 중이 아니면 null. */
+    private Phase phase = Phase.DIARY_CHAT;
+    /** 위기 안내로 멈췄을 때 「이어서 얘기하기」가 되돌아갈 phase. hold 중이 아니면 null. */
     private Phase heldFrom;
-    /** 현재 스텝(또는 intro)에서 되물은 횟수 — 게이트 캡용. 전진할 때마다 0으로. */
+    /** 현재 턴에서 되물은 횟수 — 게이트 캡용. 전진할 때마다 0으로. */
     private int reasks;
-    /** 연속 어뷰징(욕만·상담사 대상 공격) 턴 수 — 캡 도달 시 부드럽게 종료. 정상 답변에 0으로. */
+    /** 연속 어뷰징 턴 수 — 캡 도달 시 부드럽게 종료. 정상 답변에 0으로. */
     private int abuseStreak;
 
+    // 일기 작성 슬롯 (diary_chat)
+    private int diaryTurn;
+    /** 핵심(중심) 사건 — 감정 탐색·바람 카드가 참조하는 유일한 사건. */
+    private String event;
+    /** 곁가지로 언급된 사건 — 일기 본문에만 가볍게. */
+    private final List<String> secondaryEvents = new ArrayList<>();
+    /** 감정 — 대화 끝에 {@link com.momentory.retrospect.domain.assistant.EmotionExtractor} 가 한 번에 채운다. */
+    private final List<ExtractedEmotion> emotions = new ArrayList<>();
+    /** 감정 표현이 대화에 한 번이라도 담겼는가 — 이른 종료 판정의 감정 신호. */
+    private boolean emotionSeen;
+    /** 무엇이 마음에 남았는가. */
+    private String meaning;
+    /** 생성된 일기 초안 — 채팅 중에는 노출하지 않는다. */
+    private String diaryDraft;
+    /** 사용자가 「그만할래」로 일기 작성을 끝냈는가. */
+    private boolean diaryUserEnded;
+
+    // 감정 탐색 슬롯 (emotion_exploration)
+    private boolean explorationEntered;
+    private int explorationTurn;
+    private final List<Emotion> confirmedEmotions = new ArrayList<>();
+    private final List<Need> needs = new ArrayList<>();
+    private String desiredState;
+    private String smallAction;
+
     // 기록
-    private final Map<String, String> answers = new LinkedHashMap<>();
-    /** stepId → (measureField key → 0~10 값) */
-    private final Map<String, Map<String, Integer>> measures = new LinkedHashMap<>();
     private final List<Message> messages = new ArrayList<>();
     private final SafetyState safety = new SafetyState();
+    private int messageSeq;
 
-    /** 이해 확인 AI가 뽑은 한 줄 상황 요약 — 행동 카드의 '상황' 칸. */
-    private String situationSummary;
     /** 직전에 내보낸 선택지 — optionId(1-base 번호 문자열) 해석용. */
-    private List<OptionItem> lastOptions = List.of();
-    /** 행동 선택 턴에서 고른 행동 — 행동 카드의 '목표 행동'. */
-    private OptionItem chosenAction;
+    private List<Choice> lastOptions = List.of();
 
     /**
-     * "비슷한 상황의 이전 카드" 조회기 — <b>직렬화하지 않는다</b>(스냅샷에 없음). 서비스가 매 턴
-     * 세션을 불러온 뒤 userId 를 묶어 넣어준다. 엔진은 행동 추천을 낼 때만 부른다.
+     * "비슷한 상황의 이전 바람 카드" 조회기 — <b>직렬화하지 않는다</b>. 서비스가 매 턴 세션을 불러온 뒤
+     * userId 를 묶어 넣어준다. 엔진은 작은 행동을 제안할 때만 부른다.
      */
     private transient PriorActionCardFinder priorCardFinder = PriorActionCardFinder.NONE;
-
-    private int messageSeq;
 
     public RetrospectState(String id) {
         this.id = id;
@@ -91,7 +101,6 @@ public class RetrospectState {
         return nickname;
     }
 
-    /** 대상 일정의 schedules 테이블 id — 없으면(오늘 하루·자유 입력) null. */
     public Long scheduleId() {
         return scheduleId;
     }
@@ -104,39 +113,25 @@ public class RetrospectState {
         return scheduleEmotion;
     }
 
-    public Emotion currentEmotion() {
-        return currentEmotion;
-    }
-
     public String interest() {
         return interest;
     }
 
-    /** 온보딩 쉬는 방법 선호(한글 라벨) — 쉬는 행동 카드 프롬프트에 쓴다. 없으면 빈 목록. */
     public List<String> restMethods() {
         return List.copyOf(restMethods);
     }
 
-    /** 시작 시 서비스가 프로필에서 뽑은 쉬는 방법 라벨을 심는다. */
     public void restMethods(List<String> restMethods) {
         this.restMethods = restMethods == null ? List.of() : List.copyOf(restMethods);
     }
 
-    /** 특정 일정을 골라 진행 중인가. false면 '오늘 하루'를 현재 감정 하나로 돌아보는 회고다. */
+    /** 개인화 소재로 고른 일정이 있는가. false면 '오늘 하루'를 돌아보는 회고다. */
     public boolean hasSchedule() {
         return schedule != null;
     }
 
     public Phase phase() {
         return phase;
-    }
-
-    public RetroMode mode() {
-        return mode;
-    }
-
-    public int turn() {
-        return turn;
     }
 
     public SafetyState safety() {
@@ -147,79 +142,24 @@ public class RetrospectState {
         return List.copyOf(messages);
     }
 
-    public Map<String, String> answers() {
-        return Map.copyOf(answers);
-    }
-
-    public Map<String, Map<String, Integer>> measures() {
-        Map<String, Map<String, Integer>> out = new LinkedHashMap<>();
-        measures.forEach((k, v) -> out.put(k, Map.copyOf(v)));
-        return out;
-    }
-
-    public String situationSummary() {
-        return situationSummary;
-    }
-
-    public List<OptionItem> lastOptions() {
-        return List.copyOf(lastOptions);
-    }
-
-    public OptionItem chosenAction() {
-        return chosenAction;
-    }
-
-    /** "비슷한 상황의 이전 카드" 조회기 — 서비스가 매 턴 설정한다(미설정 시 {@link PriorActionCardFinder#NONE}). */
     public PriorActionCardFinder priorCardFinder() {
         return priorCardFinder;
     }
 
-    /** 인지 재구성형의 자동적 사고 (믿음 슬라이더 라벨·일기 프롬프트용). */
-    public String automaticThought() {
-        return answers.get("automatic_thought");
-    }
-
     // ── 시작 ─────────────────────────────────────────────────────────────
 
-    public void begin(String schedule, Emotion scheduleEmotion, Emotion currentEmotion,
-            String nickname) {
-        this.currentEmotion = currentEmotion;
-        this.nickname = nickname;
-        assignSchedule(new ScheduleItem(schedule, scheduleEmotion));
-    }
-
-    /** 특정 일정 없이 시작 — 현재 감정 하나로 '오늘 하루'를 돌아본다. */
-    public void beginNoSchedule(Emotion currentEmotion, String nickname, String interest) {
-        this.currentEmotion = currentEmotion;
-        this.nickname = nickname;
-        this.interest = interest;
-        this.scheduleId = null;
-        this.schedule = null;
-        this.scheduleEmotion = null;
-        this.phase = Phase.INTRO;
-    }
-
-    /** 일정을 규칙으로 못 골랐다 — 후보를 들고 선택을 기다린다. */
-    public void beginPendingSchedules(List<ScheduleItem> schedules, Emotion currentEmotion,
-            String nickname, String interest) {
-        this.pendingSchedules = List.copyOf(schedules);
-        this.currentEmotion = currentEmotion;
+    /**
+     * 회고를 연다 — 개인화 소재({@code schedule}, 없으면 null)와 프로필을 심고 일기 작성 채팅에서
+     * 시작한다. v2 는 시작 시 감정을 고르지 않는다.
+     */
+    public void begin(String schedule, Emotion scheduleEmotion, Long scheduleId, String nickname,
+            String interest) {
+        this.schedule = schedule;
+        this.scheduleEmotion = scheduleEmotion;
+        this.scheduleId = scheduleId;
         this.nickname = nickname;
         this.interest = interest;
-        this.phase = Phase.AWAIT_SCHEDULE;
-    }
-
-    public List<ScheduleItem> pendingSchedules() {
-        return List.copyOf(pendingSchedules);
-    }
-
-    /** 대상 일정 확정 — 1턴 질문을 낼 준비가 됐다. */
-    public void assignSchedule(ScheduleItem item) {
-        this.scheduleId = item.id();
-        this.schedule = item.name();
-        this.scheduleEmotion = item.emotion();
-        this.pendingSchedules = List.of();
-        this.phase = Phase.INTRO;
+        this.phase = Phase.DIARY_CHAT;
     }
 
     // ── 진행 ─────────────────────────────────────────────────────────────
@@ -228,61 +168,19 @@ public class RetrospectState {
         this.phase = phase;
     }
 
-    /**
-     * 위기 안내로 멈춘다 — 지금 phase 를 기억해 두고 {@link Phase#SAFETY_HOLD} 로 넘어간다.
-     * 안전 상태는 여기서 건드리지 않는다(안내 문안이 방금 그 레벨로 골라졌으므로). 되돌리기는
-     * {@link #resumeFromHold} 가 맡는다.
-     */
+    /** 위기 안내로 멈춘다 — 지금 phase 를 기억해 두고 {@link Phase#SAFETY_HOLD} 로 넘어간다. */
     public void holdForSafety() {
         this.heldFrom = this.phase;
         this.phase = Phase.SAFETY_HOLD;
     }
 
-    /**
-     * 「이어서 얘기하기」 — 멈추기 전 phase 로 되돌리고 정지 신호를 거둔다. 되돌아간 phase 를 준다
-     * (기억이 없으면 {@link Phase#INTRO} 로 안전하게 떨어진다). 다음 발화는 그 phase 에서 정상 처리되며
-     * 새 위기면 그 자리에서 다시 멈춘다.
-     */
+    /** 「이어서 얘기하기」 — 멈추기 전 phase 로 되돌리고 정지 신호를 거둔다. 되돌아간 phase 를 준다. */
     public Phase resumeFromHold() {
-        Phase target = heldFrom != null ? heldFrom : Phase.INTRO;
+        Phase target = heldFrom != null ? heldFrom : Phase.DIARY_CHAT;
         this.phase = target;
         this.heldFrom = null;
         this.safety.reset();
         return target;
-    }
-
-    /** 방향이 확정됐다 — 모드 스크립트를 걸고 script phase 로 넘어간다. */
-    public void applyMode(RetroMode mode) {
-        this.mode = mode;
-        this.steps = Scripts.stepsOf(mode);
-        this.stepIndex = -1;
-        this.phase = Phase.SCRIPT;
-    }
-
-    /** 지금 답을 기다리는 스텝(= 마지막으로 물어본 스텝). */
-    public Optional<ScriptStep> currentStep() {
-        return stepIndex >= 0 && stepIndex < steps.size()
-                ? Optional.of(steps.get(stepIndex))
-                : Optional.empty();
-    }
-
-    /** 다음 스텝으로 이동한다. 스크립트가 끝났으면 empty. */
-    public Optional<ScriptStep> advanceStep() {
-        stepIndex++;
-        return currentStep();
-    }
-
-    /** 커밋 없이 다음 스텝만 엿본다 — 전진 여부를 판정한 뒤 확정하는 게이트용. */
-    public Optional<ScriptStep> peekNext() {
-        int i = stepIndex + 1;
-        return i >= 0 && i < steps.size() ? Optional.of(steps.get(i)) : Optional.empty();
-    }
-
-    /** {@link #peekNext()}로 본 다음 스텝을 실제로 확정한다. */
-    public void commitAdvance() {
-        if (stepIndex + 1 < steps.size()) {
-            stepIndex++;
-        }
     }
 
     // ── 게이트(재질문 캡) ────────────────────────────────────────────────
@@ -311,32 +209,186 @@ public class RetrospectState {
         abuseStreak = 0;
     }
 
-    // ── 기록 ─────────────────────────────────────────────────────────────
+    // ── 일기 작성 슬롯 ───────────────────────────────────────────────────
 
-    public void recordAnswer(String stepId, String value) {
-        if (value != null && !value.isBlank()) {
-            answers.put(stepId, value.strip());
+    public int diaryTurn() {
+        return diaryTurn;
+    }
+
+    public void bumpDiaryTurn() {
+        diaryTurn++;
+    }
+
+    public String event() {
+        return event;
+    }
+
+    public void event(String event) {
+        if (event != null && !event.isBlank()) {
+            this.event = event.strip();
         }
     }
 
-    /** 슬라이더 값 기록. 0~10 범위를 벗어나면 잘라 넣는다. */
-    public void recordMeasure(String stepId, String fieldKey, int value) {
-        int clamped = Math.max(0, Math.min(10, value));
-        measures.computeIfAbsent(stepId, k -> new LinkedHashMap<>()).put(fieldKey, clamped);
+    public List<String> secondaryEvents() {
+        return List.copyOf(secondaryEvents);
     }
 
-    public void situationSummary(String summary) {
-        if (summary != null && !summary.isBlank()) {
-            this.situationSummary = summary.strip();
+    public void addSecondaryEvents(Collection<String> events) {
+        if (events == null) {
+            return;
+        }
+        for (String e : events) {
+            if (e != null && !e.isBlank() && !secondaryEvents.contains(e.strip())) {
+                secondaryEvents.add(e.strip());
+            }
         }
     }
 
-    public void lastOptions(List<OptionItem> options) {
+    public List<ExtractedEmotion> emotions() {
+        return List.copyOf(emotions);
+    }
+
+    /** 대화 끝에 추출한 감정으로 채운다(정규화된 것만 남긴다). */
+    public void emotions(List<ExtractedEmotion> extracted) {
+        emotions.clear();
+        if (extracted != null) {
+            for (ExtractedEmotion e : extracted) {
+                if (e != null) {
+                    emotions.add(e);
+                }
+            }
+        }
+    }
+
+    public boolean emotionSeen() {
+        return emotionSeen;
+    }
+
+    public void markEmotionSeen() {
+        this.emotionSeen = true;
+    }
+
+    public String meaning() {
+        return meaning;
+    }
+
+    public void meaning(String meaning) {
+        if (meaning != null && !meaning.isBlank()) {
+            this.meaning = meaning.strip();
+        }
+    }
+
+    public String diaryDraft() {
+        return diaryDraft;
+    }
+
+    public void diaryDraft(String diaryDraft) {
+        this.diaryDraft = diaryDraft == null ? null : diaryDraft.strip();
+    }
+
+    public boolean diaryUserEnded() {
+        return diaryUserEnded;
+    }
+
+    public void markDiaryUserEnded() {
+        this.diaryUserEnded = true;
+    }
+
+    /** 세 정보(사건·감정·의미)가 다 모였는가 — 이른 종료 판정. */
+    public boolean diarySlotsComplete() {
+        return event != null && emotionSeen && meaning != null;
+    }
+
+    /** 일기 작성 턴을 다 썼는가. */
+    public boolean diaryTurnsExhausted() {
+        return diaryTurn >= DIARY_MAX_TURNS;
+    }
+
+    // ── 감정 탐색 슬롯 ───────────────────────────────────────────────────
+
+    public boolean explorationEntered() {
+        return explorationEntered;
+    }
+
+    public void enterExploration() {
+        this.explorationEntered = true;
+        this.explorationTurn = 0;
+        this.phase = Phase.EMOTION_EXPLORATION;
+    }
+
+    public int explorationTurn() {
+        return explorationTurn;
+    }
+
+    public void bumpExplorationTurn() {
+        explorationTurn++;
+    }
+
+    public List<Emotion> confirmedEmotions() {
+        return List.copyOf(confirmedEmotions);
+    }
+
+    public void confirmEmotions(Collection<Emotion> chosen) {
+        confirmedEmotions.clear();
+        if (chosen != null) {
+            for (Emotion e : chosen) {
+                if (e != null && !confirmedEmotions.contains(e)) {
+                    confirmedEmotions.add(e);
+                }
+            }
+        }
+    }
+
+    public List<Need> needs() {
+        return List.copyOf(needs);
+    }
+
+    public void chooseNeeds(Collection<Need> chosen) {
+        needs.clear();
+        if (chosen != null) {
+            for (Need n : chosen) {
+                if (n != null && !needs.contains(n)) {
+                    needs.add(n);
+                }
+            }
+        }
+    }
+
+    public String desiredState() {
+        return desiredState;
+    }
+
+    public void desiredState(String desiredState) {
+        if (desiredState != null && !desiredState.isBlank()) {
+            this.desiredState = desiredState.strip();
+        }
+    }
+
+    public String smallAction() {
+        return smallAction;
+    }
+
+    public void smallAction(String smallAction) {
+        if (smallAction != null && !smallAction.isBlank()) {
+            this.smallAction = smallAction.strip();
+        }
+    }
+
+    // ── 선택지 ───────────────────────────────────────────────────────────
+
+    public void lastOptions(List<Choice> options) {
         this.lastOptions = options == null ? List.of() : List.copyOf(options);
     }
 
+    public List<Choice> lastOptions() {
+        return List.copyOf(lastOptions);
+    }
+
     /** 1-base 번호 문자열(optionId)로 직전 선택지를 해석한다. */
-    public Optional<OptionItem> resolveOption(String optionId) {
+    public Optional<Choice> resolveChoice(String optionId) {
+        if (optionId == null) {
+            return Optional.empty();
+        }
         try {
             int idx = Integer.parseInt(optionId.strip()) - 1;
             return idx >= 0 && idx < lastOptions.size()
@@ -351,10 +403,6 @@ public class RetrospectState {
         this.priorCardFinder = finder == null ? PriorActionCardFinder.NONE : finder;
     }
 
-    public void chooseAction(OptionItem option) {
-        this.chosenAction = option;
-    }
-
     // ── 메시지 ───────────────────────────────────────────────────────────
 
     public Message addAssistantMessage(String content) {
@@ -366,7 +414,6 @@ public class RetrospectState {
     public Message addUserMessage(String content) {
         Message m = new Message("m" + (++messageSeq), Message.ROLE_USER, content, null);
         messages.add(m);
-        turn++;
         return m;
     }
 
@@ -378,23 +425,19 @@ public class RetrospectState {
     }
 
     // ── 영속화 스냅샷 ────────────────────────────────────────────────────
-    //
-    // 세션 상태를 그대로 DB에 담기 위한 순수 스냅샷 변환. steps 는 mode 에서 파생되므로
-    // 저장하지 않고 복원 시 다시 도출한다. 도메인은 프레임워크(Jackson 등)를 모른 채로 두고,
-    // 직렬화는 인프라의 코덱이 이 순수 record 를 대상으로 한다.
 
     public RetrospectStateSnapshot toSnapshot() {
-        Map<String, Map<String, Integer>> measuresCopy = new LinkedHashMap<>();
-        measures.forEach((k, v) -> measuresCopy.put(k, new LinkedHashMap<>(v)));
         return new RetrospectStateSnapshot(
-                id, nickname, scheduleId, schedule, scheduleEmotion, currentEmotion, interest,
-                List.copyOf(restMethods),
-                List.copyOf(pendingSchedules), phase, heldFrom, mode, stepIndex, turn, reasks,
-                abuseStreak,
-                new LinkedHashMap<>(answers), measuresCopy, new ArrayList<>(messages),
+                id, nickname, scheduleId, schedule, scheduleEmotion, interest,
+                List.copyOf(restMethods), phase, heldFrom, reasks, abuseStreak,
+                diaryTurn, event, List.copyOf(secondaryEvents), List.copyOf(emotions), emotionSeen,
+                meaning, diaryDraft, diaryUserEnded,
+                explorationEntered, explorationTurn, List.copyOf(confirmedEmotions),
+                List.copyOf(needs), desiredState, smallAction,
+                new ArrayList<>(messages),
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
-                situationSummary, List.copyOf(lastOptions), chosenAction, messageSeq);
+                List.copyOf(lastOptions), messageSeq);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -403,36 +446,42 @@ public class RetrospectState {
         state.scheduleId = s.scheduleId();
         state.schedule = s.schedule();
         state.scheduleEmotion = s.scheduleEmotion();
-        state.currentEmotion = s.currentEmotion();
         state.interest = s.interest();
         state.restMethods = s.restMethods() == null ? List.of() : List.copyOf(s.restMethods());
-        state.pendingSchedules = s.pendingSchedules() == null ? List.of()
-                : List.copyOf(s.pendingSchedules());
         state.phase = s.phase();
         state.heldFrom = s.heldFrom();
-        state.mode = s.mode();
-        state.steps = s.mode() == null ? List.of() : Scripts.stepsOf(s.mode());
-        state.stepIndex = s.stepIndex();
-        state.turn = s.turn();
         state.reasks = s.reasks();
         state.abuseStreak = s.abuseStreak();
-        if (s.answers() != null) {
-            state.answers.putAll(s.answers());
+        state.diaryTurn = s.diaryTurn();
+        state.event = s.event();
+        if (s.secondaryEvents() != null) {
+            state.secondaryEvents.addAll(s.secondaryEvents());
         }
-        if (s.measures() != null) {
-            s.measures().forEach((k, v) -> state.measures.put(k, new LinkedHashMap<>(v)));
+        if (s.emotions() != null) {
+            state.emotions.addAll(s.emotions());
         }
+        state.emotionSeen = s.emotionSeen();
+        state.meaning = s.meaning();
+        state.diaryDraft = s.diaryDraft();
+        state.diaryUserEnded = s.diaryUserEnded();
+        state.explorationEntered = s.explorationEntered();
+        state.explorationTurn = s.explorationTurn();
+        if (s.confirmedEmotions() != null) {
+            state.confirmedEmotions.addAll(s.confirmedEmotions());
+        }
+        if (s.needs() != null) {
+            state.needs.addAll(s.needs());
+        }
+        state.desiredState = s.desiredState();
+        state.smallAction = s.smallAction();
         if (s.messages() != null) {
             state.messages.addAll(s.messages());
         }
         if (s.safety() != null) {
-            // merge 는 단조 증가라 NONE→저장값 복원에 그대로 쓸 수 있다(레벨 상승·플래그 적재·msgId).
             state.safety.merge(s.safety().level(), s.safety().flags(),
                     s.safety().lastFlaggedMsgId());
         }
-        state.situationSummary = s.situationSummary();
         state.lastOptions = s.lastOptions() == null ? List.of() : List.copyOf(s.lastOptions());
-        state.chosenAction = s.chosenAction();
         state.messageSeq = s.messageSeq();
         return state;
     }

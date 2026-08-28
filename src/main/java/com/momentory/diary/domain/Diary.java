@@ -44,30 +44,37 @@ public class Diary extends BaseTimeEntity {
     @Column(columnDefinition = "TEXT")
     private String reframed;
 
+    // v2: 대표 감정 — 리포트(일별/주간)가 쓴다. 감정 없이 끝난 일기(탐색 미진행·추출 없음)면 null.
     @Enumerated(EnumType.STRING)
-    @Column(name = "current_emotion", nullable = false, length = 30)
+    @Column(name = "current_emotion", length = 30)
     private Emotion currentEmotion;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "schedule_emotion", length = 30)
     private Emotion scheduleEmotion;
 
+    /** v2 감정 태그(CSV 키) — 일기에서 드러난 감정 전체. 라벨은 읽는 쪽이 Emotion 에서 역참조. */
+    @Column(columnDefinition = "TEXT")
+    private String emotions;
+
     protected Diary() {
     }
 
     private Diary(Long userId, Long retrospectId, String original, String reframed,
-            Emotion currentEmotion, Emotion scheduleEmotion) {
+            Emotion currentEmotion, Emotion scheduleEmotion, String emotions) {
         this.userId = Objects.requireNonNull(userId, "userId must not be null");
         this.retrospectId = Objects.requireNonNull(retrospectId, "retrospectId must not be null");
         this.original = Objects.requireNonNull(original, "original must not be null");
-        this.currentEmotion = Objects.requireNonNull(currentEmotion, "currentEmotion must not be null");
+        this.currentEmotion = currentEmotion;
         this.reframed = reframed;
         this.scheduleEmotion = scheduleEmotion;
+        this.emotions = emotions;
     }
 
     public static Diary create(Long userId, Long retrospectId, String original, String reframed,
-            Emotion currentEmotion, Emotion scheduleEmotion) {
-        return new Diary(userId, retrospectId, original, reframed, currentEmotion, scheduleEmotion);
+            Emotion currentEmotion, Emotion scheduleEmotion, String emotions) {
+        return new Diary(userId, retrospectId, original, reframed, currentEmotion, scheduleEmotion,
+                emotions);
     }
 
     /**
@@ -107,5 +114,10 @@ public class Diary extends BaseTimeEntity {
 
     public Emotion getScheduleEmotion() {
         return scheduleEmotion;
+    }
+
+    /** v2 감정 태그 CSV(없으면 null) — 읽는 쪽이 Emotion 으로 역참조. */
+    public String getEmotions() {
+        return emotions;
     }
 }

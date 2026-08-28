@@ -2,6 +2,7 @@ package com.momentory.retrospect.application;
 
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -12,9 +13,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.momentory.actioncard.application.ActionCardQueryService;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.diary.application.DiaryQueryService;
+import com.momentory.retrospect.domain.Emotion;
+import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.RetrospectStatus;
+import com.momentory.retrospect.domain.WishSentiment;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
@@ -77,8 +81,7 @@ public class RetrospectService {
         ReplyDto reply = engine.start(state, command, preferredRestMethods(userId));
 
         Retrospect entity = Retrospect.start(userId, RetrospectStatus.from(state.phase()),
-                state.mode(), resolveScheduleId(userId, state.scheduleId()),
-                state.currentEmotion(), codec.serialize(state));
+                resolveScheduleId(userId, state.scheduleId()), codec.serialize(state));
         retrospectRepository.save(entity);
 
         return new RetrospectResult(entity.getId(), reply);
@@ -125,8 +128,8 @@ public class RetrospectService {
             enriched = enriched.withDiaryId(
                     diaryQueryService.findDiaryIdByRetrospect(retrospectId).orElse(null));
         }
-        if (enriched.actionCard() != null) {
-            enriched = enriched.withActionCardId(
+        if (enriched.wishCard() != null) {
+            enriched = enriched.withWishCardId(
                     actionCardQueryService.findIdByRetrospect(retrospectId).orElse(null));
         }
         return enriched;
@@ -135,8 +138,7 @@ public class RetrospectService {
     private void sync(Retrospect entity, RetrospectState state, ReplyDto reply) {
         Phase phase = state.phase();
         Instant completedAt = phase.isTerminal() ? Instant.now() : null;
-        entity.sync(RetrospectStatus.from(phase), state.mode(), codec.serialize(state),
-                completedAt);
+        entity.sync(RetrospectStatus.from(phase), codec.serialize(state), completedAt);
         announceCompletion(entity, state, reply);
     }
 
@@ -147,11 +149,14 @@ public class RetrospectService {
      */
     private void announceCompletion(Retrospect entity, RetrospectState state, ReplyDto reply) {
         RetrospectCompleted.DiaryData diary = reply.diary() == null ? null
-                : new RetrospectCompleted.DiaryData(state.currentEmotion(), state.scheduleEmotion(),
-                        reply.diary().diary(), reply.diary().reframedDiary());
-        RetrospectCompleted.ActionCardData card = reply.actionCard() == null ? null
-                : new RetrospectCompleted.ActionCardData(reply.actionCard().situation(),
-                        reply.actionCard().action(), fromRestPreference(state));
+                : new RetrospectCompleted.DiaryData(primaryEmotion(state), state.scheduleEmotion(),
+                        reply.diary().diary(), reply.diary().reframedDiary(), emotionTags(state));
+        RetrospectCompleted.WishCardData card = reply.wishCard() == null ? null
+                : new RetrospectCompleted.WishCardData(reply.wishCard().situation(),
+                        state.confirmedEmotions(),
+                        state.needs().stream().map(Need::word).toList(),
+                        state.desiredState(), state.smallAction(),
+                        WishSentiment.of(state.confirmedEmotions()).key());
         if (diary == null && card == null) {
             return;
         }
@@ -159,9 +164,31 @@ public class RetrospectService {
                 new RetrospectCompleted(entity.getId(), entity.getUserId(), diary, card));
     }
 
-    /** 사용자가 최종 선택한 행동이 '쉬는 방법 선호'로 만든 카드였는지 — 분석용 내부 표식(비노출). */
-    private boolean fromRestPreference(RetrospectState state) {
-        return state.chosenAction() != null && state.chosenAction().restPreference();
+    /**
+     * 일기에 실을 대표 감정 — 확인된 감정 → 추출 감정 → 일정 감정 순. v2 다중 감정 태그·마이그레이션
+     * 전까지 기존 단일 {@code current_emotion} 계약을 채우는 임시 매핑이다(후속 증분에서 교체).
+     */
+    private static Emotion primaryEmotion(RetrospectState state) {
+        if (!state.confirmedEmotions().isEmpty()) {
+            return state.confirmedEmotions().get(0);
+        }
+        for (var e : state.emotions()) {
+            if (e.normalized() != null) {
+                return e.normalized();
+            }
+        }
+        return state.scheduleEmotion();
+    }
+
+    /** v2 일기 감정 태그 — 확인된 감정 + 추출된 정규화 감정(중복 제거, 확인된 것 우선). */
+    private static List<Emotion> emotionTags(RetrospectState state) {
+        LinkedHashSet<Emotion> tags = new LinkedHashSet<>(state.confirmedEmotions());
+        for (var e : state.emotions()) {
+            if (e.normalized() != null) {
+                tags.add(e.normalized());
+            }
+        }
+        return List.copyOf(tags);
     }
 
     private Retrospect requireSession(Long userId, Long id) {

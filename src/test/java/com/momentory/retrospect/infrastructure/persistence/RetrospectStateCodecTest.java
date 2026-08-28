@@ -6,19 +6,18 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import com.momentory.retrospect.domain.Choice;
 import com.momentory.retrospect.domain.Emotion;
+import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
-import com.momentory.retrospect.domain.ScheduleItem;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
-import com.momentory.retrospect.domain.script.OptionItem;
-import com.momentory.retrospect.domain.script.RetroMode;
 
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 스냅샷 코덱 왕복 검증 — 진행 상태를 JSON 으로 접었다 펴도 도메인이 동일하게 복원되는가.
- * 특히 파생 필드({@code steps})가 mode 로부터 재도출돼 이어가기가 가능한지 확인한다.
+ * 스냅샷 코덱 왕복 검증(v2 슬롯) — 진행 상태를 JSON 으로 접었다 펴도 도메인이 동일하게 복원되는가.
  */
 class RetrospectStateCodecTest {
 
@@ -27,17 +26,23 @@ class RetrospectStateCodecTest {
     @Test
     void roundTripsProgressState() {
         RetrospectState state = new RetrospectState("sess-1");
-        state.begin("면접 스터디", Emotion.ANXIOUS, Emotion.DEPRESSED, "정민");
-        state.assignSchedule(new ScheduleItem(77L, "면접 스터디", Emotion.ANXIOUS));
-        state.applyMode(RetroMode.REFRAME);
-        state.advanceStep();
-        state.recordAnswer("first_moment", "답변을 제대로 못 했어요");
-        state.recordMeasure("belief_before", "belief", 7);
+        state.begin("면접 스터디", Emotion.ANGRY, 77L, "정민", "취업");
+        state.event("팀원이 말을 끊었다");
+        state.addSecondaryEvents(List.of("점심 약속"));
+        state.meaning("계속 걸린다");
+        state.markEmotionSeen();
+        state.emotions(List.of(new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요")));
+        state.bumpDiaryTurn();
+        state.diaryDraft("오늘의 일기.");
+        state.enterExploration();
+        state.bumpExplorationTurn();
+        state.confirmEmotions(List.of(Emotion.ANGRY));
+        state.chooseNeeds(List.of(Needs.byWord("존중").orElseThrow()));
+        state.desiredState("끝까지 들어주는 것");
+        state.smallAction("한 문장으로 전해보기");
         state.addUserMessage("사용자 메시지");
         state.mergeSafety(SafetyLevel.CAUTION, List.of("crisis_expression"), "m1");
-        state.situationSummary("면접에서 말이 막힘");
-        state.lastOptions(List.of(new OptionItem("보기1", "설명")));
-        state.chooseAction(new OptionItem("핵심 세 줄 만들기", "질문 하나를 결론·이유·경험으로"));
+        state.lastOptions(List.of(Choice.of("보기1", "설명")));
 
         RetrospectState restored = codec.deserialize(codec.serialize(state));
 
@@ -45,34 +50,37 @@ class RetrospectStateCodecTest {
         assertThat(restored.nickname()).isEqualTo("정민");
         assertThat(restored.scheduleId()).isEqualTo(77L);
         assertThat(restored.schedule()).isEqualTo("면접 스터디");
-        assertThat(restored.scheduleEmotion()).isEqualTo(Emotion.ANXIOUS);
-        assertThat(restored.currentEmotion()).isEqualTo(Emotion.DEPRESSED);
-        assertThat(restored.mode()).isEqualTo(RetroMode.REFRAME);
-        assertThat(restored.phase()).isEqualTo(Phase.SCRIPT);
-        assertThat(restored.turn()).isEqualTo(state.turn());
-        assertThat(restored.answers()).containsEntry("first_moment", "답변을 제대로 못 했어요");
-        assertThat(restored.measures().get("belief_before")).containsEntry("belief", 7);
+        assertThat(restored.scheduleEmotion()).isEqualTo(Emotion.ANGRY);
+        assertThat(restored.interest()).isEqualTo("취업");
+        assertThat(restored.event()).isEqualTo("팀원이 말을 끊었다");
+        assertThat(restored.secondaryEvents()).containsExactly("점심 약속");
+        assertThat(restored.meaning()).isEqualTo("계속 걸린다");
+        assertThat(restored.emotionSeen()).isTrue();
+        assertThat(restored.emotions()).hasSize(1);
+        assertThat(restored.emotions().get(0).normalized()).isEqualTo(Emotion.ANGRY);
+        assertThat(restored.diaryDraft()).isEqualTo("오늘의 일기.");
+        assertThat(restored.phase()).isEqualTo(Phase.EMOTION_EXPLORATION);
+        assertThat(restored.explorationEntered()).isTrue();
+        assertThat(restored.explorationTurn()).isEqualTo(1);
+        assertThat(restored.confirmedEmotions()).containsExactly(Emotion.ANGRY);
+        assertThat(restored.needs()).extracting("word").containsExactly("존중");
+        assertThat(restored.desiredState()).isEqualTo("끝까지 들어주는 것");
+        assertThat(restored.smallAction()).isEqualTo("한 문장으로 전해보기");
         assertThat(restored.messages()).hasSize(1);
         assertThat(restored.safety().level()).isEqualTo(SafetyLevel.CAUTION);
         assertThat(restored.safety().flags()).contains("crisis_expression");
-        assertThat(restored.situationSummary()).isEqualTo("면접에서 말이 막힘");
         assertThat(restored.lastOptions()).hasSize(1);
-        assertThat(restored.chosenAction().label()).isEqualTo("핵심 세 줄 만들기");
-        // steps 는 저장하지 않지만 mode 로부터 재도출돼 현재 스텝을 그대로 가리킨다.
-        assertThat(restored.currentStep()).isEqualTo(state.currentStep());
     }
 
     @Test
     void roundTripsFreshNoScheduleState() {
         RetrospectState state = new RetrospectState("sess-2");
-        state.beginNoSchedule(Emotion.CALM, "지은", "취업 준비");
+        state.begin(null, null, null, "지은", "취업 준비");
 
         RetrospectState restored = codec.deserialize(codec.serialize(state));
 
         assertThat(restored.hasSchedule()).isFalse();
-        assertThat(restored.currentEmotion()).isEqualTo(Emotion.CALM);
         assertThat(restored.interest()).isEqualTo("취업 준비");
-        assertThat(restored.phase()).isEqualTo(Phase.INTRO);
-        assertThat(restored.mode()).isNull();
+        assertThat(restored.phase()).isEqualTo(Phase.DIARY_CHAT);
     }
 }

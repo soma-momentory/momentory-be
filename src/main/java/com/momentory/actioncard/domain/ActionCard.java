@@ -41,9 +41,26 @@ public class ActionCard extends BaseTimeEntity {
     @Column(nullable = false, length = 500)
     private String situation;
 
-    // 상세 내용까지 담으므로 TEXT — 예전 target_action(255)/detail(TEXT) 이원화를 합쳤다.
-    @Column(name = "target_action", nullable = false, columnDefinition = "TEXT")
+    // v2: 작은 행동을 안 정할 수 있어(감정 탐색 중 '오늘은 여기까지') nullable 이다.
+    @Column(name = "target_action", columnDefinition = "TEXT")
     private String targetAction;
+
+    // ── 바람 카드(채팅흐름_v2) 필드 — 감정 탐색을 거친 카드에만 채워진다 ──
+    /** 확인된 감정 키들(CSV). 뜻·라벨은 읽는 쪽이 Emotion 에서 역참조. */
+    @Column(columnDefinition = "TEXT")
+    private String emotions;
+
+    /** 바람(욕구) 단어들(CSV). 뜻은 읽는 쪽이 Needs 고정 목록에서 역참조. */
+    @Column(columnDefinition = "TEXT")
+    private String needs;
+
+    /** 바랐던 모습 — 사용자 답변에서 확인된 구체적 모습. */
+    @Column(name = "desired_state", columnDefinition = "TEXT")
+    private String desiredState;
+
+    /** 감정 성격 — "uncomfortable" / "positive"(워딩 분기). */
+    @Column(length = 20)
+    private String sentiment;
 
     @Column(name = "created_date", nullable = false)
     private LocalDate createdDate;
@@ -69,7 +86,7 @@ public class ActionCard extends BaseTimeEntity {
         this.userId = Objects.requireNonNull(userId, "userId must not be null");
         this.retrospectId = Objects.requireNonNull(retrospectId, "retrospectId must not be null");
         this.situation = Objects.requireNonNull(situation, "situation must not be null");
-        this.targetAction = Objects.requireNonNull(targetAction, "targetAction must not be null");
+        this.targetAction = targetAction;
         this.createdDate = Objects.requireNonNull(createdDate, "createdDate must not be null");
         this.fromRestPreference = fromRestPreference;
         this.done = false;
@@ -80,6 +97,22 @@ public class ActionCard extends BaseTimeEntity {
             String targetAction, LocalDate createdDate, boolean fromRestPreference) {
         return new ActionCard(userId, retrospectId, situation, targetAction, createdDate,
                 fromRestPreference);
+    }
+
+    /**
+     * 감정 탐색을 거친 바람 카드로 생성 (채팅흐름_v2, 결정 ①로 기존 행동 카드 대체). 작은 행동·감정·
+     * 바람·바랐던 모습은 비어 있을 수 있다(사용자가 '모르겠어요'/'여기까지'를 고른 경우).
+     */
+    public static ActionCard createWish(Long userId, Long retrospectId, String situation,
+            String smallAction, LocalDate createdDate, String emotions, String needs,
+            String desiredState, String sentiment) {
+        ActionCard card = new ActionCard(userId, retrospectId, situation, smallAction, createdDate,
+                false);
+        card.emotions = emotions;
+        card.needs = needs;
+        card.desiredState = desiredState;
+        card.sentiment = sentiment;
+        return card;
     }
 
     /**
@@ -122,6 +155,24 @@ public class ActionCard extends BaseTimeEntity {
 
     public String getTargetAction() {
         return targetAction;
+    }
+
+    /** 바람 카드 감정 키 CSV(없으면 null) — 읽는 쪽이 Emotion 으로 역참조. */
+    public String getEmotions() {
+        return emotions;
+    }
+
+    /** 바람 카드 욕구 단어 CSV(없으면 null) — 읽는 쪽이 Needs 로 역참조. */
+    public String getNeeds() {
+        return needs;
+    }
+
+    public String getDesiredState() {
+        return desiredState;
+    }
+
+    public String getSentiment() {
+        return sentiment;
     }
 
     public LocalDate getCreatedDate() {

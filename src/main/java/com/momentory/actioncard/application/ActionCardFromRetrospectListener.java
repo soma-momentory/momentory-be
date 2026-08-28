@@ -7,10 +7,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.List;
+
 import com.momentory.common.time.DayBoundary;
 import com.momentory.actioncard.domain.ActionCard;
 import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 import com.momentory.retrospect.application.RetrospectCompleted;
+import com.momentory.retrospect.domain.Emotion;
 
 /**
  * 회고 완료 이벤트를 받아 행동 카드를 남기는 actioncard 컨텍스트의 진입점 — 쓰기 방향에서 retrospect
@@ -40,15 +43,25 @@ public class ActionCardFromRetrospectListener {
 
     @EventListener
     public void on(RetrospectCompleted event) {
-        RetrospectCompleted.ActionCardData card = event.actionCard();
+        RetrospectCompleted.WishCardData card = event.wishCard();
         if (card == null || actionCardRepository.existsByRetrospectId(event.retrospectId())) {
             return;
         }
         // 카드의 날짜도 04:00 하루 경계를 따른다 — 새벽 1시에 마친 회고의 카드는 어제로 남는다.
-        ActionCard saved = actionCardRepository.save(ActionCard.create(event.userId(),
-                event.retrospectId(), card.situation(), card.action(), DayBoundary.today(),
-                card.fromRestPreference()));
+        ActionCard saved = actionCardRepository.save(ActionCard.createWish(event.userId(),
+                event.retrospectId(), card.situation(), card.smallAction(), DayBoundary.today(),
+                csvEmotions(card.emotions()), csv(card.needWords()), card.desiredState(),
+                card.sentiment()));
         scheduleEmbedding(saved.getId(), card.situation());
+    }
+
+    private static String csvEmotions(List<Emotion> emotions) {
+        return emotions.isEmpty() ? null
+                : String.join(",", emotions.stream().map(Emotion::key).toList());
+    }
+
+    private static String csv(List<String> words) {
+        return words.isEmpty() ? null : String.join(",", words);
     }
 
     /**

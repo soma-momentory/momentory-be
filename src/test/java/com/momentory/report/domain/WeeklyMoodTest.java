@@ -72,7 +72,7 @@ class WeeklyMoodTest {
     }
 
     @Test
-    @DisplayName("감정 아홉 종 모두 저마다의 멘트를 갖는다 — 빈 문장도, 겹치는 문장도 없다")
+    @DisplayName("감정 열 종 모두 저마다의 멘트를 갖는다 — 빈 문장도, 겹치는 문장도 없다")
     void everyEmotionHasItsOwnMessage() {
         Set<String> messages = new LinkedHashSet<>();
         for (Emotion emotion : Emotion.values()) {
@@ -100,7 +100,7 @@ class WeeklyMoodTest {
                         + "몸과 마음이 보내는 휴식 신호를 지나치고 있지는 않은지 살펴보세요.");
         assertThat(WeeklyMood.of(week(Emotion.ANGRY, null, null, null, null, null, null))
                 .message())
-                .isEqualTo("이번 주에는 화나고 답답한 마음을 가장 많이 느꼈어요. "
+                .isEqualTo("이번 주에는 화난 마음을 가장 많이 느꼈어요. "
                         + "원하는 대로 되지 않거나 참아야 했던 일이 있었을지도 몰라요.");
     }
 

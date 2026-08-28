@@ -279,7 +279,7 @@ class WeeklyReportApiIntegrationTest {
     /** 회고(FK 대상)를 실제 저장하고, 그에 딸린 일기를 지정한 {@code createdAt} 으로 직접 넣는다. */
     private void seedDiary(User user, Emotion currentEmotion, Instant createdAt) {
         Retrospect retrospect = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
-                RetrospectStatus.COMPLETED, RetroMode.REFRAME, null, currentEmotion, "{}"));
+                RetrospectStatus.COMPLETED, null, "{}"));
         OffsetDateTime at = OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC);
         jdbcTemplate.update("""
                 INSERT INTO diaries (user_id, retrospect_id, original, reframed, current_emotion,
@@ -292,7 +292,7 @@ class WeeklyReportApiIntegrationTest {
     /** {@code doneAt} 이 null 이면 아직 해보지 않은 카드다. */
     private void seedActionCard(User user, Instant createdAt, Instant doneAt) {
         Retrospect retrospect = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
-                RetrospectStatus.COMPLETED, RetroMode.REFRAME, null, Emotion.CALM, "{}"));
+                RetrospectStatus.COMPLETED, null, "{}"));
         OffsetDateTime at = OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC);
         OffsetDateTime done = doneAt == null ? null : OffsetDateTime.ofInstant(doneAt, ZoneOffset.UTC);
         jdbcTemplate.update("""
