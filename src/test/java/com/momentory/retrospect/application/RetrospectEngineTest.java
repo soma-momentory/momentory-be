@@ -39,13 +39,17 @@ class RetrospectEngineTest {
         return engine.start(state, StartCommand.single("면접 스터디", Emotion.ANGRY, "정민"));
     }
 
-    /** 슬롯을 한 번에 채워 일기 작성을 조기 종료 → 분기점까지 몰아준다. */
+    /** 슬롯을 채운 채 6턴(최대)까지 이어가 분기점까지 몰아준다(조기 종료 금지 규칙). */
     private ReplyDto toBranch() {
         start();
         fake.turnEvent = "면접 스터디에서 팀원이 말을 끊었다";
         fake.turnMeaning = "내 의견이 가볍게 다뤄진 게 계속 걸린다";
         fake.turnEmotionPresent = true;
-        return engine.handle(state, TurnCommand.text("팀원이 자꾸 말을 끊어서 속상했어요."));
+        ReplyDto reply = null;
+        for (int i = 0; i < RetrospectState.DIARY_MAX_TURNS; i++) {
+            reply = engine.handle(state, TurnCommand.text("팀원이 자꾸 말을 끊어서 속상했어요."));
+        }
+        return reply;
     }
 
     // ── 시작 ─────────────────────────────────────────────────────────────
@@ -56,8 +60,7 @@ class RetrospectEngineTest {
         ReplyDto reply = start();
 
         assertThat(reply.phase()).isEqualTo("diary_chat");
-        assertThat(reply.text()).isEqualTo(
-                "정민님, 오늘 면접 스터디 일정이 있었던 것 같은데, 실제로 진행됐어요?");
+        assertThat(reply.text()).isEqualTo("정민님, 오늘 면접 스터디, 어땠어요?");
         assertThat(reply.options()).isNull();
     }
 
@@ -73,12 +76,22 @@ class RetrospectEngineTest {
     // ── 일기 작성 → 종료 ────────────────────────────────────────────────
 
     @Test
-    @DisplayName("사건·감정·의미가 다 모이면 일기 작성을 조기 종료하고 분기점을 낸다.")
-    void diaryCompletesWhenSlotsFilled() {
-        ReplyDto reply = toBranch();
+    @DisplayName("슬롯이 1턴에 다 모여도 6턴까지 이어가고, 6턴에서 분기점을 낸다(조기 종료 금지).")
+    void diaryRunsToSixTurnsEvenWhenSlotsFillEarly() {
+        start();
+        fake.turnEvent = "면접 스터디에서 팀원이 말을 끊었다";
+        fake.turnMeaning = "내 의견이 가볍게 다뤄진 게 계속 걸린다";
+        fake.turnEmotionPresent = true; // 1턴에 사건·감정·의미가 다 찬다
 
+        // 슬롯이 다 찼어도 6턴 전에는 종료하지 않고 계속 일기 작성 채팅을 이어간다.
+        for (int i = 1; i < RetrospectState.DIARY_MAX_TURNS; i++) {
+            ReplyDto mid = engine.handle(state, TurnCommand.text("속상한 일이 있었어요 " + i));
+            assertThat(mid.phase()).as("%d턴", i).isEqualTo("diary_chat");
+        }
+
+        // 6턴에 도달하면 분기점을 낸다.
+        ReplyDto reply = engine.handle(state, TurnCommand.text("계속 마음에 걸려요."));
         assertThat(reply.phase()).isEqualTo("await_branch");
-        assertThat(reply.options()).hasSize(2);
         assertThat(reply.options()).extracting("label")
                 .containsExactly("감정을 더 알아볼래요", "일기 확인하러 갈래요");
         assertThat(fake.extractCalls).isEqualTo(1);
@@ -134,7 +147,9 @@ class RetrospectEngineTest {
         ReplyDto reply = engine.handle(state, TurnCommand.option("1"));
 
         assertThat(reply.phase()).isEqualTo("emotion_exploration");
-        assertThat(reply.options()).extracting("label").contains("직접 적기", "아직 잘 모르겠어요");
+        // 후보에서 '직접 적기'·'아직 잘 모르겠어요' 는 뺐다(입력창은 화면이 늘 띄운다, 단일 선택).
+        assertThat(reply.options()).extracting("label")
+                .doesNotContain("직접 적기", "아직 잘 모르겠어요");
     }
 
     // ── 감정 탐색 3턴 → 바람 카드 ───────────────────────────────────────
@@ -164,28 +179,20 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("작은 행동에서 '오늘은 여기까지'면 행동 없이 완료한다(카드 없음).")
-    void explorationHereEndSkipsAction() {
+    @DisplayName("작은 행동에는 '오늘은 여기까지'가 없다 — 후보를 고르면 그 행동으로 완료한다.")
+    void explorationSmallActionHasNoHereEnd() {
+        fake.actions.add("따뜻한 물 한 잔 마시기");
         fake.emotions.add(new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요"));
         toBranch();
         engine.handle(state, TurnCommand.option("1")); // 탐색 진입
         engine.handle(state, TurnCommand.option("1")); // 감정
         ReplyDto actionTurn = engine.handle(state, TurnCommand.option("1")); // 바람 → 행동 턴
 
-        // 행동 턴의 '오늘은 여기까지 할래요' 번호를 찾아 선택
-        List<?> opts = actionTurn.options();
-        int hereEnd = -1;
-        for (int i = 0; i < opts.size(); i++) {
-            if (actionTurn.options().get(i).label().equals("오늘은 여기까지 할래요")) {
-                hereEnd = i + 1;
-            }
-        }
-        assertThat(hereEnd).isPositive();
-        ReplyDto done = engine.handle(state, TurnCommand.option(String.valueOf(hereEnd)));
+        assertThat(actionTurn.options()).extracting("label").doesNotContain("오늘은 여기까지 할래요");
 
+        ReplyDto done = engine.handle(state, TurnCommand.option("1")); // 첫 행동 후보 선택
         assertThat(done.phase()).isEqualTo("complete");
-        // 감정 탐색을 거쳤으니 바람 카드는 생기되, 작은 행동만 비어 있다(빈칸 허용).
         assertThat(done.wishCard()).isNotNull();
-        assertThat(done.wishCard().smallAction()).isNull();
+        assertThat(done.wishCard().smallAction()).isEqualTo("따뜻한 물 한 잔 마시기");
     }
 }

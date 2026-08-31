@@ -20,6 +20,8 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * @param emotionPresent 이 답변에 감정 표현이 담겼는가 — 이른 종료 판정(사건·감정·의미)의 감정 신호.
  *                       정규화(raw→Emotion)는 대화 끝에 {@link EmotionExtractor} 가 한 번에 한다.
  * @param question       다음에 물을 질문 한 문장(공감 1문장 + 질문 1문장 패턴 가능).
+ * @param empathy        방금 답변에 대한 짧은 공감 한 문장(질문 없이). 대화를 마무리로 넘길 때 전환
+ *                       멘트 앞에 붙인다 — 없으면 null.
  * @param safetyLevel    none|caution|risk|imminent
  * @param offTopic       답이 질문과 무관하거나 답 대신 되물었는가(Layer 2 게이트). 기본 false.
  * @param vague          답하려 했으나 실질 내용 없이 얼버무렸는가. 기본 false.
@@ -30,6 +32,7 @@ public record DiaryTurn(
         String meaning,
         boolean emotionPresent,
         String question,
+        String empathy,
         String safetyLevel,
         List<String> safetyFlags,
         boolean offTopic,

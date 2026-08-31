@@ -22,6 +22,11 @@ public class RetrospectState {
 
     /** 일기 작성 최대 턴 (채팅흐름_v2). */
     public static final int DIARY_MAX_TURNS = 6;
+    /**
+     * 일기 작성 권장 최소 턴 — 엔진은 6턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
+     * 이 값을 하한으로 알려 "최소 이만큼은 소재를 넓혀가라"는 진행 안내에 쓴다({@code PromptFactory}).
+     */
+    public static final int DIARY_MIN_TURNS = 4;
     /** 감정 탐색 고정 턴 (감정 확인 → 바람 → 작은 행동). */
     public static final int EXPLORATION_MAX_TURNS = 3;
 

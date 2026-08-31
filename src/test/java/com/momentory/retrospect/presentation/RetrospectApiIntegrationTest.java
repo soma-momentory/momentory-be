@@ -178,8 +178,8 @@ class RetrospectApiIntegrationTest {
         // 오늘 완주한 일기 한 벌 — Diary 의 @PrePersist 가 created_at 을 지금(=오늘 KST)으로 박는다.
         Retrospect done = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
                 RetrospectStatus.COMPLETED, null, "{}"));
-        diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(), "오늘 일기", null,
-                Emotion.DEPRESSED, null, null));
+        diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(), "오늘 일기",
+                Emotion.DEPRESSED, null));
 
         mockMvc.perform(post("/api/v1/retrospect")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user))
@@ -202,7 +202,7 @@ class RetrospectApiIntegrationTest {
         Retrospect done = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
                 RetrospectStatus.COMPLETED, null, "{}"));
         Diary yesterday = diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(),
-                "어제 일기", null, Emotion.DEPRESSED, null, null));
+                "어제 일기", Emotion.DEPRESSED, null));
         // created_at 을 어제로 되돌린다(@PrePersist 가 now 로 박으므로 직접 UPDATE).
         java.time.OffsetDateTime yesterdayAt = java.time.OffsetDateTime.ofInstant(
                 Instant.now().minus(java.time.Duration.ofDays(1)), java.time.ZoneOffset.UTC);
@@ -275,9 +275,7 @@ class RetrospectApiIntegrationTest {
                 completion.getResponse().getContentAsString(), "$.diary.diaryId");
         assertThat((long) responseDiaryId).isEqualTo(diary.getId());
         assertThat(diary.getOriginal()).isEqualTo("그냥 일기.");
-        assertThat(diary.getReframed()).isNull(); // 짧은 기록형은 리프레임 일기가 없다
-        assertThat(diary.getCurrentEmotion()).isEqualTo(Emotion.DEPRESSED);
-        assertThat(diary.getScheduleEmotion()).isEqualTo(Emotion.ANXIOUS);
+        assertThat(diary.getPrimaryEmotion()).isEqualTo(Emotion.DEPRESSED);
         assertThat(diary.getCreatedAt()).isNotNull();
     }
 

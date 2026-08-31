@@ -48,6 +48,8 @@ public class PromptFactory {
     /** 일기 작성 턴(G2) — 슬롯 추출 + 다음 질문. */
     public String diaryTurnPrompt(RetrospectState state, String userText) {
         return """
+                [진행] 지금까지 %d턴 나눴습니다. 일기 작성 채팅은 최소 %d턴 · 최대 %d턴입니다.
+
                 [지금까지 파악한 것]
                 - 사건(event): %s
                 - 감정 표현됨: %s
@@ -59,17 +61,47 @@ public class PromptFactory {
                 [방금 사용자 답변]
                 %s
 
-                이 답변에서 새로 파악된 것만 뽑고, 아직 비어 있는 정보(사건·감정·의미) 중 가장 필요한 하나를
-                사용자의 표현을 이어받아 자연스럽게 물어보세요.
+                이 답변에서 새로 파악된 것만 뽑고, 다음 질문을 사용자의 표현을 이어받아 자연스럽게 이어가세요.
+                - <b>조기 종료 금지</b>: 사건·감정·의미가 일찍 모여도 마무리로 몰지 마세요. 한 소재를 3턴쯤
+                  충분히 다룬 뒤, 오늘 있었던 다른 일상 소재나 추가 이야기로 자연스럽게 넓혀 물어봅니다.
+                  최소 턴에 못 미쳤으면 반드시 새로운 질문으로 대화를 이어갑니다.
+                - 사용자가 그 일정이 없었다거나 취소·안 했다고 하면(예: "아니요", "안 했어요", "취소됐어요"),
+                  이것은 얼버무림이 아닙니다. vague/offTopic 을 false 로 두고, 그 일정은 접어둔 채
+                  "그럼 오늘 하루 중 기억에 남는 일은 무엇이었는지"로 자연스럽게 옮겨 물어보세요.
                 - event: 이 답변에서 파악한 핵심(중심) 사건. 새로 없으면 null.
                 - secondaryEvents: 곁가지로 언급된 다른 사건들(없으면 빈 목록).
                 - meaning: 무엇이 마음에 남았는지. 없으면 null.
                 - emotionPresent: 이 답변에 감정 표현이 담겼으면 true.
-                - question: 다음 질문(공감 1문장 + 질문 1문장). 이미 충분하면 마무리하는 따뜻한 한 문장.
+                - question: 다음 질문(공감 1문장 + 질문 1문장). 최대 턴에 가까울 때만 마무리 톤으로
+                  부드럽게 정리하고, 그 전에는 새 소재로 이어가는 질문을 냅니다.
+                - empathy: 방금 답변에 대한 짧은 공감 한 문장(질문·물음표 없이). 대화를 마무리로 넘길 때
+                  이 문장을 먼저 보여줍니다. 매 턴 반드시 채우세요.
                 - safetyLevel: none|caution|risk|imminent. offTopic/vague: 질문과 무관하거나 얼버무렸으면 true.
                 """
-                .formatted(orNone(state.event()), state.emotionSeen() ? "예" : "아니요",
-                        orNone(state.meaning()), history(state), userText.strip());
+                .formatted(state.diaryTurn(), RetrospectState.DIARY_MIN_TURNS,
+                        RetrospectState.DIARY_MAX_TURNS, orNone(state.event()),
+                        state.emotionSeen() ? "예" : "아니요", orNone(state.meaning()), history(state),
+                        userText.strip());
+    }
+
+    /** 토픽 추출(G5) — 대화에서 주 일정·키워드를 뽑고 각 항목에 감정을 매칭(N:N). */
+    public String topicExtractPrompt(RetrospectState state) {
+        return """
+                아래 대화에서 오늘의 '주 일정'과 '키워드'를 뽑고, 각 항목에 대화에서 드러난 감정을
+                매칭하세요. 지어내지 말고 실제 발화에 근거한 것만 담습니다.
+                - type: "SCHEDULE"(주 일정) 또는 "KEYWORD"(키워드).
+                - 주 일정(SCHEDULE): 오늘 실제로 있었던 핵심 일정·사건. 최대 2개.
+                - 키워드(KEYWORD): 오늘을 관통하는 핵심을 담은 짧은 단어. 1~2개.
+                - label: 항목을 나타내는 짧은 텍스트(일정 제목 또는 키워드 단어).
+                - emotions: 그 항목에 연결된 감정 키들. 아래 10종 중에서만 고르고, 한 항목에 여러 개도
+                  됩니다(N:N). 감정이 분명치 않으면 빈 목록: %s
+                전체 항목은 최대 4개(주 일정 ≤2 + 키워드 ≤2)로 제한합니다. 없으면 빈 목록.
+
+                [오늘의 일정] %s
+                [대화]
+                %s
+                """.formatted(String.join(", ", Emotion.keys()), orNone(state.schedule()),
+                history(state));
     }
 
     /** 감정 추출(G1) — 대화 전체에서 감정을 뽑아 고정 10종 키로 정규화. */
@@ -115,12 +147,16 @@ public class PromptFactory {
                 state.needs().stream().map(Need::word).collect(Collectors.joining(", ")));
     }
 
-    /** 일기 생성(G4) — 사용자가 말한 사실·감정만으로 5~6줄, 1인칭. */
+    /** 일기 생성(G4) — 사용자가 말한 사실·감정을 살 붙여 1인칭으로, 최소 5문장 이상. */
     public String diaryPrompt(RetrospectState state) {
         return """
-                아래 대화를 사용자가 직접 말한 사실·감정만으로 5~6줄, 읽기 좋은 1인칭 일기로 정리하세요.
-                지어내지 말고, 지나친 교훈·평가·진단을 붙이지 마세요. 여러 사건이 나오면 핵심 사건과 핵심
-                감정을 중심으로 씁니다.
+                아래 대화를 바탕으로, 사용자가 오늘 직접 쓴 것처럼 자연스러운 1인칭 일기를 써 주세요.
+                - 분량: <b>최소 5문장 이상</b>. 짧게 요약하지 말고 넉넉하게 풀어 씁니다.
+                - 대화에서 나온 장면·행동·생각·감정에 <b>살을 덧붙여</b> 구체적으로 묘사합니다(그때의 상황,
+                  마음의 결, 사소한 감각까지). 딱딱한 요약이 아니라 실제 일기처럼 흐르게 씁니다.
+                - 다만 <b>대화에 없던 새로운 사실(사건·인물·장소)은 지어내지 마세요.</b> 있는 재료를 풍부하게
+                  풀어내는 것이지, 없던 일을 만들지 않습니다. 지나친 교훈·평가·진단도 붙이지 않습니다.
+                - 여러 사건이 나오면 핵심 사건과 핵심 감정을 중심으로 하되, 곁가지도 자연스럽게 녹입니다.
                 - diary: 일기 본문
                 - reframedDiary: 비워도 됩니다(null).
 
