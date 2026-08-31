@@ -9,6 +9,7 @@ import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiActions;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiEmotions;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiTopics;
 
 /**
  * Gemini {@code generationConfig.responseSchema} 로 넘길 응답 스키마 (v2 구조화 출력).
@@ -22,6 +23,7 @@ final class GeminiResponseSchemas {
             GeminiEmotions.class, emotionsSchema(),
             GeminiNeeds.class, needsSchema(),
             GeminiActions.class, actionsSchema(),
+            GeminiTopics.class, topicsSchema(),
             DiaryOutput.class, diarySchema());
 
     private GeminiResponseSchemas() {
@@ -39,6 +41,7 @@ final class GeminiResponseSchemas {
         props.put("meaning", str());
         props.put("emotionPresent", bool());
         props.put("question", str());
+        props.put("empathy", str());
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
         props.put("offTopic", bool());
@@ -75,6 +78,17 @@ final class GeminiResponseSchemas {
         props.put("diary", str());
         props.put("reframedDiary", str());
         return object(props, List.of("diary"));
+    }
+
+    /** 토픽 추출 — 주 일정·키워드(type/label) + 매칭 감정 키 목록. */
+    private static Map<String, Object> topicsSchema() {
+        LinkedHashMap<String, Object> item = new LinkedHashMap<>();
+        item.put("type", str());
+        item.put("label", str());
+        item.put("emotions", arrayOf(str()));
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        props.put("topics", arrayOf(object(item, List.of("type", "label"))));
+        return object(props, List.of());
     }
 
     private static Map<String, Object> object(LinkedHashMap<String, Object> properties,

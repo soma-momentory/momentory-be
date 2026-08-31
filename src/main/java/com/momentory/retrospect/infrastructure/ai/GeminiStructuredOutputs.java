@@ -26,4 +26,12 @@ final class GeminiStructuredOutputs {
     /** 작은 행동 후보 — 문자열들. */
     record GeminiActions(List<String> actions) {
     }
+
+    /** 토픽 한 건 — type 은 "SCHEDULE"/"KEYWORD", emotions 는 10종 키(어댑터가 Emotion 으로 매핑). */
+    record GeminiTopic(String type, String label, List<String> emotions) {
+    }
+
+    /** 토픽 추출 결과 — 주 일정·키워드 + 매칭 감정. */
+    record GeminiTopics(List<GeminiTopic> topics) {
+    }
 }
