@@ -37,8 +37,7 @@ public class DiaryFromRetrospectListener {
             return;
         }
         diaryRepository.save(Diary.create(event.userId(), event.retrospectId(),
-                diary.original(), diary.reframed(), diary.currentEmotion(),
-                diary.scheduleEmotion(), csvEmotions(diary.emotions())));
+                diary.original(), diary.primaryEmotion(), csvEmotions(diary.emotions())));
     }
 
     private static String csvEmotions(List<Emotion> emotions) {

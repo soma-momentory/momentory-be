@@ -40,7 +40,11 @@ public record ReplyDto(
      * 맡으므로 null 로 두고, 저장 뒤 {@link #withDiaryId} 가 채운다.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record DiaryDto(Long diaryId, String diary, String reframedDiary) {
+    public record DiaryDto(Long diaryId, String diary, List<String> emotions) {
+
+        public DiaryDto {
+            emotions = emotions == null ? List.of() : List.copyOf(emotions);
+        }
     }
 
     /**
@@ -60,7 +64,7 @@ public record ReplyDto(
         if (diary == null) {
             return this;
         }
-        DiaryDto withId = new DiaryDto(diaryId, diary.diary(), diary.reframedDiary());
+        DiaryDto withId = new DiaryDto(diaryId, diary.diary(), diary.emotions());
         return new ReplyDto(text, phase, options, withId, wishCard, done, safetyLevel);
     }
 

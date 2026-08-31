@@ -252,9 +252,9 @@ class UserWithdrawalControllerIntegrationTest {
                 """, userId, retrospectId, key + " situation", key + " action");
         jdbcTemplate.update("""
                 INSERT INTO diaries (
-                    user_id, retrospect_id, original, reframed, current_emotion
-                ) VALUES (?, ?, ?, ?, 'CALM')
-                """, userId, retrospectId, key + " original", key + " reframed");
+                    user_id, retrospect_id, original, primary_emotion
+                ) VALUES (?, ?, ?, 'CALM')
+                """, userId, retrospectId, key + " original");
 
         return new UserFixture(user, refreshToken, uniqueKey);
     }

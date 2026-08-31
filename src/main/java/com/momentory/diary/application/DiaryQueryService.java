@@ -78,7 +78,7 @@ public class DiaryQueryService {
                 .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
                         userId, start, end)) {
             byDate.putIfAbsent(DayBoundary.toLocalDate(diary.getCreatedAt()),
-                    diary.getCurrentEmotion());
+                    diary.getPrimaryEmotion());
         }
         return Collections.unmodifiableMap(byDate);
     }

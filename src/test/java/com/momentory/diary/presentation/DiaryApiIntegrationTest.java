@@ -97,18 +97,13 @@ class DiaryApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
 
         // 8월(KST · 04:00 하루 경계) — 셋. 하나는 8/1 04:00 KST 경계(포함).
-        seedDiary(user, "8월 늦은 일기", "8월 늦은 리프레임", Emotion.DEPRESSED, Emotion.ANXIOUS,
-                Instant.parse("2026-08-20T10:00:00Z"));
-        seedDiary(user, "8월 중간 일기", "8월 중간 리프레임", Emotion.ANGRY, Emotion.STUCK,
-                Instant.parse("2026-08-14T02:23:47Z"));
-        seedDiary(user, "8월 경계 포함", null, Emotion.CALM, null,
-                Instant.parse("2026-07-31T19:00:00Z")); // = 2026-08-01T04:00 KST (하루 경계)
+        seedDiary(user, "8월 늦은 일기", Emotion.DEPRESSED, Instant.parse("2026-08-20T10:00:00Z"));
+        seedDiary(user, "8월 중간 일기", Emotion.ANGRY, Instant.parse("2026-08-14T02:23:47Z"));
+        seedDiary(user, "8월 경계 포함", Emotion.CALM, Instant.parse("2026-07-31T19:00:00Z")); // = 2026-08-01T04:00 KST (하루 경계)
         // 7월(KST) 경계 제외 — 2026-08-01 03:59:59 KST 는 4시 전이라 아직 7/31 이다.
-        seedDiary(user, "7월 경계 제외", null, Emotion.TIRED, null,
-                Instant.parse("2026-07-31T18:59:59Z"));
+        seedDiary(user, "7월 경계 제외", Emotion.TIRED, Instant.parse("2026-07-31T18:59:59Z"));
         // 9월(KST) 제외.
-        seedDiary(user, "9월 일기", null, Emotion.PROUD, null,
-                Instant.parse("2026-09-01T00:00:00Z"));
+        seedDiary(user, "9월 일기", Emotion.PROUD, Instant.parse("2026-09-01T00:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user))
@@ -118,16 +113,11 @@ class DiaryApiIntegrationTest {
                 .andExpect(jsonPath("$.diaries.length()").value(3))
                 // 최신순: 8/20 → 8/14 → 8/1(경계)
                 .andExpect(jsonPath("$.diaries[0].original").value("8월 늦은 일기"))
-                .andExpect(jsonPath("$.diaries[0].reframed").value("8월 늦은 리프레임"))
-                .andExpect(jsonPath("$.diaries[0].currentEmotion").value("depressed"))
-                .andExpect(jsonPath("$.diaries[0].scheduleEmotion").value("anxious"))
+                .andExpect(jsonPath("$.diaries[0].primaryEmotion").value("depressed"))
                 .andExpect(jsonPath("$.diaries[0].createdAt").exists())
                 .andExpect(jsonPath("$.diaries[0].retrospectId").exists())
                 .andExpect(jsonPath("$.diaries[1].original").value("8월 중간 일기"))
-                .andExpect(jsonPath("$.diaries[2].original").value("8월 경계 포함"))
-                // 일정 감정이 없으면 필드 자체가 빠진다(NON_NULL)
-                .andExpect(jsonPath("$.diaries[2].scheduleEmotion").doesNotExist())
-                .andExpect(jsonPath("$.diaries[2].reframed").doesNotExist());
+                .andExpect(jsonPath("$.diaries[2].original").value("8월 경계 포함"));
     }
 
     @Test
@@ -135,10 +125,8 @@ class DiaryApiIntegrationTest {
     void monthlyListIsScopedToOwner() throws Exception {
         User owner = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
-        seedDiary(owner, "내 8월 일기", null, Emotion.DEPRESSED, Emotion.ANXIOUS,
-                Instant.parse("2026-08-10T01:00:00Z"));
-        seedDiary(other, "남의 8월 일기", null, Emotion.HAPPY, null,
-                Instant.parse("2026-08-11T01:00:00Z"));
+        seedDiary(owner, "내 8월 일기", Emotion.DEPRESSED, Instant.parse("2026-08-10T01:00:00Z"));
+        seedDiary(other, "남의 8월 일기", Emotion.HAPPY, Instant.parse("2026-08-11T01:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries")
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner))
@@ -155,12 +143,9 @@ class DiaryApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
 
         // 여러 달에 걸친 일기 — 월 경계와 무관하게 전부 와야 한다.
-        seedDiary(user, "9월 일기", null, Emotion.PROUD, null,
-                Instant.parse("2026-09-01T00:00:00Z"));
-        seedDiary(user, "8월 일기", "8월 리프레임", Emotion.DEPRESSED, Emotion.ANXIOUS,
-                Instant.parse("2026-08-14T02:00:00Z"));
-        seedDiary(user, "7월 일기", null, Emotion.CALM, null,
-                Instant.parse("2026-07-10T01:00:00Z"));
+        seedDiary(user, "9월 일기", Emotion.PROUD, Instant.parse("2026-09-01T00:00:00Z"));
+        seedDiary(user, "8월 일기", Emotion.DEPRESSED, Instant.parse("2026-08-14T02:00:00Z"));
+        seedDiary(user, "7월 일기", Emotion.CALM, Instant.parse("2026-07-10T01:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries/all")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user)))
@@ -169,7 +154,6 @@ class DiaryApiIntegrationTest {
                 // 최신순: 9월 → 8월 → 7월
                 .andExpect(jsonPath("$.diaries[0].original").value("9월 일기"))
                 .andExpect(jsonPath("$.diaries[1].original").value("8월 일기"))
-                .andExpect(jsonPath("$.diaries[1].reframed").value("8월 리프레임"))
                 .andExpect(jsonPath("$.diaries[2].original").value("7월 일기"));
     }
 
@@ -178,10 +162,8 @@ class DiaryApiIntegrationTest {
     void listAllIsScopedToOwner() throws Exception {
         User owner = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
-        seedDiary(owner, "내 일기", null, Emotion.DEPRESSED, null,
-                Instant.parse("2026-08-10T01:00:00Z"));
-        seedDiary(other, "남의 일기", null, Emotion.HAPPY, null,
-                Instant.parse("2026-08-11T01:00:00Z"));
+        seedDiary(owner, "내 일기", Emotion.DEPRESSED, Instant.parse("2026-08-10T01:00:00Z"));
+        seedDiary(other, "남의 일기", Emotion.HAPPY, Instant.parse("2026-08-11T01:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries/all")
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
@@ -213,17 +195,14 @@ class DiaryApiIntegrationTest {
     @DisplayName("단건 조회 — 전체 본문을 돌려준다")
     void getOneReturnsFullBody() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(user, "본문 전체", "리프레임 전체", Emotion.DEPRESSED, Emotion.ANXIOUS,
-                Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(user, "본문 전체", Emotion.DEPRESSED, Instant.parse("2026-08-14T02:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries/{id}", diaryId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value((int) diaryId))
                 .andExpect(jsonPath("$.original").value("본문 전체"))
-                .andExpect(jsonPath("$.reframed").value("리프레임 전체"))
-                .andExpect(jsonPath("$.currentEmotion").value("depressed"))
-                .andExpect(jsonPath("$.scheduleEmotion").value("anxious"))
+                .andExpect(jsonPath("$.primaryEmotion").value("depressed"))
                 .andExpect(jsonPath("$.createdAt").exists());
     }
 
@@ -232,8 +211,7 @@ class DiaryApiIntegrationTest {
     void getOneOfAnotherUserIs404() throws Exception {
         User owner = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(owner, "남의 일기", null, Emotion.CALM, null,
-                Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(owner, "남의 일기", Emotion.CALM, Instant.parse("2026-08-14T02:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries/{id}", diaryId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(other)))
@@ -266,8 +244,7 @@ class DiaryApiIntegrationTest {
     @DisplayName("삭제 — 일기만 지운다. 행동 카드와 회고 세션은 남는다")
     void deleteRemovesOnlyDiary() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(user, "지울 일기", null, Emotion.CALM, null,
-                Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(user, "지울 일기", Emotion.CALM, Instant.parse("2026-08-14T02:00:00Z"));
         long retrospectId = jdbcTemplate.queryForObject(
                 "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
         // 같은 회고에 딸린 행동 카드 — 삭제 뒤에도 자기 보관함에 남아야 한다
@@ -288,8 +265,7 @@ class DiaryApiIntegrationTest {
     void deletingAnotherUsersDiaryIs404() throws Exception {
         User owner = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(owner, "남의 일기", null, Emotion.CALM, null,
-                Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(owner, "남의 일기", Emotion.CALM, Instant.parse("2026-08-14T02:00:00Z"));
 
         mockMvc.perform(delete("/api/v1/diaries/{id}", diaryId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(other)))
@@ -319,11 +295,10 @@ class DiaryApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("본문 수정 — 회고 id 로 찾아 original 을 바꾼다(reframed·감정은 그대로)")
+    @DisplayName("본문 수정 — 회고 id 로 찾아 original 을 바꾼다(대표 감정은 그대로)")
     void updateByRetrospectChangesOriginal() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(user, "원래 본문", "바바의 문장", Emotion.DEPRESSED, Emotion.ANXIOUS,
-                Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(user, "원래 본문", Emotion.DEPRESSED, Instant.parse("2026-08-14T02:00:00Z"));
         long retrospectId = jdbcTemplate.queryForObject(
                 "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
 
@@ -334,9 +309,8 @@ class DiaryApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value((int) diaryId))
                 .andExpect(jsonPath("$.original").value("내가 고친 본문"))
-                // 바바의 문장·감정은 건드리지 않는다
-                .andExpect(jsonPath("$.reframed").value("바바의 문장"))
-                .andExpect(jsonPath("$.currentEmotion").value("depressed"));
+                // 대표 감정은 건드리지 않는다
+                .andExpect(jsonPath("$.primaryEmotion").value("depressed"));
 
         String stored = jdbcTemplate.queryForObject(
                 "SELECT original FROM diaries WHERE id = ?", String.class, diaryId);
@@ -348,8 +322,7 @@ class DiaryApiIntegrationTest {
     void updatingAnotherUsersDiaryIs404() throws Exception {
         User owner = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(owner, "원래 본문", null, Emotion.CALM, null,
-                Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(owner, "원래 본문", Emotion.CALM, Instant.parse("2026-08-14T02:00:00Z"));
         long retrospectId = jdbcTemplate.queryForObject(
                 "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
 
@@ -369,8 +342,7 @@ class DiaryApiIntegrationTest {
     @DisplayName("본문 수정 — 빈 본문은 400")
     void updatingWithBlankOriginalIs400() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(user, "원래 본문", null, Emotion.CALM, null,
-                Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(user, "원래 본문", Emotion.CALM, Instant.parse("2026-08-14T02:00:00Z"));
         long retrospectId = jdbcTemplate.queryForObject(
                 "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
 
@@ -414,18 +386,16 @@ class DiaryApiIntegrationTest {
     }
 
     /** 회고(FK 대상)를 실제 저장하고, 그에 딸린 일기를 지정한 {@code createdAt} 으로 직접 넣는다. */
-    private long seedDiary(User user, String original, String reframed, Emotion current,
-            Emotion schedule, Instant createdAt) {
+    private long seedDiary(User user, String original, Emotion current, Instant createdAt) {
         Retrospect retrospect = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
                 RetrospectStatus.COMPLETED, null, "{}"));
         OffsetDateTime at = OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC);
         jdbcTemplate.update("""
-                INSERT INTO diaries (user_id, retrospect_id, original, reframed, current_emotion,
-                                     schedule_emotion, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO diaries (user_id, retrospect_id, original, primary_emotion,
+                                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                user.getId(), retrospect.getId(), original, reframed, current.name(),
-                schedule == null ? null : schedule.name(), at, at);
+                user.getId(), retrospect.getId(), original, current.name(), at, at);
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM diaries WHERE retrospect_id = ?", Long.class, retrospect.getId());
     }
