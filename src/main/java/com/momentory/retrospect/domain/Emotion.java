@@ -10,15 +10,17 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 감정 택소노미 9종 — 값 객체 (원본 emotions.py).
+ * 감정 택소노미 10종 — 값 객체.
  *
- * <p>선언 순서는 원본 {@code EMOTIONS} 리스트 순서와 같아야 한다 — 클라이언트가 번호로 고를 때 쓰인다.
+ * <p>회고 채팅 v2 에서 {@code 화남/답답}을 {@code 화남}(ANGRY)과 {@code 답답함}(FRUSTRATED)으로 분리했다.
+ * 저장·전송은 {@link #key()}(문자열)로 하므로 클라이언트의 긍정→부정 번호 규약과 이 선언 순서는 독립이다.
  */
 public enum Emotion {
 
     ANXIOUS("anxious", "불안함", "불안"),
     DEPRESSED("depressed", "우울함", "우울"),
-    ANGRY("angry", "화남/답답", "답답"),
+    ANGRY("angry", "화남", "화남"),
+    FRUSTRATED("frustrated", "답답함", "답답"),
     HAPPY("happy", "행복함", "행복"),
     STUCK("stuck", "막막함", "막막"),
     LETHARGIC("lethargic", "무기력", "무기력"),
@@ -31,13 +33,17 @@ public enum Emotion {
             Collections.unmodifiableSet(EnumSet.of(HAPPY, PROUD, CALM));
 
     private static final Map<String, Emotion> BY_KEY;
+    private static final Map<String, Emotion> BY_LABEL;
 
     static {
-        Map<String, Emotion> m = new LinkedHashMap<>();
+        Map<String, Emotion> byKey = new LinkedHashMap<>();
+        Map<String, Emotion> byLabel = new LinkedHashMap<>();
         for (Emotion e : values()) {
-            m.put(e.key, e);
+            byKey.put(e.key, e);
+            byLabel.put(e.label, e);
         }
-        BY_KEY = Collections.unmodifiableMap(m);
+        BY_KEY = Collections.unmodifiableMap(byKey);
+        BY_LABEL = Collections.unmodifiableMap(byLabel);
     }
 
     private final String key;
@@ -72,6 +78,11 @@ public enum Emotion {
 
     public static Optional<Emotion> fromKey(String key) {
         return Optional.ofNullable(key == null ? null : BY_KEY.get(key));
+    }
+
+    /** 라벨(예: "답답함")로 감정을 찾는다 — 선택지 라벨을 되돌려 받을 때 쓴다. */
+    public static Optional<Emotion> fromLabel(String label) {
+        return Optional.ofNullable(label == null ? null : BY_LABEL.get(label.strip()));
     }
 
     public static boolean isValid(String key) {

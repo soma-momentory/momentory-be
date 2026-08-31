@@ -4,81 +4,84 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import com.momentory.retrospect.domain.assistant.DiaryOutput;
-import com.momentory.retrospect.domain.assistant.DiaryWriter;
-import com.momentory.retrospect.domain.assistant.TurnScript;
-import com.momentory.retrospect.domain.assistant.TurnScripter;
-import com.momentory.retrospect.domain.assistant.UnderstandingCheck;
-import com.momentory.retrospect.domain.assistant.UnderstandingChecker;
+import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.RetrospectState;
-import com.momentory.retrospect.domain.script.OptionItem;
-import com.momentory.retrospect.domain.script.ScriptStep;
+import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
+import com.momentory.retrospect.domain.assistant.DiaryOutput;
+import com.momentory.retrospect.domain.assistant.DiaryTurn;
+import com.momentory.retrospect.domain.assistant.DiaryWriter;
+import com.momentory.retrospect.domain.assistant.EmotionExtractor;
+import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
 
 /**
- * AI 포트 3종의 페이크 — 네트워크 없이 엔진 흐름을 검증한다.
+ * v2 AI 포트 4종의 페이크 — 네트워크 없이 엔진 흐름을 결정적으로 검증한다.
  *
- * <p>기본은 성공 경로: 이해 확인·턴 문구·일기를 예측 가능한 문구로 돌려준다.
- * {@code fail*} 플래그를 켜면 empty 를 돌려줘 폴백 경로를 검증한다.
+ * <p>일기 작성 턴은 설정된 슬롯(사건·의미·감정 표현 여부)과 질문을 돌려주고, 감정 추출·욕구·행동
+ * 후보도 설정값으로 준다. {@code fail*} 플래그를 켜면 empty/빈 목록을 돌려 폴백 경로를 검증한다.
  */
-class FakeAssistant implements UnderstandingChecker, TurnScripter, DiaryWriter {
+class FakeAssistant
+        implements DiaryChatAssistant, EmotionExtractor, ExplorationAssistant, DiaryWriter {
 
-    boolean failUnderstanding;
-    boolean failTurns;
-    boolean failDiary;
-    String turnSafetyLevel = "none";
-    /** true 로 켜면 다음 G2/G1 판정이 이탈(offTopic)로 나와 엔진이 되묻는다. */
+    // 일기 작성 턴이 돌려줄 슬롯·질문
+    boolean failDiaryChat;
+    String turnEvent;
+    String turnMeaning;
+    boolean turnEmotionPresent;
+    String turnQuestion = "조금 더 들려줄래요?";
+    String turnEmpathy;
     boolean turnOffTopic;
-    boolean understandingOffTopic;
-    /** true 로 켜면 다음 G2/G1 판정이 얼버무림(vague)으로 나와 엔진이 발판 멘트로 되묻는다. */
     boolean turnVague;
-    boolean understandingVague;
-    /** null 이면 기본 문구("[AI] <stepId> 질문")를 쓴다. */
-    String turnMessage;
-    /** true 로 켜면 쉬는 행동 스텝(restAction)의 첫 보기에 선호 표식을 단다 — AI 경로 태깅 검증용. */
-    boolean tagRestPreference;
+    String turnSafetyLevel = "none";
 
-    int understandingCalls;
-    int diaryCalls;
-    final List<String> scriptedStepIds = new ArrayList<>();
+    // 대화 끝 감정 추출 결과
+    final List<ExtractedEmotion> emotions = new ArrayList<>();
+    // 감정 탐색 후보
+    final List<Need> needs = new ArrayList<>();
+    final List<String> actions = new ArrayList<>();
+
+    // 일기 생성
+    boolean failDiary;
+
+    // 호출 기록
+    int diaryTurnCalls;
+    int extractCalls;
+    int diaryWriteCalls;
+    final List<String> diaryTurnInputs = new ArrayList<>();
 
     @Override
-    public Optional<UnderstandingCheck> check(RetrospectState state, String firstAnswer) {
-        understandingCalls++;
-        if (failUnderstanding) {
+    public Optional<DiaryTurn> turn(RetrospectState state, String userText) {
+        diaryTurnCalls++;
+        diaryTurnInputs.add(userText);
+        if (failDiaryChat) {
             return Optional.empty();
         }
-        return Optional.of(new UnderstandingCheck(
-                "모의 면접에서 답변을 제대로 하지 못해 불안했고, 다른 사람들과 비교하면서 지금은 "
-                        + "우울해진 것 같네요.",
-                "모의 면접에서 준비한 내용을 제대로 말하지 못함",
-                "none", List.of(), understandingOffTopic, understandingVague, false));
+        return Optional.of(new DiaryTurn(turnEvent, List.of(), turnMeaning, turnEmotionPresent,
+                turnQuestion, turnEmpathy, turnSafetyLevel, List.of(), turnOffTopic, turnVague));
     }
 
     @Override
-    public Optional<TurnScript> script(RetrospectState state, ScriptStep step) {
-        scriptedStepIds.add(step.id());
-        if (failTurns) {
-            return Optional.empty();
-        }
-        List<OptionItem> options = new ArrayList<>();
-        if (step.isChoice()) {
-            for (int i = 1; i <= step.optionCount(); i++) {
-                boolean pref = tagRestPreference && step.restAction() && i == 1;
-                options.add(new OptionItem("[" + step.id() + "] 보기" + i,
-                        step.describedOptions() ? "보기" + i + " 설명" : null, null, false, pref));
-            }
-        }
-        String message = turnMessage != null ? turnMessage : "[AI] " + step.id() + " 질문";
-        return Optional.of(new TurnScript(message, options, turnSafetyLevel, List.of(),
-                turnOffTopic, turnVague, false));
+    public List<ExtractedEmotion> extract(RetrospectState state) {
+        extractCalls++;
+        return List.copyOf(emotions);
+    }
+
+    @Override
+    public List<Need> suggestNeeds(RetrospectState state) {
+        return List.copyOf(needs);
+    }
+
+    @Override
+    public List<String> suggestActions(RetrospectState state) {
+        return List.copyOf(actions);
     }
 
     @Override
     public Optional<DiaryOutput> write(RetrospectState state) {
-        diaryCalls++;
+        diaryWriteCalls++;
         if (failDiary) {
             return Optional.empty();
         }
-        return Optional.of(new DiaryOutput("오늘의 그냥 일기.", "오늘의 리프레이밍 일기."));
+        return Optional.of(new DiaryOutput("오늘의 일기.", null));
     }
 }

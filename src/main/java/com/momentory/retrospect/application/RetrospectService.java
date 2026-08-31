@@ -1,7 +1,9 @@
 package com.momentory.retrospect.application;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -12,9 +14,15 @@ import org.springframework.transaction.annotation.Transactional;
 import com.momentory.actioncard.application.ActionCardQueryService;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.diary.application.DiaryQueryService;
+import com.momentory.retrospect.domain.Emotion;
+import com.momentory.retrospect.domain.ExtractedTopic;
+import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.RetrospectStatus;
+import com.momentory.retrospect.domain.TopicType;
+import com.momentory.retrospect.domain.WishSentiment;
+import com.momentory.retrospect.domain.assistant.TopicExtractor;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
@@ -45,13 +53,14 @@ public class RetrospectService {
     private final UserProfileRepository userProfileRepository;
     private final ScheduleRepository scheduleRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final TopicExtractor topicExtractor;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
             PriorActionCardRecommender priorActionCardRecommender,
             RetrospectStateCodec codec, UserRepository userRepository,
             UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher, TopicExtractor topicExtractor) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
@@ -62,6 +71,7 @@ public class RetrospectService {
         this.userProfileRepository = userProfileRepository;
         this.scheduleRepository = scheduleRepository;
         this.eventPublisher = eventPublisher;
+        this.topicExtractor = topicExtractor;
     }
 
     /**
@@ -77,8 +87,7 @@ public class RetrospectService {
         ReplyDto reply = engine.start(state, command, preferredRestMethods(userId));
 
         Retrospect entity = Retrospect.start(userId, RetrospectStatus.from(state.phase()),
-                state.mode(), resolveScheduleId(userId, state.scheduleId()),
-                state.currentEmotion(), codec.serialize(state));
+                resolveScheduleId(userId, state.scheduleId()), codec.serialize(state));
         retrospectRepository.save(entity);
 
         return new RetrospectResult(entity.getId(), reply);
@@ -125,8 +134,8 @@ public class RetrospectService {
             enriched = enriched.withDiaryId(
                     diaryQueryService.findDiaryIdByRetrospect(retrospectId).orElse(null));
         }
-        if (enriched.actionCard() != null) {
-            enriched = enriched.withActionCardId(
+        if (enriched.wishCard() != null) {
+            enriched = enriched.withWishCardId(
                     actionCardQueryService.findIdByRetrospect(retrospectId).orElse(null));
         }
         return enriched;
@@ -135,8 +144,7 @@ public class RetrospectService {
     private void sync(Retrospect entity, RetrospectState state, ReplyDto reply) {
         Phase phase = state.phase();
         Instant completedAt = phase.isTerminal() ? Instant.now() : null;
-        entity.sync(RetrospectStatus.from(phase), state.mode(), codec.serialize(state),
-                completedAt);
+        entity.sync(RetrospectStatus.from(phase), codec.serialize(state), completedAt);
         announceCompletion(entity, state, reply);
     }
 
@@ -147,21 +155,83 @@ public class RetrospectService {
      */
     private void announceCompletion(Retrospect entity, RetrospectState state, ReplyDto reply) {
         RetrospectCompleted.DiaryData diary = reply.diary() == null ? null
-                : new RetrospectCompleted.DiaryData(state.currentEmotion(), state.scheduleEmotion(),
-                        reply.diary().diary(), reply.diary().reframedDiary());
-        RetrospectCompleted.ActionCardData card = reply.actionCard() == null ? null
-                : new RetrospectCompleted.ActionCardData(reply.actionCard().situation(),
-                        reply.actionCard().action(), fromRestPreference(state));
-        if (diary == null && card == null) {
+                : new RetrospectCompleted.DiaryData(primaryEmotion(state),
+                        reply.diary().diary(), emotionTags(state));
+        RetrospectCompleted.WishCardData card = reply.wishCard() == null ? null
+                : new RetrospectCompleted.WishCardData(reply.wishCard().situation(),
+                        state.confirmedEmotions(),
+                        state.needs().stream().map(Need::word).toList(),
+                        state.desiredState(), state.smallAction(),
+                        WishSentiment.of(state.confirmedEmotions()).key());
+        // 토픽 추출(G5)은 완료 시점에만 — 일기가 나온 턴에서 대화 전체를 근거로 한 번 뽑는다.
+        // (announceCompletion 은 매 턴 호출되므로, 여기서 매 턴 추출하면 낭비 + 대화 초반 부분 데이터가
+        //  조기 저장되고 완료 시점의 제대로 된 추출이 존재 가드에 막힌다.)
+        List<RetrospectCompleted.TopicData> topics = diary == null ? List.of() : topicsFrom(state);
+        if (diary == null && card == null && topics.isEmpty()) {
             return;
         }
         eventPublisher.publishEvent(
-                new RetrospectCompleted(entity.getId(), entity.getUserId(), diary, card));
+                new RetrospectCompleted(entity.getId(), entity.getUserId(), diary, card, topics));
     }
 
-    /** 사용자가 최종 선택한 행동이 '쉬는 방법 선호'로 만든 카드였는지 — 분석용 내부 표식(비노출). */
-    private boolean fromRestPreference(RetrospectState state) {
-        return state.chosenAction() != null && state.chosenAction().restPreference();
+    /**
+     * 채팅에서 뽑은 토픽(주 일정·키워드 + 매칭 감정) — <b>저장 경로만 먼저 깔았다.</b> 실제 추출(주 일정
+     * 1~2개와 키워드 N개를 대화에서 뽑아 감정을 매칭)은 후속 작업이고, 그때 이 메서드가 {@code state}
+     * 에서 토픽을 만들어 채운다. 지금은 빈 목록이라 토픽 리스너가 돌지 않는다.
+     */
+    /**
+     * 대화에서 뽑은 토픽(주 일정·키워드 + 매칭 감정)을 완료 이벤트에 실을 형태로 만든다. 대화 소재가
+     * 아예 없으면(사건·일정 둘 다 없음) 추출 호출 없이 빈 목록. 주 일정 토픽이 시작 시 고른 그 일정과
+     * 같으면 실제 일정 id 로 잇는다(자유 텍스트/키워드면 null).
+     */
+    private List<RetrospectCompleted.TopicData> topicsFrom(RetrospectState state) {
+        if (state.event() == null && !state.hasSchedule()) {
+            return List.of();
+        }
+        List<RetrospectCompleted.TopicData> topics = new ArrayList<>();
+        for (ExtractedTopic t : topicExtractor.extract(state)) {
+            topics.add(new RetrospectCompleted.TopicData(t.type(), linkedScheduleId(state, t),
+                    t.label(), t.emotions()));
+        }
+        return topics;
+    }
+
+    /** 뽑힌 주 일정이 시작 시 고른 일정과 이름이 겹치면 그 일정 id 로 잇는다. 아니면 null. */
+    private static Long linkedScheduleId(RetrospectState state, ExtractedTopic topic) {
+        if (topic.type() != TopicType.SCHEDULE || state.scheduleId() == null
+                || state.schedule() == null) {
+            return null;
+        }
+        String picked = state.schedule().strip();
+        String label = topic.label().strip();
+        return label.contains(picked) || picked.contains(label) ? state.scheduleId() : null;
+    }
+
+    /**
+     * 일기에 실을 대표 감정 — 확인된 감정 → 추출 감정 순. 둘 다 없으면(감정 없이 끝난 일기) null.
+     * v2 다중 감정 태그가 자리 잡기 전까지 기존 단일 {@code current_emotion} 계약을 채우는 임시 매핑이다.
+     */
+    private static Emotion primaryEmotion(RetrospectState state) {
+        if (!state.confirmedEmotions().isEmpty()) {
+            return state.confirmedEmotions().get(0);
+        }
+        for (var e : state.emotions()) {
+            if (e.normalized() != null) {
+                return e.normalized();
+            }
+        }
+        return null;
+    }
+
+    /** v2 일기 감정 태그 — 확인된 감정 + 추출된 정규화 감정(중복 제거, 확인된 것 우선). */
+    private static List<Emotion> emotionTags(RetrospectState state) {
+        LinkedHashSet<Emotion> tags = new LinkedHashSet<>(state.confirmedEmotions());
+        for (var e : state.emotions()) {
+            if (e.normalized() != null) {
+                tags.add(e.normalized());
+            }
+        }
+        return List.copyOf(tags);
     }
 
     private Retrospect requireSession(Long userId, Long id) {

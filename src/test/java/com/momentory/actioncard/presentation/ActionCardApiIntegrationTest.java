@@ -386,7 +386,7 @@ class ActionCardApiIntegrationTest {
     /** 회고(FK 대상)를 실제 저장하고, 그에 딸린 행동 카드를 지정한 {@code createdAt} 으로 직접 넣는다. */
     private long seedCard(User user, String situation, String targetAction, Instant createdAt) {
         Retrospect retrospect = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
-                RetrospectStatus.COMPLETED, RetroMode.REFRAME, null, Emotion.DEPRESSED, "{}"));
+                RetrospectStatus.COMPLETED, null, "{}"));
         OffsetDateTime at = OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC);
         LocalDate createdDate = createdAt.atZone(ZoneOffset.ofHours(9)).toLocalDate();
         jdbcTemplate.update("""

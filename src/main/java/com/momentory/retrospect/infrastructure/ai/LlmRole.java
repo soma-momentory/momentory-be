@@ -15,7 +15,9 @@ public enum LlmRole {
     /** AI 없이 템플릿으로 처리한 턴(고정 스크립트·측정·AI 실패 폴백). 호출 0회 — 계측에만 등장. */
     G2_FALLBACK("AI-G2-fallback"),
     /** 일기 생성(그냥+리프레이밍을 한 호출로). 세션당 1회. */
-    G4("AI-G4");
+    G4("AI-G4"),
+    /** 토픽 추출 — 주 일정·키워드 + 감정 매칭. 완료 시 1회. */
+    G5("AI-G5");
 
     private final String key;
 

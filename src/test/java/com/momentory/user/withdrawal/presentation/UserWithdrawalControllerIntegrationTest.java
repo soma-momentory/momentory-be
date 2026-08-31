@@ -241,8 +241,8 @@ class UserWithdrawalControllerIntegrationTest {
                 """, userId, key + " memo");
         Long retrospectId = jdbcTemplate.queryForObject("""
                 INSERT INTO retrospects (
-                    user_id, status, schedule_id, current_emotion, state_json
-                ) VALUES (?, 'COMPLETED', ?, 'CALM', '{}')
+                    user_id, status, schedule_id, state_json
+                ) VALUES (?, 'COMPLETED', ?, '{}')
                 RETURNING id
                 """, Long.class, userId, scheduleId);
         jdbcTemplate.update("""
@@ -252,9 +252,9 @@ class UserWithdrawalControllerIntegrationTest {
                 """, userId, retrospectId, key + " situation", key + " action");
         jdbcTemplate.update("""
                 INSERT INTO diaries (
-                    user_id, retrospect_id, original, reframed, current_emotion
-                ) VALUES (?, ?, ?, ?, 'CALM')
-                """, userId, retrospectId, key + " original", key + " reframed");
+                    user_id, retrospect_id, original, primary_emotion
+                ) VALUES (?, ?, ?, 'CALM')
+                """, userId, retrospectId, key + " original");
 
         return new UserFixture(user, refreshToken, uniqueKey);
     }

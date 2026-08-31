@@ -1,11 +1,14 @@
 package com.momentory.diary.application;
 
+import java.util.List;
+
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.momentory.diary.domain.Diary;
 import com.momentory.diary.infrastructure.DiaryRepository;
 import com.momentory.retrospect.application.RetrospectCompleted;
+import com.momentory.retrospect.domain.Emotion;
 
 /**
  * 회고 완료 이벤트를 받아 일기를 남기는 diary 컨텍스트의 진입점 — 쓰기 방향에서 retrospect 와의
@@ -34,7 +37,11 @@ public class DiaryFromRetrospectListener {
             return;
         }
         diaryRepository.save(Diary.create(event.userId(), event.retrospectId(),
-                diary.original(), diary.reframed(), diary.currentEmotion(),
-                diary.scheduleEmotion()));
+                diary.original(), diary.primaryEmotion(), csvEmotions(diary.emotions())));
+    }
+
+    private static String csvEmotions(List<Emotion> emotions) {
+        return emotions.isEmpty() ? null
+                : String.join(",", emotions.stream().map(Emotion::key).toList());
     }
 }
