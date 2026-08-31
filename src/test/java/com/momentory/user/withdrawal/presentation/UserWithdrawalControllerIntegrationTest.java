@@ -241,8 +241,8 @@ class UserWithdrawalControllerIntegrationTest {
                 """, userId, key + " memo");
         Long retrospectId = jdbcTemplate.queryForObject("""
                 INSERT INTO retrospects (
-                    user_id, status, schedule_id, current_emotion, state_json
-                ) VALUES (?, 'COMPLETED', ?, 'CALM', '{}')
+                    user_id, status, schedule_id, state_json
+                ) VALUES (?, 'COMPLETED', ?, '{}')
                 RETURNING id
                 """, Long.class, userId, scheduleId);
         jdbcTemplate.update("""
