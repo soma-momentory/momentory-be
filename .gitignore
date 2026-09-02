@@ -14,3 +14,8 @@ local.properties
 
 # macOS
 .DS_Store
+
+# 평가용 실제 데이터 — 세 사람이 쓴 회고 대화와 그 골드 라벨은 개인적인 이야기다.
+# 도구와 합성 challenge 세트는 커밋하되, 실제 데이터는 리포에 남기지 않는다.
+eval/data/*
+!eval/data/README.md
