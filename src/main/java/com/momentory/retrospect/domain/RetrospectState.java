@@ -65,6 +65,11 @@ public class RetrospectState {
     private final List<ExtractedEvent> events = new ArrayList<>();
     /** 감정 — 대화 끝에 {@link com.momentory.retrospect.domain.assistant.EmotionExtractor} 가 한 번에 채운다. */
     private final List<ExtractedEmotion> emotions = new ArrayList<>();
+    /**
+     * 대화에 감정이 없을 때 모델이 고른 <b>화면용</b> 감정 — 추출이 아니라 추론이다.
+     * {@link #emotions} 와 섞지 않는다(채점 대상이 아니다). 감정 탐색 1턴의 후보가 빌 때만 쓴다.
+     */
+    private Emotion inferredEmotion;
     /** 감정 표현이 대화에 한 번이라도 담겼는가 — 이른 종료 판정의 감정 신호. */
     private boolean emotionSeen;
     /** 무엇이 마음에 남았는가. */
@@ -286,6 +291,15 @@ public class RetrospectState {
         }
     }
 
+    public Emotion inferredEmotion() {
+        return inferredEmotion;
+    }
+
+    /** 뽑은 감정이 있으면 추론값은 두지 않는다. */
+    public void inferredEmotion(Emotion inferred) {
+        this.inferredEmotion = emotions.isEmpty() ? inferred : null;
+    }
+
     public boolean emotionSeen() {
         return emotionSeen;
     }
@@ -457,7 +471,7 @@ public class RetrospectState {
                 id, nickname, scheduleId, schedule, scheduleEmotion, interest,
                 List.copyOf(restMethods), phase, heldFrom, reasks, abuseStreak,
                 diaryTurn, event, List.copyOf(secondaryEvents), List.copyOf(events),
-                List.copyOf(emotions), emotionSeen,
+                List.copyOf(emotions), inferredEmotion, emotionSeen,
                 meaning, diaryDraft, diaryUserEnded,
                 explorationEntered, explorationTurn, List.copyOf(confirmedEmotions),
                 List.copyOf(needs), desiredState, smallAction,
@@ -490,6 +504,7 @@ public class RetrospectState {
         if (s.emotions() != null) {
             state.emotions.addAll(s.emotions());
         }
+        state.inferredEmotion = s.inferredEmotion();
         state.emotionSeen = s.emotionSeen();
         state.meaning = s.meaning();
         state.diaryDraft = s.diaryDraft();

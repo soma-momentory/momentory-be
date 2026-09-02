@@ -285,6 +285,7 @@ public class RetrospectEngine {
         EmotionExtraction extraction = emotionExtractor.extract(state);
         state.events(extraction.events());
         state.emotions(extraction.emotions());
+        state.inferredEmotion(extraction.inferredEmotion());
         DiaryOutput out = diaryWriter.write(state).orElseGet(() -> fallbackDiary(state));
         state.diaryDraft(out.diary());
     }
@@ -370,11 +371,20 @@ public class RetrospectEngine {
         };
     }
 
-    /** 1턴 — 감정 확인 질문 + 후보(추출 감정) 제시. */
+    /**
+     * 1턴 — 감정 확인 질문 + 후보 제시.
+     *
+     * <p>후보는 추출한 감정이다. 대화에 감정 표현이 아예 없어 비면 모델이 고른 추론 감정
+     * ({@link RetrospectState#inferredEmotion()})을 대신 보여준다 — 빈 선택지를 내밀지 않기 위해서다.
+     * 추론값은 사용자가 고르기 전까지 어디에도 기록되지 않는다(고르면 확인 감정이 된다).
+     */
     private ReplyDto presentEmotionConfirm(RetrospectState state) {
         List<Choice> options = new ArrayList<>();
         for (Emotion e : distinctNormalized(state.emotions())) {
             options.add(Choice.of(e.label()));
+        }
+        if (options.isEmpty() && state.inferredEmotion() != null) {
+            options.add(Choice.of(state.inferredEmotion().label()));
         }
         state.lastOptions(options);
         String text = "그 일을 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?";

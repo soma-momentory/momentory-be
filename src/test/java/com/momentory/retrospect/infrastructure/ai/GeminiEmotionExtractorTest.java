@@ -45,7 +45,8 @@ class GeminiEmotionExtractorTest {
         respond(new GeminiExtraction(
                 List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1))),
                 List.of(new GeminiEmotion(1, "너무 불안했어요", "anxious", 3, "before",
-                        "준비가 부족했어요", List.of(1)))));
+                        "준비가 부족했어요", List.of(1))),
+                null));
 
         EmotionExtraction result = extractor.extract(state());
 
@@ -63,7 +64,8 @@ class GeminiEmotionExtractorTest {
         respond(new GeminiExtraction(
                 List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1))),
                 List.of(new GeminiEmotion(7, "불안했어요", "anxious", 2, "now", "불안해요",
-                        List.of(1)))));
+                        List.of(1))),
+                null));
 
         EmotionExtraction result = extractor.extract(state());
 
@@ -79,7 +81,8 @@ class GeminiEmotionExtractorTest {
                         new GeminiEvent(2, "빈 사건", "  ", List.of(2)),
                         new GeminiEvent(3, "다툼", "친구와 다툼", List.of(3)),
                         new GeminiEvent(4, "산책", "저녁 산책", List.of(4))),
-                List.of()));
+                List.of(),
+                null));
 
         EmotionExtraction result = extractor.extract(state());
 
@@ -94,7 +97,8 @@ class GeminiEmotionExtractorTest {
         respond(new GeminiExtraction(
                 List.of(),
                 List.of(new GeminiEmotion(null, "설렜어요", "excited", 2, "someday", "설렜어요",
-                        List.of(1)))));
+                        List.of(1))),
+                null));
 
         EmotionExtraction result = extractor.extract(state());
 
@@ -114,4 +118,30 @@ class GeminiEmotionExtractorTest {
         assertThat(result.emotions()).isEmpty();
     }
 
+
+    @Test
+    @DisplayName("감정이 없을 때만 추론 감정을 받는다 — 화면 후보용이지 추출 결과가 아니다")
+    void keepsInferredEmotionOnlyWhenNoneExtracted() {
+        respond(new GeminiExtraction(
+                List.of(new GeminiEvent(1, "업무", "회의와 자료 정리", List.of(1))),
+                List.of(),
+                "calm"));
+
+        EmotionExtraction result = extractor.extract(state());
+
+        assertThat(result.emotions()).isEmpty();
+        assertThat(result.inferredEmotion()).isEqualTo(Emotion.CALM);
+    }
+
+    @Test
+    @DisplayName("뽑은 감정이 있으면 추론 감정은 버린다 — 둘이 함께 있을 이유가 없다")
+    void dropsInferredEmotionWhenEmotionsExist() {
+        respond(new GeminiExtraction(
+                List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1))),
+                List.of(new GeminiEmotion(1, "불안했어요", "anxious", 3, "during", "불안해요",
+                        List.of(1))),
+                "calm"));
+
+        assertThat(extractor.extract(state()).inferredEmotion()).isNull();
+    }
 }

@@ -29,6 +29,7 @@ public record RetrospectStateSnapshot(
         List<String> secondaryEvents,
         List<ExtractedEvent> events,
         List<ExtractedEmotion> emotions,
+        Emotion inferredEmotion,
         boolean emotionSeen,
         String meaning,
         String diaryDraft,

@@ -53,7 +53,8 @@ public class GeminiEmotionExtractor implements EmotionExtractor {
         }
         List<ExtractedEvent> events = toEvents(raw.events());
         Set<Integer> eventIds = events.stream().map(ExtractedEvent::id).collect(Collectors.toSet());
-        return new EmotionExtraction(events, toEmotions(raw.emotions(), eventIds));
+        return new EmotionExtraction(events, toEmotions(raw.emotions(), eventIds),
+                Emotion.fromKey(raw.inferredEmotion()).orElse(null));
     }
 
     private static List<ExtractedEvent> toEvents(List<GeminiEvent> raw) {

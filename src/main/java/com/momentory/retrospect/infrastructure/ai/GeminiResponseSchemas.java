@@ -73,6 +73,7 @@ final class GeminiResponseSchemas {
         props.put("events",
                 arrayOf(object(event, List.of("id", "label", "summary", "evidence"))));
         props.put("emotions", arrayOf(object(emotion, List.of("raw"))));
+        props.put("inferredEmotion", str());
         return object(props, List.of());
     }
 

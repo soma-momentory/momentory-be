@@ -23,8 +23,14 @@ final class GeminiStructuredOutputs {
             String phase, String evidence, List<Integer> evidenceIds) {
     }
 
-    /** 추출 결과 — 사건(≤2)과 감정을 한 콜로 (모델 비교 계획 §3.1, §3.4). */
-    record GeminiExtraction(List<GeminiEvent> events, List<GeminiEmotion> emotions) {
+    /**
+     * 추출 결과 — 사건(≤2)과 감정을 한 콜로 (모델 비교 계획 §3.1, §3.4).
+     *
+     * <p>{@code inferredEmotion} 은 <b>추출이 아니라 추론</b>이다 — emotions 가 비었을 때만 화면에
+     * 보여줄 후보로 모델이 고른다. 채점 대상이 아니므로 emotions 와 섞지 않는다.
+     */
+    record GeminiExtraction(List<GeminiEvent> events, List<GeminiEmotion> emotions,
+            String inferredEmotion) {
     }
 
     /** 바람(욕구) 후보 — 고정 목록에서 고른 단어들(어댑터가 Needs 로 검증). */
