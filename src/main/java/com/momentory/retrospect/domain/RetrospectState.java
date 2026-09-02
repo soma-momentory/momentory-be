@@ -22,6 +22,10 @@ public class RetrospectState {
 
     /** 일기 작성 최대 턴 (채팅흐름_v2). */
     public static final int DIARY_MAX_TURNS = 6;
+    /** 한 세션에서 뽑는 사건 개수 상한 (모델 비교 계획 §3.1). */
+    public static final int MAX_EVENTS = 2;
+    /** 한 세션에서 뽑는 키워드 개수 상한 (모델 비교 계획 §3.4). */
+    public static final int MAX_KEYWORDS = 2;
     /**
      * 일기 작성 권장 최소 턴 — 엔진은 6턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
      * 이 값을 하한으로 알려 "최소 이만큼은 소재를 넓혀가라"는 진행 안내에 쓴다({@code PromptFactory}).
@@ -59,8 +63,12 @@ public class RetrospectState {
     private String event;
     /** 곁가지로 언급된 사건 — 일기 본문에만 가볍게. */
     private final List<String> secondaryEvents = new ArrayList<>();
+    /** 사건 — 대화 끝에 {@link com.momentory.retrospect.domain.assistant.EmotionExtractor} 가 감정과 함께 채운다(≤2). */
+    private final List<ExtractedEvent> events = new ArrayList<>();
     /** 감정 — 대화 끝에 {@link com.momentory.retrospect.domain.assistant.EmotionExtractor} 가 한 번에 채운다. */
     private final List<ExtractedEmotion> emotions = new ArrayList<>();
+    /** 키워드 — 사건과 같은 추출 콜에서 함께 나온다(≤2). 토픽 누적·집계의 단위. */
+    private final List<ExtractedKeyword> keywords = new ArrayList<>();
     /** 감정 표현이 대화에 한 번이라도 담겼는가 — 이른 종료 판정의 감정 신호. */
     private boolean emotionSeen;
     /** 무엇이 마음에 남았는가. */
@@ -245,6 +253,40 @@ public class RetrospectState {
         for (String e : events) {
             if (e != null && !e.isBlank() && !secondaryEvents.contains(e.strip())) {
                 secondaryEvents.add(e.strip());
+            }
+        }
+    }
+
+    public List<ExtractedEvent> events() {
+        return List.copyOf(events);
+    }
+
+    /** 대화 끝에 추출한 사건으로 채운다 — 요약이 있는 것만, 최대 2개. */
+    public void events(List<ExtractedEvent> extracted) {
+        events.clear();
+        if (extracted == null) {
+            return;
+        }
+        for (ExtractedEvent e : extracted) {
+            if (e != null && e.summary() != null && events.size() < MAX_EVENTS) {
+                events.add(e);
+            }
+        }
+    }
+
+    public List<ExtractedKeyword> keywords() {
+        return List.copyOf(keywords);
+    }
+
+    /** 대화 끝에 추출한 키워드로 채운다 — 라벨이 있는 것만, 최대 2개. */
+    public void keywords(List<ExtractedKeyword> extracted) {
+        keywords.clear();
+        if (extracted == null) {
+            return;
+        }
+        for (ExtractedKeyword k : extracted) {
+            if (k != null && k.label() != null && keywords.size() < MAX_KEYWORDS) {
+                keywords.add(k);
             }
         }
     }
@@ -435,7 +477,8 @@ public class RetrospectState {
         return new RetrospectStateSnapshot(
                 id, nickname, scheduleId, schedule, scheduleEmotion, interest,
                 List.copyOf(restMethods), phase, heldFrom, reasks, abuseStreak,
-                diaryTurn, event, List.copyOf(secondaryEvents), List.copyOf(emotions), emotionSeen,
+                diaryTurn, event, List.copyOf(secondaryEvents), List.copyOf(events),
+                List.copyOf(emotions), List.copyOf(keywords), emotionSeen,
                 meaning, diaryDraft, diaryUserEnded,
                 explorationEntered, explorationTurn, List.copyOf(confirmedEmotions),
                 List.copyOf(needs), desiredState, smallAction,
@@ -462,8 +505,14 @@ public class RetrospectState {
         if (s.secondaryEvents() != null) {
             state.secondaryEvents.addAll(s.secondaryEvents());
         }
+        if (s.events() != null) {
+            state.events.addAll(s.events());
+        }
         if (s.emotions() != null) {
             state.emotions.addAll(s.emotions());
+        }
+        if (s.keywords() != null) {
+            state.keywords.addAll(s.keywords());
         }
         state.emotionSeen = s.emotionSeen();
         state.meaning = s.meaning();

@@ -28,6 +28,7 @@ import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.domain.assistant.DiaryWriter;
+import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
 import com.momentory.retrospect.domain.safety.AbuseGate;
@@ -281,7 +282,10 @@ public class RetrospectEngine {
 
     /** 대화 전체에서 감정을 뽑고 일기 초안을 만들어 state 에 담는다 — 종료 직전 한 번. */
     private void generateDiary(RetrospectState state) {
-        state.emotions(emotionExtractor.extract(state));
+        EmotionExtraction extraction = emotionExtractor.extract(state);
+        state.events(extraction.events());
+        state.emotions(extraction.emotions());
+        state.keywords(extraction.keywords());
         DiaryOutput out = diaryWriter.write(state).orElseGet(() -> fallbackDiary(state));
         state.diaryDraft(out.diary());
     }

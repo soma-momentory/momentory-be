@@ -11,12 +11,25 @@ final class GeminiStructuredOutputs {
     private GeminiStructuredOutputs() {
     }
 
-    /** 감정 추출 결과 — normalized 는 고정 10종 키 문자열(어댑터가 Emotion 으로 매핑). */
-    record GeminiEmotion(String raw, String normalized, String timing, String cause,
-            String evidence) {
+    /** 사건 한 건 — label 은 짧은 이름, evidence 는 그 사건에 속하는 사용자 발화 번호 전체. */
+    record GeminiEvent(Integer id, String label, String summary, List<Integer> evidence) {
     }
 
-    record GeminiEmotions(List<GeminiEmotion> emotions) {
+    /** 키워드 한 건 — eventId 가 있으면 그 사건에서 감정을 물려받는다. */
+    record GeminiKeyword(String label, Integer eventId) {
+    }
+
+    /**
+     * 감정 한 건 — normalized 는 고정 10종 키 문자열, phase 는 before|during|after|now
+     * (어댑터가 도메인 타입으로 매핑). evidence 는 근거 문장 원문, evidenceIds 는 그 발화 번호.
+     */
+    record GeminiEmotion(Integer eventId, String raw, String normalized, Integer intensity,
+            String phase, String evidence, List<Integer> evidenceIds) {
+    }
+
+    /** 추출 결과 — 사건(≤2)·감정·키워드(≤2)를 한 콜로 (모델 비교 계획 §3.1, §3.4). */
+    record GeminiExtraction(List<GeminiEvent> events, List<GeminiEmotion> emotions,
+            List<GeminiKeyword> keywords) {
     }
 
     /** 바람(욕구) 후보 — 고정 목록에서 고른 단어들(어댑터가 Needs 로 검증). */
@@ -25,13 +38,5 @@ final class GeminiStructuredOutputs {
 
     /** 작은 행동 후보 — 문자열들. */
     record GeminiActions(List<String> actions) {
-    }
-
-    /** 토픽 한 건 — type 은 "SCHEDULE"/"KEYWORD", emotions 는 10종 키(어댑터가 Emotion 으로 매핑). */
-    record GeminiTopic(String type, String label, List<String> emotions) {
-    }
-
-    /** 토픽 추출 결과 — 주 일정·키워드 + 매칭 감정. */
-    record GeminiTopics(List<GeminiTopic> topics) {
     }
 }

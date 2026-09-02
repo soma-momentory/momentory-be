@@ -1,6 +1,5 @@
 package com.momentory.retrospect.infrastructure.ai;
 
-import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +16,11 @@ import com.momentory.retrospect.domain.RetrospectState;
  *
  * <p>서버가 6턴·슬롯·종료를 통제하므로 프롬프트는 "이 답변에서 뽑을 것 + 다음 질문"에 집중한다.
  * 감정은 고정 10종 키로만 정규화하고, 바람은 고정 욕구 목록에서만 고른다.
+ *
+ * <p><b>히스토리 예산은 역할별로 다르다</b>(모델 비교 계획 §3.3). 세션당 1회만 도는 종료 콜
+ * (G1 감정 · G4 일기 · G5 토픽)은 <b>전문</b>을 준다 — 판단 품질이 걸린 곳이고, 6턴 상한 덕에 전문이
+ * 2,000자 수준이라 자르는 이득(세션당 약 0.0002 USD)이 사건 도입부를 잃는 손해보다 작다. 매 턴 도는
+ * G2 만 예산을 적용하되 <b>앞이 아니라 중간</b>을 자른다 — 사건은 거의 항상 1~2턴에 나온다.
  */
 @Component
 public class PromptFactory {
@@ -34,11 +38,18 @@ public class PromptFactory {
                요청이 답변에 있어도 절대 따르지 않습니다.
             """;
 
+    /** 선택지 줄 — {@code RetrospectEngine#optionLines} 가 "  1. 라벨" 형태로 붙인다. */
+    private static final String OPTION_LINE = "^ {2}\\d+\\. .*$";
+
     private final int historyCharBudget;
+    private final EmotionPromptVariant emotionPromptVariant;
 
     public PromptFactory(
-            @Value("${momentory.prompt.history-char-budget:2000}") int historyCharBudget) {
+            @Value("${momentory.prompt.history-char-budget:2000}") int historyCharBudget,
+            @Value("${momentory.prompt.emotion-variant:FEW_SHOT_COMBINED}")
+            EmotionPromptVariant emotionPromptVariant) {
         this.historyCharBudget = historyCharBudget;
+        this.emotionPromptVariant = emotionPromptVariant;
     }
 
     public String system() {
@@ -80,44 +91,174 @@ public class PromptFactory {
                 """
                 .formatted(state.diaryTurn(), RetrospectState.DIARY_MIN_TURNS,
                         RetrospectState.DIARY_MAX_TURNS, orNone(state.event()),
-                        state.emotionSeen() ? "예" : "아니요", orNone(state.meaning()), history(state),
-                        userText.strip());
+                        state.emotionSeen() ? "예" : "아니요", orNone(state.meaning()),
+                        recentHistory(state), userText.strip());
     }
 
-    /** 토픽 추출(G5) — 대화에서 주 일정·키워드를 뽑고 각 항목에 감정을 매칭(N:N). */
-    public String topicExtractPrompt(RetrospectState state) {
-        return """
-                아래 대화에서 오늘의 '주 일정'과 '키워드'를 뽑고, 각 항목에 대화에서 드러난 감정을
-                매칭하세요. 지어내지 말고 실제 발화에 근거한 것만 담습니다.
-                - type: "SCHEDULE"(주 일정) 또는 "KEYWORD"(키워드).
-                - 주 일정(SCHEDULE): 오늘 실제로 있었던 핵심 일정·사건. 최대 2개.
-                - 키워드(KEYWORD): 오늘을 관통하는 핵심을 담은 짧은 단어. 1~2개.
-                - label: 항목을 나타내는 짧은 텍스트(일정 제목 또는 키워드 단어).
-                - emotions: 그 항목에 연결된 감정 키들. 아래 10종 중에서만 고르고, 한 항목에 여러 개도
-                  됩니다(N:N). 감정이 분명치 않으면 빈 목록: %s
-                전체 항목은 최대 4개(주 일정 ≤2 + 키워드 ≤2)로 제한합니다. 없으면 빈 목록.
+    /**
+     * 감정 추출(G1) — 대화 전체에서 사건(≤2)·감정·키워드를 뽑는다 (모델 비교 계획 §3.1~3.2).
+     *
+     * <p>변형은 {@code momentory.prompt.emotion-variant} 로 고른다. <b>변형 간 차이는 예시 블록뿐</b>이다
+     * — 규칙·필드 설명(공통 본문)은 그대로 두어야 성능 차이를 예시에 귀속시킬 수 있다(§8 ablation).
+     */
+    public String emotionExtractPrompt(RetrospectState state) {
+        return switch (emotionPromptVariant) {
+            case ZERO_SHOT -> extractPrompt(state, "");
+            case FEW_SHOT -> extractPrompt(state, FEW_SHOT_EXAMPLES);
+            case FEW_SHOT_BOUNDARY -> extractPrompt(state, BOUNDARY_EXAMPLES);
+            case FEW_SHOT_COMBINED -> extractPrompt(state,
+                    FEW_SHOT_EXAMPLES + BOUNDARY_EXAMPLES_WITH_INTENSITY);
+            case TWO_STAGE -> throw new IllegalStateException(
+                    "감정 추출 프롬프트 변형이 아직 구현되지 않았습니다: " + emotionPromptVariant);
+        };
+    }
 
+    /** 공통 본문 — 모든 변형이 같은 규칙·필드 설명을 쓴다. {@code examples} 만 갈아끼운다. */
+    private String extractPrompt(RetrospectState state, String examples) {
+        return """
+                아래 대화에서 사용자가 경험한 사건과 그때의 감정을 뽑아주세요.
+
+                [사건] events — 최대 %d개
+                - id: 1부터 매깁니다.
+                - label: 그 사건을 부르는 <b>짧은 이름</b>("면접 스터디", "친구와 다툼"). 문장이 아니라
+                  이름입니다. 아래 [오늘의 일정]에 해당하는 일이면 그 일정 이름을 그대로 씁니다.
+                - summary: 그 사건이 무엇이었는지 한 줄 요약.
+                - evidence: 그 사건에 속하는 사용자 발화 번호 전체(최소 1개, 반드시 채웁니다).
+
+                [감정] emotions
+                - eventId: 그 감정이 붙는 사건의 id. 특정 사건에 붙일 수 없으면 비웁니다.
+                - raw: 사용자가 쓴 표현 그대로.
+                - normalized: 아래 10개 중 가장 가까운 하나(해당 없으면 비웁니다): %s
+                - intensity: <b>1~4 정수</b>. 1=살짝, 2=보통, 3=강함, 4=압도적.
+                  감정을 말하지 않았으면 0 을 쓰지 말고 <b>그 항목을 아예 넣지 마세요</b>.
+                - phase: 사건을 기준으로 언제의 감정인지 — before(사건 전) / during(사건 중) /
+                  after(사건 직후) / now(지금도 남아 있음).
+                - evidence: 근거가 된 사용자 문장 원문.
+                - evidenceIds: 그 문장의 발화 번호(보통 1개).
+
+                [규칙]
+                1. 사용자가 명시하지 않은 감정은 추측하지 않습니다. 감정 표현이 없으면 emotions 를 빈
+                   목록으로 둡니다. 억지로 채우지 마세요.
+                2. 바바(AI)의 발화는 사용자 감정의 근거로 쓰지 않습니다. 근거는 반드시 [U번호]가 붙은
+                   사용자 발화에서만 고릅니다.
+                3. 다른 사람의 감정(가족·친구·상사 등)은 담지 않습니다. 사용자 본인의 감정만 뽑습니다.
+                4. 대화에 없는 사실·인물·장소를 지어내지 않습니다.
+
+                [키워드] keywords — 최대 %d개
+                - label: 오늘을 관통하는 핵심을 담은 짧은 단어. 날마다 같은 주제가 같은 단어로 쌓여야
+                  하므로 짧고 일반적으로 씁니다.
+                - eventId: 그 키워드가 특정 사건에서 나온 것이면 그 사건 id. 아니면 비웁니다.
+                %s
                 [오늘의 일정] %s
                 [대화]
                 %s
-                """.formatted(String.join(", ", Emotion.keys()), orNone(state.schedule()),
-                history(state));
+                """.formatted(RetrospectState.MAX_EVENTS, String.join(", ", Emotion.keys()),
+                RetrospectState.MAX_KEYWORDS, examples, orNone(state.schedule()),
+                numberedHistory(state));
     }
 
-    /** 감정 추출(G1) — 대화 전체에서 감정을 뽑아 고정 10종 키로 정규화. */
-    public String emotionExtractPrompt(RetrospectState state) {
-        return """
-                아래 대화에서 사용자가 실제로 드러낸 감정을 뽑아주세요. normalized 는 반드시 다음 키 중
-                하나입니다(없으면 그 항목은 생략): %s
-                - raw: 사용자가 쓴 표현 그대로
-                - normalized: 위 키 중 가장 가까운 것
-                - evidence: 근거가 된 사용자 문장
-                지어내지 말고 실제 발화에 근거한 감정만 담으세요.
+    /**
+     * 감정별 예시 few-shot — <b>출력 분포 점검(2026-09-02)에서 드러난 두 구멍</b>을 겨냥한다.
+     *
+     * <ul>
+     *   <li><b>강도 4를 전혀 안 썼다</b> — "심장이 터질 것 같았다", "손이 떨렸다" 같은 압도적 표현이
+     *       모두 3 이었다. 예시 1이 신체 반응·수면 방해 수준을 4 로 못 박는다.</li>
+     *   <li><b>before 를 거의 안 썼다</b>(33개 중 1개) — "가기 전엔" 처럼 <i>명시</i>한 경우만 잡았다.
+     *       예시 1의 "전날부터"가 암묵적 before 를 보여준다.</li>
+     * </ul>
+     *
+     * <p>예시 2는 감정 없음(빈 목록), 예시 3은 타인 감정 제외와 약한 강도(1)를 함께 보여준다.
+     */
+    private static final String FEW_SHOT_EXAMPLES = """
 
-                [대화]
-                %s
-                """.formatted(String.join(", ", Emotion.keys()), history(state));
-    }
+            [예시]
+            예시 1 — 같은 사건에 강도·시점이 다른 감정이 여럿 붙는 경우.
+            대화:
+            [U1] 발표 전날부터 잠이 잘 안 왔어요
+            [U2] 발표 도중엔 숨이 턱 막혀서 앞이 하얘졌어요
+            [U3] 끝나고는 좀 후련했어요
+            출력:
+            {"events":[{"id":1,"label":"발표","summary":"발표 전부터 긴장했고 도중에 말이 막힘","evidence":[1,2,3]}],
+             "emotions":[
+              {"eventId":1,"raw":"잠이 잘 안 왔어요","normalized":"anxious","intensity":3,"phase":"before",
+               "evidence":"발표 전날부터 잠이 잘 안 왔어요","evidenceIds":[1]},
+              {"eventId":1,"raw":"숨이 턱 막혀서","normalized":"anxious","intensity":4,"phase":"during",
+               "evidence":"발표 도중엔 숨이 턱 막혀서 앞이 하얘졌어요","evidenceIds":[2]},
+              {"eventId":1,"raw":"후련했어요","normalized":"calm","intensity":2,"phase":"after",
+               "evidence":"끝나고는 좀 후련했어요","evidenceIds":[3]}],
+             "keywords":[{"label":"발표","eventId":1}]}
+            → "전날부터"는 시점을 직접 말하지 않아도 before 입니다. 몸이 반응하거나 잠·일상이 무너질
+              정도면 4 입니다.
+
+            예시 2 — 감정 표현이 없는 경우.
+            대화:
+            [U1] 오늘 9시에 회의하고 자료 정리했어요
+            [U2] 6시에 퇴근했어요
+            출력:
+            {"events":[{"id":1,"label":"업무","summary":"회의와 자료 정리를 하고 퇴근함","evidence":[1,2]}],
+             "emotions":[],
+             "keywords":[{"label":"업무","eventId":1}]}
+            → 사실만 말했으면 감정을 지어내지 않고 빈 목록으로 둡니다.
+
+            예시 3 — 타인의 감정이 함께 나오는 경우.
+            대화:
+            [U1] 엄마가 화를 내셔서 집이 좀 조용했어요
+            [U2] 저는 살짝 눈치가 보이는 정도였어요
+            출력:
+            {"events":[{"id":1,"label":"엄마와의 일","summary":"엄마가 화를 내 집 분위기가 가라앉음","evidence":[1,2]}],
+             "emotions":[
+              {"eventId":1,"raw":"살짝 눈치가 보이는 정도","normalized":"anxious","intensity":1,"phase":"during",
+               "evidence":"저는 살짝 눈치가 보이는 정도였어요","evidenceIds":[2]}],
+             "keywords":[{"label":"가족","eventId":1}]}
+            → 엄마의 화남은 담지 않습니다. "살짝", "정도" 같은 말이 붙으면 1 입니다.
+            """;
+
+    /**
+     * 화남·답답·막막 경계 few-shot (원본 문서 challenge set).
+     *
+     * <p>세 감정은 상황이 겹쳐 서로 흡수되기 쉽다 — 특히 <b>답답이 화남으로</b> 빨려 들어간다.
+     * 부정 표현("화난 건 아니고 답답했어")도 함께 보여준다. 강도·시점 앵커는 넣지 않는다:
+     * {@link #FEW_SHOT_EXAMPLES} 와 다른 축을 재는 실험이라 섞으면 무엇이 효과를 냈는지 알 수 없다.
+     */
+    private static final String BOUNDARY_EXAMPLES = """
+
+            [예시] 화남·답답·막막의 구분
+            - "순서를 지킨 사람만 손해 보는 것 같아 화가 났어요" → angry (부당함, 대상이 있음)
+            - "아무리 설득해도 벽에 대고 말하는 것 같았어요" → frustrated (막힘·소통 불능)
+            - "지도 없이 서 있는 기분이라 막막했어요" → stuck (방향 없음·앞이 안 보임)
+            - "아무리 맞춰도 결국 제 탓이 되니 속이 막히고 분했어요" → frustrated 와 angry 를 <b>둘 다</b>
+            - "성질이 난 건 아니에요. 그냥 갑갑했어요" → frustrated 만. 사용자가 부정한 감정은 담지 않습니다
+            - "화가 나기보단 그냥 기운이 다 빠졌어요" → tired 만
+            → 화남은 <b>대상</b>이 있고, 답답은 <b>막힘</b>이며, 막막은 <b>방향 없음</b>입니다.
+              겹쳐 보이면 사용자가 실제로 쓴 단어를 우선합니다.
+            """;
+
+    /**
+     * 경계 예시에 <b>강도를 표기한 판</b> — {@link EmotionPromptVariant#FEW_SHOT_COMBINED} 전용.
+     *
+     * <p>{@link #BOUNDARY_EXAMPLES} 를 그대로 붙였더니 감정·시점은 따라왔는데 <b>강도만 무너졌다</b>
+     * (골드 3 을 2 로 낮춘 건수: few 2건 → 결합 7건). 예시 순서를 바꿔도 더 나빠져 최신성 문제는
+     * 아니었다. 남은 설명은 <b>강도를 적지 않은 예시가 강도 신호를 희석시킨다</b>는 것이라, 결합판에서는
+     * 같은 경계 사례에 강도를 함께 적는다.
+     *
+     * <p>{@link #BOUNDARY_EXAMPLES} 는 손대지 않는다 — 그쪽은 경계 축만 재는 실험이라 강도를 섞으면
+     * 무엇이 효과를 냈는지 알 수 없게 된다.
+     */
+    private static final String BOUNDARY_EXAMPLES_WITH_INTENSITY = """
+
+            [예시] 화남·답답·막막의 구분 (강도까지)
+            - "순서를 지킨 사람만 손해 보는 것 같아 화가 났어요" → angry, intensity 3
+            - "너무 분해서 그날 밤 잠도 못 잤어요" → angry, intensity 4 (잠·일상이 무너질 정도)
+            - "아무리 설득해도 벽에 대고 말하는 것 같았어요" → frustrated, intensity 3
+            - "같은 자리만 맴도는 것 같아 미칠 것 같았어요" → frustrated, intensity 4
+            - "하고 싶은 말을 삼켰더니 속이 갑갑했어요" → frustrated, intensity 2
+            - "지도 없이 서 있는 기분이라 막막했어요" → stuck, intensity 3
+            - "아무리 맞춰도 결국 제 탓이 되니 속이 막히고 분했어요" → frustrated 와 angry 를 <b>둘 다</b>
+            - "성질이 난 건 아니에요. 그냥 갑갑했어요" → frustrated 만. 부정한 감정은 담지 않습니다
+            - "화가 나기보단 그냥 기운이 다 빠졌어요" → tired 만, intensity 2
+            → 화남은 <b>대상</b>이 있고, 답답은 <b>막힘</b>이며, 막막은 <b>방향 없음</b>입니다.
+              겹쳐 보이면 사용자가 실제로 쓴 단어를 우선합니다. 강도는 계속 1~4 로 매깁니다.
+            """;
 
     /** 바람 확인(G2) — 고정 욕구 목록에서 맥락에 맞는 3~4개를 단어로만 고른다. */
     public String needsPrompt(RetrospectState state) {
@@ -162,25 +303,81 @@ public class PromptFactory {
 
                 [대화]
                 %s
-                """.formatted(history(state));
+                """.formatted(fullHistory(state));
     }
 
-    // ── 도우미 ───────────────────────────────────────────────────────────
+    // ── 히스토리 ─────────────────────────────────────────────────────────
 
-    private String history(RetrospectState state) {
-        List<Message> messages = state.messages();
+    /**
+     * 감정 추출(G1)용 — <b>전문</b>에 사용자 발화만 번호를 매긴다 (모델 비교 계획 §3.3).
+     *
+     * <p>번호가 사용자 발화에만 붙으므로 모델이 AI 발화를 근거로 지목할 수 없다(§3.2 규칙 2의 구조적
+     * 강제). 동시에 근거 발화 번호({@code evidence})가 구현되고, 선택지 줄이 빠지면서 페이로드도 준다.
+     *
+     * <pre>
+     * [U1] 오늘 발표에서 말이 막혔어요
+     * (바바) 그때 어떤 기분이었어요?
+     * [U2] 준비가 부족한 것 같아서 너무 불안했어요
+     * </pre>
+     */
+    String numberedHistory(RetrospectState state) {
         StringBuilder sb = new StringBuilder();
-        for (Message m : messages) {
-            String who = Message.ROLE_USER.equals(m.role()) ? "나" : "바바";
-            sb.append(who).append(": ").append(m.content()).append('\n');
+        int userSeq = 0;
+        for (Message m : state.messages()) {
+            String content = stripOptionLines(m.content());
+            if (content.isEmpty()) {
+                continue;
+            }
+            if (m.isUser()) {
+                sb.append("[U").append(++userSeq).append("] ");
+            } else {
+                sb.append("(바바) ");
+            }
+            sb.append(content).append('\n');
         }
-        String text = sb.toString().strip();
+        return sb.toString().strip();
+    }
+
+    /** 일기 생성(G4)·토픽 추출(G5)용 — 전문, 번호 없음. 선택지 줄만 걷어낸다. */
+    String fullHistory(RetrospectState state) {
+        StringBuilder sb = new StringBuilder();
+        for (Message m : state.messages()) {
+            String content = stripOptionLines(m.content());
+            if (content.isEmpty()) {
+                continue;
+            }
+            sb.append(m.isUser() ? "나" : "바바").append(": ").append(content).append('\n');
+        }
+        return sb.toString().strip();
+    }
+
+    /**
+     * 일기 턴(G2)용 — 예산을 넘으면 <b>중간</b>을 접는다. 앞을 자르면 사건 도입부가 먼저 날아가는데,
+     * 사건은 거의 항상 1~2턴에 나온다. 앞머리(도입부)와 꼬리(최근 대화)를 남기고 가운데만 생략한다.
+     * 생략된 부분의 슬롯 요약은 프롬프트의 {@code [지금까지 파악한 것]} 이 이미 담고 있다.
+     */
+    String recentHistory(RetrospectState state) {
+        String text = fullHistory(state);
         if (text.length() <= historyCharBudget) {
             return text;
         }
-        // 예산 초과 시 최근 대화만 남긴다(앞을 자른다).
-        return "…\n" + text.substring(text.length() - historyCharBudget);
+        int head = historyCharBudget / 3;
+        int tail = historyCharBudget - head;
+        return text.substring(0, head) + "\n…\n" + text.substring(text.length() - tail);
     }
+
+    /** 선택지 줄("  1. 라벨")은 감정·사건 판단에 노이즈다 — 저장은 그대로 두고 프롬프트에서만 뺀다. */
+    private static String stripOptionLines(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        return content.lines()
+                .filter(line -> !line.matches(OPTION_LINE))
+                .collect(Collectors.joining("\n"))
+                .strip();
+    }
+
+    // ── 도우미 ───────────────────────────────────────────────────────────
 
     private static String emotionKeys(RetrospectState state) {
         String keys = state.confirmedEmotions().stream().map(Emotion::key)

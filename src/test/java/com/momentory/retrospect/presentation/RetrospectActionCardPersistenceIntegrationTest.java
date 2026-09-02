@@ -39,14 +39,17 @@ import com.momentory.actioncard.application.SituationEmbedder;
 import com.momentory.actioncard.domain.ActionCard;
 import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 import com.momentory.retrospect.domain.Emotion;
+import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.ExtractedEvent;
+import com.momentory.retrospect.domain.ExtractedKeyword;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.domain.assistant.DiaryWriter;
+import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
-import com.momentory.retrospect.domain.assistant.TopicExtractor;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;
@@ -91,7 +94,6 @@ class RetrospectActionCardPersistenceIntegrationTest {
     @MockitoBean EmotionExtractor emotionExtractor;
     @MockitoBean ExplorationAssistant explorationAssistant;
     @MockitoBean DiaryWriter diaryWriter;
-    @MockitoBean TopicExtractor topicExtractor;
     @MockitoBean SituationEmbedder situationEmbedder;
 
     private MockMvc mockMvc;
@@ -106,13 +108,15 @@ class RetrospectActionCardPersistenceIntegrationTest {
                 "면접 스터디에서 팀원이 말을 끊었다", List.of(), "내 의견이 가볍게 다뤄진 게 걸린다", true,
                 "조금 더 들려줄래요?", null, "none", List.of(), false, false)));
         // 대화 끝 감정 추출 — 감정 탐색 1턴의 후보가 된다.
-        when(emotionExtractor.extract(any())).thenReturn(List.of(
-                new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "말을 끊겼어요")));
+        when(emotionExtractor.extract(any())).thenReturn(new EmotionExtraction(
+                List.of(new ExtractedEvent(1, "면접 스터디", "면접 스터디에서 팀원이 말을 끊었다", List.of(1))),
+                List.of(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, 3,
+                        EmotionPhase.DURING, "말을 끊겼어요", List.of(1))),
+                List.of(new ExtractedKeyword("존중", 1))));
         // 바람 후보는 엔진 폴백(고정 앞자리)에 맡기고, 작은 행동만 정해 카드 내용을 확인한다.
         when(explorationAssistant.suggestNeeds(any())).thenReturn(List.of());
         when(explorationAssistant.suggestActions(any())).thenReturn(List.of(SMALL_ACTION));
         when(diaryWriter.write(any())).thenReturn(Optional.of(new DiaryOutput("그냥 일기.", null)));
-        when(topicExtractor.extract(any())).thenReturn(List.of());
     }
 
     @Test

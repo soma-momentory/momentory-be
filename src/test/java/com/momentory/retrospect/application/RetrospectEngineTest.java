@@ -140,7 +140,7 @@ class RetrospectEngineTest {
     @DisplayName("'감정을 더 알아볼래요' → 추출 감정을 후보로 감정 탐색 1턴을 낸다.")
     void branchExploreStartsExploration() {
         toBranch();
-        fake.emotions.add(new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "말을 끊겼어요"));
+        fake.emotions.add(new ExtractedEmotion(null, "무시당한 느낌", Emotion.ANGRY, null, null, "말을 끊겼어요", List.of()));
         // extract 는 toBranch 시점에 이미 불렸으므로 미리 넣어야 후보에 반영된다 → 다시 세팅해 재현.
         // (toBranch 에서 emotions 가 비어 있었어도, 이 테스트는 탐색 진입만 확인한다.)
 
@@ -158,7 +158,7 @@ class RetrospectEngineTest {
     @DisplayName("감정 탐색 3턴을 거치면 바람 카드(작은 행동)까지 만들어 완료한다.")
     void explorationProducesWishCard() {
         // 감정을 미리 심어 두려면 extract 결과가 필요하다 — 탐색 진입 전에 세팅.
-        fake.emotions.add(new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요"));
+        fake.emotions.add(new ExtractedEmotion(null, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
         toBranch();
         engine.handle(state, TurnCommand.option("1")); // 감정 더 알아보기
 
@@ -182,7 +182,7 @@ class RetrospectEngineTest {
     @DisplayName("작은 행동에는 '오늘은 여기까지'가 없다 — 후보를 고르면 그 행동으로 완료한다.")
     void explorationSmallActionHasNoHereEnd() {
         fake.actions.add("따뜻한 물 한 잔 마시기");
-        fake.emotions.add(new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요"));
+        fake.emotions.add(new ExtractedEmotion(null, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
         toBranch();
         engine.handle(state, TurnCommand.option("1")); // 탐색 진입
         engine.handle(state, TurnCommand.option("1")); // 감정

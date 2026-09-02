@@ -5,12 +5,15 @@ import java.util.List;
 import java.util.Optional;
 
 import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.ExtractedEvent;
+import com.momentory.retrospect.domain.ExtractedKeyword;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.domain.assistant.DiaryWriter;
+import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
 
@@ -34,8 +37,10 @@ class FakeAssistant
     boolean turnVague;
     String turnSafetyLevel = "none";
 
-    // 대화 끝 감정 추출 결과
+    // 대화 끝 사건·감정 추출 결과
+    final List<ExtractedEvent> events = new ArrayList<>();
     final List<ExtractedEmotion> emotions = new ArrayList<>();
+    final List<ExtractedKeyword> keywords = new ArrayList<>();
     // 감정 탐색 후보
     final List<Need> needs = new ArrayList<>();
     final List<String> actions = new ArrayList<>();
@@ -61,9 +66,10 @@ class FakeAssistant
     }
 
     @Override
-    public List<ExtractedEmotion> extract(RetrospectState state) {
+    public EmotionExtraction extract(RetrospectState state) {
         extractCalls++;
-        return List.copyOf(emotions);
+        return new EmotionExtraction(List.copyOf(events), List.copyOf(emotions),
+                List.copyOf(keywords));
     }
 
     @Override
