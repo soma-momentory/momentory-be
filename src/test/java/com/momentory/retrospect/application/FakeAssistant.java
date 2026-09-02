@@ -33,6 +33,7 @@ class FakeAssistant
     boolean turnEmotionPresent;
     String turnQuestion = "조금 더 들려줄래요?";
     String turnEmpathy;
+    boolean turnNoMoreToAsk;
     boolean turnOffTopic;
     boolean turnVague;
     String turnSafetyLevel = "none";
@@ -62,7 +63,8 @@ class FakeAssistant
             return Optional.empty();
         }
         return Optional.of(new DiaryTurn(turnEvent, List.of(), turnMeaning, turnEmotionPresent,
-                turnQuestion, turnEmpathy, turnSafetyLevel, List.of(), turnOffTopic, turnVague));
+                turnQuestion, turnEmpathy, turnSafetyLevel, List.of(), turnNoMoreToAsk, turnOffTopic,
+                turnVague));
     }
 
     @Override

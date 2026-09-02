@@ -105,7 +105,7 @@ class RetrospectActionCardPersistenceIntegrationTest {
 
         when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.of(new DiaryTurn(
                 "면접 스터디에서 팀원이 말을 끊었다", List.of(), "내 의견이 가볍게 다뤄진 게 걸린다", true,
-                "조금 더 들려줄래요?", null, "none", List.of(), false, false)));
+                "조금 더 들려줄래요?", null, "none", List.of(), false, false, false)));
         // 대화 끝 감정 추출 — 감정 탐색 1턴의 후보가 된다.
         when(emotionExtractor.extract(any())).thenReturn(new EmotionExtraction(
                 List.of(new ExtractedEvent(1, "면접 스터디", "면접 스터디에서 팀원이 말을 끊었다", List.of(1))),

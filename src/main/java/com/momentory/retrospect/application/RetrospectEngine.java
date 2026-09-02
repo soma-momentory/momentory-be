@@ -119,7 +119,13 @@ public class RetrospectEngine {
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
     }
 
-    /** 대화로 이어갈 개인화 소재 하나 — 관심분야가 담긴 일정 우선, 없으면 첫 번째(없으면 null). */
+    /**
+     * 대화로 이어갈 개인화 소재 하나 — 우선순위는 <b>관심분야 → 끝난 일 → 첫 번째</b>다.
+     *
+     * <p>관심분야가 이름에 담긴 일정을 먼저 본다(온보딩에서 고른 축이라 할 말이 많다). 없으면 오늘
+     * <b>마친</b> 일정을 고른다 — 아직 안 한 일은 돌아볼 거리가 없어 첫 질문이 헛돈다. 둘 다 없으면
+     * 목록의 첫 번째다.
+     */
     private static ScheduleItem pickTopic(List<ScheduleItem> schedules, String interest) {
         if (schedules.isEmpty()) {
             return null;
@@ -130,6 +136,11 @@ public class RetrospectEngine {
                 if (s.name() != null && s.name().contains(key)) {
                     return s;
                 }
+            }
+        }
+        for (ScheduleItem s : schedules) {
+            if (s.completed()) {
+                return s;
             }
         }
         return schedules.get(0);
@@ -207,6 +218,7 @@ public class RetrospectEngine {
 
         String question = null;
         String empathy = null;
+        boolean noMoreToAsk = false;
         Optional<DiaryTurn> ai = diaryChatAssistant.turn(state, command.content());
         if (ai.isPresent()) {
             DiaryTurn t = ai.get();
@@ -225,6 +237,7 @@ public class RetrospectEngine {
             }
             question = t.question();
             empathy = t.empathy();
+            noMoreToAsk = t.noMoreToAsk();
         } else {
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(),
                     Phase.DIARY_CHAT.key());
@@ -237,8 +250,10 @@ public class RetrospectEngine {
                 && state.diaryTurn() >= DIARY_CHECKIN_AFTER_TURN) {
             return presentDiaryCheckin(state);
         }
-        // 조기 종료 금지: 슬롯이 일찍 다 차도 6턴까지 소재를 넓히며 이어간다. 종료는 6턴에서만.
-        if (state.diaryTurnsExhausted()) {
+        // 다루는 사건(≤2)에서 더 물어볼 게 없다고 모델이 알리면 마무리한다 — 다른 소재로 넓히지
+        // 않는다. 최소 턴은 지킨다(1~2턴 만에 끝나면 일기로 쓸 재료가 모자란다).
+        if (state.diaryTurnsExhausted()
+                || (noMoreToAsk && state.diaryTurn() >= RetrospectState.DIARY_MIN_TURNS)) {
             return finishDiaryChat(state, empathy);
         }
         String text = (question != null && !question.isBlank())

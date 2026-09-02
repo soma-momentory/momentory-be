@@ -42,6 +42,7 @@ final class GeminiResponseSchemas {
         props.put("empathy", str());
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
+        props.put("noMoreToAsk", bool());
         props.put("offTopic", bool());
         props.put("vague", bool());
         return object(props, List.of("question"));

@@ -110,7 +110,7 @@ class RetrospectApiIntegrationTest {
         // 일기 작성 턴 — 사건·의미·감정 표현을 채운 슬롯과 다음 질문을 돌려준다.
         when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.of(new DiaryTurn(
                 "면접 스터디에서 말이 막혔다", List.of(), "계속 곱씹게 된다", true,
-                "조금 더 들려줄래요?", null, "none", List.of(), false, false)));
+                "조금 더 들려줄래요?", null, "none", List.of(), false, false, false)));
         // 대화 끝 감정 추출 — 일기 대표 감정·태그의 근거.
         when(emotionExtractor.extract(any())).thenReturn(new EmotionExtraction(
                 List.of(new ExtractedEvent(1, "면접 스터디", "면접 스터디에서 말이 막혔다", List.of(1))),

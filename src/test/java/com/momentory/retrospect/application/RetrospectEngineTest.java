@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 
@@ -194,5 +195,47 @@ class RetrospectEngineTest {
         assertThat(done.phase()).isEqualTo("complete");
         assertThat(done.wishCard()).isNotNull();
         assertThat(done.wishCard().smallAction()).isEqualTo("따뜻한 물 한 잔 마시기");
+    }
+
+    @Test
+    @DisplayName("더 물어볼 게 없다고 알리면 최소 턴을 채운 뒤 마무리한다 — 다른 소재로 넓히지 않는다")
+    void finishesWhenNoMoreToAsk() {
+        RetrospectState state = new RetrospectState("s-1");
+        engine.start(state, StartCommand.single("팀 발표", null, "정민"));
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnMeaning = "계속 곱씹게 된다";
+        fake.turnEmotionPresent = true;
+
+        // 최소 턴(4) 전에는 신호가 있어도 이어간다.
+        fake.turnNoMoreToAsk = true;
+        for (int i = 0; i < RetrospectState.DIARY_MIN_TURNS - 1; i++) {
+            ReplyDto mid = engine.handle(state, new TurnCommand("네 그랬어요", null));
+            assertThat(mid.phase()).as("%d턴", i + 1).isEqualTo(Phase.DIARY_CHAT.key());
+        }
+
+        // 최소 턴을 채우면 6턴을 기다리지 않고 마무리로 넘어간다.
+        ReplyDto done = engine.handle(state, new TurnCommand("네 그랬어요", null));
+
+        assertThat(done.phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
+        assertThat(state.diaryTurn()).isEqualTo(RetrospectState.DIARY_MIN_TURNS);
+        assertThat(state.diaryTurn()).isLessThan(RetrospectState.DIARY_MAX_TURNS);
+    }
+
+    @Test
+    @DisplayName("신호가 없으면 예전대로 최대 턴까지 이어간다")
+    void keepsGoingWithoutSignal() {
+        RetrospectState state = new RetrospectState("s-2");
+        engine.start(state, StartCommand.single("팀 발표", null, "정민"));
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnNoMoreToAsk = false;
+
+        for (int i = 0; i < RetrospectState.DIARY_MAX_TURNS - 1; i++) {
+            assertThat(engine.handle(state, new TurnCommand("조금 더 얘기할게요", null)).phase())
+                    .isEqualTo(Phase.DIARY_CHAT.key());
+        }
+        ReplyDto done = engine.handle(state, new TurnCommand("조금 더 얘기할게요", null));
+
+        assertThat(done.phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
+        assertThat(state.diaryTurn()).isEqualTo(RetrospectState.DIARY_MAX_TURNS);
     }
 }
