@@ -15,10 +15,6 @@ final class GeminiStructuredOutputs {
     record GeminiEvent(Integer id, String label, String summary, List<Integer> evidence) {
     }
 
-    /** 키워드 한 건 — eventId 가 있으면 그 사건에서 감정을 물려받는다. */
-    record GeminiKeyword(String label, Integer eventId) {
-    }
-
     /**
      * 감정 한 건 — normalized 는 고정 10종 키 문자열, phase 는 before|during|after|now
      * (어댑터가 도메인 타입으로 매핑). evidence 는 근거 문장 원문, evidenceIds 는 그 발화 번호.
@@ -27,9 +23,8 @@ final class GeminiStructuredOutputs {
             String phase, String evidence, List<Integer> evidenceIds) {
     }
 
-    /** 추출 결과 — 사건(≤2)·감정·키워드(≤2)를 한 콜로 (모델 비교 계획 §3.1, §3.4). */
-    record GeminiExtraction(List<GeminiEvent> events, List<GeminiEmotion> emotions,
-            List<GeminiKeyword> keywords) {
+    /** 추출 결과 — 사건(≤2)과 감정을 한 콜로 (모델 비교 계획 §3.1, §3.4). */
+    record GeminiExtraction(List<GeminiEvent> events, List<GeminiEmotion> emotions) {
     }
 
     /** 바람(욕구) 후보 — 고정 목록에서 고른 단어들(어댑터가 Needs 로 검증). */

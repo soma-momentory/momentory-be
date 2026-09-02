@@ -17,7 +17,6 @@ import com.momentory.diary.application.DiaryQueryService;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
-import com.momentory.retrospect.domain.ExtractedKeyword;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
@@ -180,12 +179,15 @@ public class RetrospectService {
      * 모았다. 여기서는 LLM 을 부르지 않는다 — 사건·키워드에 일정 id 를 잇고 감정을 물려줄 뿐이다.
      *
      * <p>사건 토픽의 이름은 {@link ExtractedEvent#topicLabel()}(짧은 label, 없으면 요약)이다.
-     * 키워드는 매인 사건의 감정을, 매인 사건이 없으면 세션 전체 감정을 물려받는다.
+     *
+     * <p>예전에는 사건과 별개로 '키워드' 토픽({@link TopicType#KEYWORD})도 만들었는데, 모델이 사건
+     * 이름을 그대로 재사용해 같은 주제가 두 행으로 쌓였다(관측: "가족 예배"·"개발"이 SCHEDULE 과
+     * KEYWORD 로 각각 저장). 사건 label 이 이미 같은 역할을 하므로 키워드 생산을 없앴다.
+     * {@code KEYWORD} 상수는 <b>남긴다</b> — 이미 저장된 행을 읽어야 한다.
      */
     static List<RetrospectCompleted.TopicData> topicsFrom(RetrospectState state) {
         List<ExtractedEvent> events = state.events();
-        List<ExtractedKeyword> keywords = state.keywords();
-        if (events.isEmpty() && keywords.isEmpty()) {
+        if (events.isEmpty()) {
             return List.of();
         }
         List<RetrospectCompleted.TopicData> topics = new ArrayList<>();
@@ -196,13 +198,6 @@ public class RetrospectService {
             }
             topics.add(new RetrospectCompleted.TopicData(TopicType.SCHEDULE,
                     linkedScheduleId(state, label), label, emotionsOfEvent(state, e.id())));
-        }
-        for (ExtractedKeyword k : keywords) {
-            List<Emotion> emotions = k.eventId() != null
-                    ? emotionsOfEvent(state, k.eventId())
-                    : normalizedEmotions(state);
-            topics.add(new RetrospectCompleted.TopicData(TopicType.KEYWORD, null, k.label(),
-                    emotions));
         }
         return topics;
     }
@@ -221,17 +216,6 @@ public class RetrospectService {
             }
             boolean mine = e.eventId() != null && e.eventId() == eventId;
             if (mine || (single && e.eventId() == null)) {
-                emotions.add(e.normalized());
-            }
-        }
-        return List.copyOf(emotions);
-    }
-
-    /** 세션 전체의 정규화 감정(중복 제거) — 사건에 매이지 않은 키워드가 물려받는다. */
-    private static List<Emotion> normalizedEmotions(RetrospectState state) {
-        LinkedHashSet<Emotion> emotions = new LinkedHashSet<>();
-        for (ExtractedEmotion e : state.emotions()) {
-            if (e.normalized() != null) {
                 emotions.add(e.normalized());
             }
         }

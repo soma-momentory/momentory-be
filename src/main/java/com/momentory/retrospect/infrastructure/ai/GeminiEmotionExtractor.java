@@ -11,17 +11,15 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
-import com.momentory.retrospect.domain.ExtractedKeyword;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiEmotion;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiEvent;
-import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiKeyword;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiExtraction;
 
 /**
- * 추출 어댑터 — 일기 작성 끝에 대화 전체를 근거로 <b>한 번(G1)</b> 호출해 사건(≤2)·감정·키워드(≤2)를
+ * 추출 어댑터 — 일기 작성 끝에 대화 전체를 근거로 <b>한 번(G1)</b> 호출해 사건(≤2)과 감정을
  * 함께 받는다 (모델 비교 계획 §3.1, §3.4). 실패하면 빈 결과.
  *
  * <p>모델 출력을 그대로 믿지 않고 어댑터에서 정리한다:
@@ -55,27 +53,7 @@ public class GeminiEmotionExtractor implements EmotionExtractor {
         }
         List<ExtractedEvent> events = toEvents(raw.events());
         Set<Integer> eventIds = events.stream().map(ExtractedEvent::id).collect(Collectors.toSet());
-        return new EmotionExtraction(events, toEmotions(raw.emotions(), eventIds),
-                toKeywords(raw.keywords(), eventIds));
-    }
-
-    private static List<ExtractedKeyword> toKeywords(List<GeminiKeyword> raw,
-            Set<Integer> eventIds) {
-        if (raw == null) {
-            return List.of();
-        }
-        List<ExtractedKeyword> keywords = new ArrayList<>();
-        for (GeminiKeyword k : raw) {
-            if (k == null || k.label() == null || k.label().isBlank()) {
-                continue;
-            }
-            Integer eventId = eventIds.contains(k.eventId()) ? k.eventId() : null;
-            keywords.add(new ExtractedKeyword(k.label(), eventId));
-            if (keywords.size() >= RetrospectState.MAX_KEYWORDS) {
-                break;
-            }
-        }
-        return keywords;
+        return new EmotionExtraction(events, toEmotions(raw.emotions(), eventIds));
     }
 
     private static List<ExtractedEvent> toEvents(List<GeminiEvent> raw) {

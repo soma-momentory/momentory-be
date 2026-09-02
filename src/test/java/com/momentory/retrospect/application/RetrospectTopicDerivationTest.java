@@ -11,7 +11,6 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
-import com.momentory.retrospect.domain.ExtractedKeyword;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.TopicType;
 
@@ -95,28 +94,8 @@ class RetrospectTopicDerivationTest {
     }
 
     @Test
-    @DisplayName("키워드는 매인 사건의 감정을, 매인 사건이 없으면 세션 전체 감정을 물려받는다")
-    void keywordInheritsEmotions() {
-        RetrospectState state = state();
-        state.events(List.of(
-                new ExtractedEvent(1, "면접 스터디", "말이 막혔다", List.of(1)),
-                new ExtractedEvent(2, "친구와 다툼", "저녁에 다퉜다", List.of(2))));
-        state.emotions(List.of(emotion(1, Emotion.ANXIOUS), emotion(2, Emotion.ANGRY)));
-        state.keywords(List.of(new ExtractedKeyword("발표", 1), new ExtractedKeyword("하루", null)));
-
-        List<RetrospectCompleted.TopicData> keywords = RetrospectService.topicsFrom(state).stream()
-                .filter(t -> t.type() == TopicType.KEYWORD).toList();
-
-        assertThat(keywords).hasSize(2);
-        assertThat(keywords.get(0).label()).isEqualTo("발표");
-        assertThat(keywords.get(0).scheduleId()).isNull();
-        assertThat(keywords.get(0).emotions()).containsExactly(Emotion.ANXIOUS);
-        assertThat(keywords.get(1).emotions()).containsExactly(Emotion.ANXIOUS, Emotion.ANGRY);
-    }
-
-    @Test
-    @DisplayName("사건도 키워드도 없으면 토픽을 만들지 않는다")
-    void nothingExtractedYieldsNoTopics() {
+    @DisplayName("사건이 없으면 토픽을 만들지 않는다")
+    void noEventsYieldNoTopics() {
         assertThat(RetrospectService.topicsFrom(state())).isEmpty();
     }
 }

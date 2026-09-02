@@ -24,8 +24,6 @@ public class RetrospectState {
     public static final int DIARY_MAX_TURNS = 6;
     /** 한 세션에서 뽑는 사건 개수 상한 (모델 비교 계획 §3.1). */
     public static final int MAX_EVENTS = 2;
-    /** 한 세션에서 뽑는 키워드 개수 상한 (모델 비교 계획 §3.4). */
-    public static final int MAX_KEYWORDS = 2;
     /**
      * 일기 작성 권장 최소 턴 — 엔진은 6턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
      * 이 값을 하한으로 알려 "최소 이만큼은 소재를 넓혀가라"는 진행 안내에 쓴다({@code PromptFactory}).
@@ -67,8 +65,6 @@ public class RetrospectState {
     private final List<ExtractedEvent> events = new ArrayList<>();
     /** 감정 — 대화 끝에 {@link com.momentory.retrospect.domain.assistant.EmotionExtractor} 가 한 번에 채운다. */
     private final List<ExtractedEmotion> emotions = new ArrayList<>();
-    /** 키워드 — 사건과 같은 추출 콜에서 함께 나온다(≤2). 토픽 누적·집계의 단위. */
-    private final List<ExtractedKeyword> keywords = new ArrayList<>();
     /** 감정 표현이 대화에 한 번이라도 담겼는가 — 이른 종료 판정의 감정 신호. */
     private boolean emotionSeen;
     /** 무엇이 마음에 남았는가. */
@@ -274,23 +270,6 @@ public class RetrospectState {
         }
     }
 
-    public List<ExtractedKeyword> keywords() {
-        return List.copyOf(keywords);
-    }
-
-    /** 대화 끝에 추출한 키워드로 채운다 — 라벨이 있는 것만, 최대 2개. */
-    public void keywords(List<ExtractedKeyword> extracted) {
-        keywords.clear();
-        if (extracted == null) {
-            return;
-        }
-        for (ExtractedKeyword k : extracted) {
-            if (k != null && k.label() != null && keywords.size() < MAX_KEYWORDS) {
-                keywords.add(k);
-            }
-        }
-    }
-
     public List<ExtractedEmotion> emotions() {
         return List.copyOf(emotions);
     }
@@ -478,7 +457,7 @@ public class RetrospectState {
                 id, nickname, scheduleId, schedule, scheduleEmotion, interest,
                 List.copyOf(restMethods), phase, heldFrom, reasks, abuseStreak,
                 diaryTurn, event, List.copyOf(secondaryEvents), List.copyOf(events),
-                List.copyOf(emotions), List.copyOf(keywords), emotionSeen,
+                List.copyOf(emotions), emotionSeen,
                 meaning, diaryDraft, diaryUserEnded,
                 explorationEntered, explorationTurn, List.copyOf(confirmedEmotions),
                 List.copyOf(needs), desiredState, smallAction,
@@ -510,9 +489,6 @@ public class RetrospectState {
         }
         if (s.emotions() != null) {
             state.emotions.addAll(s.emotions());
-        }
-        if (s.keywords() != null) {
-            state.keywords.addAll(s.keywords());
         }
         state.emotionSeen = s.emotionSeen();
         state.meaning = s.meaning();

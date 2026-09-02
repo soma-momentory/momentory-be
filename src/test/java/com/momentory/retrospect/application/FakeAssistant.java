@@ -6,7 +6,6 @@ import java.util.Optional;
 
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
-import com.momentory.retrospect.domain.ExtractedKeyword;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
@@ -40,7 +39,6 @@ class FakeAssistant
     // 대화 끝 사건·감정 추출 결과
     final List<ExtractedEvent> events = new ArrayList<>();
     final List<ExtractedEmotion> emotions = new ArrayList<>();
-    final List<ExtractedKeyword> keywords = new ArrayList<>();
     // 감정 탐색 후보
     final List<Need> needs = new ArrayList<>();
     final List<String> actions = new ArrayList<>();
@@ -68,8 +66,7 @@ class FakeAssistant
     @Override
     public EmotionExtraction extract(RetrospectState state) {
         extractCalls++;
-        return new EmotionExtraction(List.copyOf(events), List.copyOf(emotions),
-                List.copyOf(keywords));
+        return new EmotionExtraction(List.copyOf(events), List.copyOf(emotions));
     }
 
     @Override

@@ -18,7 +18,6 @@ import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiEmotion;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiEvent;
-import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiKeyword;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiExtraction;
 
 /**
@@ -46,8 +45,7 @@ class GeminiEmotionExtractorTest {
         respond(new GeminiExtraction(
                 List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1))),
                 List.of(new GeminiEmotion(1, "너무 불안했어요", "anxious", 3, "before",
-                        "준비가 부족했어요", List.of(1))),
-                List.of(new GeminiKeyword("발표", 1))));
+                        "준비가 부족했어요", List.of(1)))));
 
         EmotionExtraction result = extractor.extract(state());
 
@@ -65,8 +63,7 @@ class GeminiEmotionExtractorTest {
         respond(new GeminiExtraction(
                 List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1))),
                 List.of(new GeminiEmotion(7, "불안했어요", "anxious", 2, "now", "불안해요",
-                        List.of(1))),
-                List.of()));
+                        List.of(1)))));
 
         EmotionExtraction result = extractor.extract(state());
 
@@ -82,7 +79,6 @@ class GeminiEmotionExtractorTest {
                         new GeminiEvent(2, "빈 사건", "  ", List.of(2)),
                         new GeminiEvent(3, "다툼", "친구와 다툼", List.of(3)),
                         new GeminiEvent(4, "산책", "저녁 산책", List.of(4))),
-                List.of(),
                 List.of()));
 
         EmotionExtraction result = extractor.extract(state());
@@ -98,8 +94,7 @@ class GeminiEmotionExtractorTest {
         respond(new GeminiExtraction(
                 List.of(),
                 List.of(new GeminiEmotion(null, "설렜어요", "excited", 2, "someday", "설렜어요",
-                        List.of(1))),
-                List.of()));
+                        List.of(1)))));
 
         EmotionExtraction result = extractor.extract(state());
 
@@ -119,31 +114,4 @@ class GeminiEmotionExtractorTest {
         assertThat(result.emotions()).isEmpty();
     }
 
-    @Test
-    @DisplayName("키워드도 같은 콜에서 받는다 — 상한 2개, 빈 라벨은 버린다")
-    void mapsKeywords() {
-        respond(new GeminiExtraction(
-                List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1))),
-                List.of(),
-                List.of(new GeminiKeyword("발표", 1), new GeminiKeyword("  ", null),
-                        new GeminiKeyword("준비", null), new GeminiKeyword("버려질 것", 1))));
-
-        EmotionExtraction result = extractor.extract(state());
-
-        assertThat(result.keywords()).hasSize(RetrospectState.MAX_KEYWORDS);
-        assertThat(result.keywords()).extracting("label").containsExactly("발표", "준비");
-        assertThat(result.keywords().get(0).eventId()).isEqualTo(1);
-        assertThat(result.keywords().get(1).eventId()).isNull();
-    }
-
-    @Test
-    @DisplayName("키워드의 유령 eventId 도 떨군다")
-    void dropsDanglingKeywordEventId() {
-        respond(new GeminiExtraction(
-                List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1))),
-                List.of(),
-                List.of(new GeminiKeyword("발표", 9))));
-
-        assertThat(extractor.extract(state()).keywords().get(0).eventId()).isNull();
-    }
 }

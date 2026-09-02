@@ -69,15 +69,10 @@ final class GeminiResponseSchemas {
         emotion.put("evidence", str());
         emotion.put("evidenceIds", arrayOf(integer()));
 
-        LinkedHashMap<String, Object> keyword = new LinkedHashMap<>();
-        keyword.put("label", str());
-        keyword.put("eventId", integer());
-
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
         props.put("events",
                 arrayOf(object(event, List.of("id", "label", "summary", "evidence"))));
         props.put("emotions", arrayOf(object(emotion, List.of("raw"))));
-        props.put("keywords", arrayOf(object(keyword, List.of("label"))));
         return object(props, List.of());
     }
 

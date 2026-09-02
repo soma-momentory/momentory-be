@@ -285,7 +285,6 @@ public class RetrospectEngine {
         EmotionExtraction extraction = emotionExtractor.extract(state);
         state.events(extraction.events());
         state.emotions(extraction.emotions());
-        state.keywords(extraction.keywords());
         DiaryOutput out = diaryWriter.write(state).orElseGet(() -> fallbackDiary(state));
         state.diaryDraft(out.diary());
     }

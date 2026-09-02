@@ -144,17 +144,12 @@ public class PromptFactory {
                 3. 다른 사람의 감정(가족·친구·상사 등)은 담지 않습니다. 사용자 본인의 감정만 뽑습니다.
                 4. 대화에 없는 사실·인물·장소를 지어내지 않습니다.
 
-                [키워드] keywords — 최대 %d개
-                - label: 오늘을 관통하는 핵심을 담은 짧은 단어. 날마다 같은 주제가 같은 단어로 쌓여야
-                  하므로 짧고 일반적으로 씁니다.
-                - eventId: 그 키워드가 특정 사건에서 나온 것이면 그 사건 id. 아니면 비웁니다.
                 %s
                 [오늘의 일정] %s
                 [대화]
                 %s
                 """.formatted(RetrospectState.MAX_EVENTS, String.join(", ", Emotion.keys()),
-                RetrospectState.MAX_KEYWORDS, examples, orNone(state.schedule()),
-                numberedHistory(state));
+                examples, orNone(state.schedule()), numberedHistory(state));
     }
 
     /**
@@ -185,8 +180,7 @@ public class PromptFactory {
               {"eventId":1,"raw":"숨이 턱 막혀서","normalized":"anxious","intensity":4,"phase":"during",
                "evidence":"발표 도중엔 숨이 턱 막혀서 앞이 하얘졌어요","evidenceIds":[2]},
               {"eventId":1,"raw":"후련했어요","normalized":"calm","intensity":2,"phase":"after",
-               "evidence":"끝나고는 좀 후련했어요","evidenceIds":[3]}],
-             "keywords":[{"label":"발표","eventId":1}]}
+               "evidence":"끝나고는 좀 후련했어요","evidenceIds":[3]}]}
             → "전날부터"는 시점을 직접 말하지 않아도 before 입니다. 몸이 반응하거나 잠·일상이 무너질
               정도면 4 입니다.
 
@@ -196,8 +190,7 @@ public class PromptFactory {
             [U2] 6시에 퇴근했어요
             출력:
             {"events":[{"id":1,"label":"업무","summary":"회의와 자료 정리를 하고 퇴근함","evidence":[1,2]}],
-             "emotions":[],
-             "keywords":[{"label":"업무","eventId":1}]}
+             "emotions":[]}
             → 사실만 말했으면 감정을 지어내지 않고 빈 목록으로 둡니다.
 
             예시 3 — 타인의 감정이 함께 나오는 경우.
@@ -208,8 +201,7 @@ public class PromptFactory {
             {"events":[{"id":1,"label":"엄마와의 일","summary":"엄마가 화를 내 집 분위기가 가라앉음","evidence":[1,2]}],
              "emotions":[
               {"eventId":1,"raw":"살짝 눈치가 보이는 정도","normalized":"anxious","intensity":1,"phase":"during",
-               "evidence":"저는 살짝 눈치가 보이는 정도였어요","evidenceIds":[2]}],
-             "keywords":[{"label":"가족","eventId":1}]}
+               "evidence":"저는 살짝 눈치가 보이는 정도였어요","evidenceIds":[2]}]}
             → 엄마의 화남은 담지 않습니다. "살짝", "정도" 같은 말이 붙으면 1 입니다.
             """;
 

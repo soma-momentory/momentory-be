@@ -46,7 +46,6 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
-import com.momentory.retrospect.domain.ExtractedKeyword;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
@@ -116,8 +115,7 @@ class RetrospectApiIntegrationTest {
         when(emotionExtractor.extract(any())).thenReturn(new EmotionExtraction(
                 List.of(new ExtractedEvent(1, "면접 스터디", "면접 스터디에서 말이 막혔다", List.of(1))),
                 List.of(new ExtractedEmotion(1, "우울한 느낌", Emotion.DEPRESSED, 2,
-                        EmotionPhase.NOW, "우울해요", List.of(1))),
-                List.of(new ExtractedKeyword("존중", 1))));
+                        EmotionPhase.NOW, "우울해요", List.of(1)))));
         // 감정 탐색 후보(이 테스트에선 '감정 더 알아보기' 경로를 타지 않지만, 페이크를 안정적으로 둔다).
         when(explorationAssistant.suggestNeeds(any())).thenReturn(List.of());
         when(explorationAssistant.suggestActions(any())).thenReturn(List.of("따뜻한 물 한 잔 마시기"));
