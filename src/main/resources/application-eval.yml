@@ -1,0 +1,16 @@
+# 모델 비교 평가용 오버레이 (모델 비교 계획 §3.5).
+#
+# 단독 프로파일이 아니라 겹쳐 쓰는 오버레이다:
+#   SPRING_PROFILES_ACTIVE=local,eval ./gradlew bootRun
+#
+# 운영은 temperature 0.7 을 유지한다 — 일기 문장이 딱딱해지지 않게. 평가에서만 0 으로 내린다:
+# 0.7 이면 같은 입력에 결과가 흔들려 버전 간 차이인지 노이즈인지 구분할 수 없다.
+# 환경변수를 주면 그쪽이 이긴다(운영·평가 양쪽 모두).
+gemini:
+  api:
+    temperature: ${GEMINI_TEMPERATURE:0}
+
+momentory:
+  prompt:
+    # 프롬프트 변형 스윕용 — zero-shot 외에는 아직 미구현이라 호출 시 실패한다.
+    emotion-variant: ${EMOTION_PROMPT_VARIANT:ZERO_SHOT}

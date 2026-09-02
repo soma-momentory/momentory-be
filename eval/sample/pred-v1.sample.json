@@ -1,0 +1,34 @@
+[
+  {
+    "sessionId": "s-001",
+    "events": [
+      {"id": 1, "label": "팀 발표", "summary": "발표에서 말이 막힘", "evidence": [1, 2]},
+      {"id": 2, "label": "친구와 다툼", "summary": "친구와 다툼", "evidence": [4]}
+    ],
+    "emotions": [
+      {"eventId": 1, "normalized": "anxious", "intensity": 4, "phase": "before", "evidenceIds": [2]},
+      {"eventId": 1, "normalized": "calm", "intensity": 2, "phase": "after", "evidenceIds": [3]},
+      {"eventId": 2, "normalized": "frustrated", "intensity": 3, "phase": "during", "evidenceIds": [4]}
+    ]
+  },
+  {
+    "sessionId": "s-002",
+    "events": [
+      {"id": 1, "label": "엄마와 통화", "summary": "엄마와 통화가 길어짐", "evidence": [1, 2]}
+    ],
+    "emotions": [
+      {"eventId": 1, "normalized": "anxious", "intensity": 2, "phase": "during", "evidenceIds": [2]},
+      {"eventId": 1, "normalized": "angry", "intensity": 3, "phase": "during", "evidenceIds": [1]}
+    ]
+  },
+  {
+    "sessionId": "s-003",
+    "events": [
+      {"id": 1, "label": "회의", "summary": "회의에서 대화가 안 됨", "evidence": [1, 2]}
+    ],
+    "emotions": [
+      {"eventId": 1, "normalized": "frustrated", "intensity": 3, "phase": "during", "evidenceIds": [1]},
+      {"eventId": 1, "normalized": "angry", "intensity": 2, "phase": "during", "evidenceIds": [2]}
+    ]
+  }
+]

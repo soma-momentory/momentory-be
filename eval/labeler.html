@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>감정 라벨링 도구</title>
+<style>
+  :root { --line:#e3e3e0; --muted:#6b6b66; --bg:#faf9f7; --accent:#2f6f4f; --warn:#a4462d; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
+         background:var(--bg); color:#1a1a18; }
+  header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line);
+           padding:10px 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; z-index:5; }
+  header h1 { font-size:15px; margin:0 12px 0 0; }
+  button { font:inherit; padding:5px 11px; border:1px solid var(--line); background:#fff;
+           border-radius:6px; cursor:pointer; }
+  button:hover { border-color:#bbb; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:default; }
+  .grow { flex:1; }
+  .status { color:var(--muted); font-size:12px; }
+  .anchors { background:#fff7e8; border-bottom:1px solid #f0e2c4; padding:6px 16px;
+             font-size:12.5px; color:#6a5320; }
+  .anchors b { color:#3d2f0a; }
+  main { display:grid; grid-template-columns:minmax(320px,1fr) minmax(360px,440px);
+         gap:16px; padding:16px; align-items:start; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:8px; padding:14px; }
+  .turn { padding:6px 8px; border-radius:6px; margin-bottom:4px; }
+  .turn.ai { color:var(--muted); }
+  .turn.user { cursor:pointer; border:1px solid transparent; }
+  .turn.user:hover { background:#f2f6f3; border-color:#cfe0d5; }
+  .turn.user.picked { background:#e6f2ea; border-color:var(--accent); }
+  .uno { display:inline-block; min-width:34px; font-weight:600; color:var(--accent); }
+  .hint { font-size:12px; color:var(--muted); margin:2px 0 10px; }
+  fieldset { border:1px solid var(--line); border-radius:8px; margin:0 0 12px; padding:10px 12px; }
+  legend { font-size:12px; color:var(--muted); padding:0 4px; }
+  fieldset.active { border-color:var(--accent); box-shadow:0 0 0 2px #e6f2ea; }
+  label.row { display:flex; gap:8px; align-items:center; margin:5px 0; flex-wrap:wrap; }
+  input[type=text] { flex:1; min-width:120px; padding:4px 7px; border:1px solid var(--line);
+                     border-radius:5px; font:inherit; }
+  select { padding:4px 6px; border:1px solid var(--line); border-radius:5px; font:inherit; }
+  .chip { padding:3px 9px; border:1px solid var(--line); border-radius:99px; cursor:pointer;
+          font-size:12.5px; background:#fff; }
+  .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .chips { display:flex; gap:5px; flex-wrap:wrap; }
+  .ev { font-size:12px; color:var(--muted); }
+  .del { color:var(--warn); border-color:#e6c9c0; }
+  .flags { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .flags .chip.on { background:var(--warn); border-color:var(--warn); }
+  textarea { width:100%; height:160px; font:12px/1.5 ui-monospace,Menlo,monospace;
+             border:1px solid var(--line); border-radius:6px; padding:8px; }
+  .empty { padding:40px 16px; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>감정 라벨링</h1>
+  <button id="prev">◀ 이전</button>
+  <span id="progress" class="status">—</span>
+  <button id="next">다음 ▶</button>
+  <span class="grow"></span>
+  <span id="saved" class="status"></span>
+  <button id="load">대화 불러오기</button>
+  <button id="export" class="primary">JSON 내보내기</button>
+  <input id="file" type="file" accept=".txt" hidden>
+</header>
+
+<div class="anchors">
+  <b>강도</b> 1 살짝 · 2 보통 · 3 강함 · 4 압도적(몸이 반응하거나 잠·일상이 무너질 정도)
+  &nbsp;|&nbsp; <b>시점</b> 전 = 사건 전 · 중 = 사건 중 · 후 = 직후 · 지금 = 아직 남아 있음
+  &nbsp;|&nbsp; <b>경계</b> 화남=대상이 있는 부당함 · 답답=막힘 · 막막=방향 없음
+</div>
+
+<main id="app"><div class="panel empty">「대화 불러오기」로 프로브 형식 파일을 여세요.</div></main>
+
+<script>
+const EMOTIONS = [["anxious","불안"],["depressed","우울"],["angry","화남"],["frustrated","답답"],
+  ["happy","행복"],["stuck","막막"],["lethargic","무기력"],["tired","피곤"],["proud","뿌듯"],["calm","평온"]];
+const PHASES = [["before","전"],["during","중"],["after","후"],["now","지금"]];
+const KEY = "momentory-labeler-v1";
+
+let sessions = [], order = [], cur = 0, labels = {}, target = null;
+
+/* ── 저장 ─────────────────────────────────────────────── */
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ sessions, order, cur, labels }));
+    document.getElementById("saved").textContent = "저장됨 " + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById("saved").textContent = "⚠ 자동저장 불가 — 수시로 내보내세요";
+  }
+}
+function restore() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (s && s.sessions && s.sessions.length) {
+      ({ sessions, order, cur, labels } = s);
+      return true;
+    }
+  } catch (e) { /* 무시 */ }
+  return false;
+}
+
+/* ── 대화 파싱 (프로브 형식) ───────────────────────────── */
+function parse(text) {
+  return text.trim().split(/\n\s*\n/).map(block => {
+    const lines = block.trim().split("\n");
+    const head = lines[0].replace(/^#/, "").split("|");
+    let u = 0;
+    const turns = lines.slice(1).map(l => {
+      const user = l.startsWith("U:");
+      return { user, text: l.slice(2), no: user ? ++u : null };
+    });
+    return { id: head[0], schedule: head[1] || "없음", turns };
+  }).filter(s => s.turns.some(t => t.user));
+}
+
+function blank() { return { events: [], emotions: [], noEmotion: false, unsure: false }; }
+function labelOf(id) { return labels[id] || (labels[id] = blank()); }
+
+/* ── 렌더 ─────────────────────────────────────────────── */
+function render() {
+  const app = document.getElementById("app");
+  if (!sessions.length) return;
+  const s = sessions[order[cur]];
+  const L = labelOf(s.id);
+  document.getElementById("progress").textContent =
+    `${cur + 1} / ${sessions.length} · ${s.id}`;
+  document.getElementById("prev").disabled = cur === 0;
+  document.getElementById("next").disabled = cur === sessions.length - 1;
+
+  const conv = s.turns.map(t => t.user
+    ? `<div class="turn user${isPicked(t.no) ? " picked" : ""}" data-no="${t.no}">
+         <span class="uno">[U${t.no}]</span>${esc(t.text)}</div>`
+    : `<div class="turn ai">${esc(t.text)}</div>`).join("");
+
+  app.innerHTML = `
+    <div class="panel">
+      <div class="hint">일정: ${esc(s.schedule)} · 발화를 누르면 아래에서 <b>선택 중인 항목</b>의 근거로 들어갑니다.</div>
+      ${conv}
+    </div>
+    <div class="panel">
+      <div class="flags">
+        <span class="chip ${L.noEmotion ? "on" : ""}" data-flag="noEmotion">감정 없음</span>
+        <span class="chip ${L.unsure ? "on" : ""}" data-flag="unsure">판단 불가 (채점 제외)</span>
+      </div>
+      ${L.events.map((e, i) => eventBox(e, i)).join("")}
+      ${L.events.length < 2 ? `<button data-add="event">+ 사건 추가</button>` : ""}
+      <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+      ${L.noEmotion ? `<div class="hint">감정 없음으로 표시됨.</div>`
+        : L.emotions.map((m, i) => emotionBox(m, i, L)).join("") +
+          `<button data-add="emotion">+ 감정 추가</button>`}
+    </div>`;
+  bind();
+}
+function esc(t) { return t.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+function eventBox(e, i) {
+  const on = target && target.kind === "event" && target.i === i;
+  return `<fieldset class="${on ? "active" : ""}" data-pick='{"kind":"event","i":${i}}'>
+    <legend>사건 ${e.id}</legend>
+    <label class="row"><input type="text" data-ev="${i}" value="${esc(e.label || "")}"
+      placeholder="짧은 이름 (예: 팀 발표)"></label>
+    <div class="ev">배정 발화: ${e.evidence.length ? e.evidence.map(n => "U" + n).join(" ") : "없음 — 발화를 누르세요"}</div>
+    <div style="margin-top:6px"><button class="del" data-delev="${i}">사건 삭제</button></div>
+  </fieldset>`;
+}
+
+function emotionBox(m, i, L) {
+  const on = target && target.kind === "emotion" && target.i === i;
+  return `<fieldset class="${on ? "active" : ""}" data-pick='{"kind":"emotion","i":${i}}'>
+    <legend>감정 ${i + 1}</legend>
+    <label class="row">
+      <select data-em="${i}">${EMOTIONS.map(([k, ko]) =>
+        `<option value="${k}"${m.normalized === k ? " selected" : ""}>${ko}</option>`).join("")}</select>
+      <select data-evid="${i}"><option value="">사건 미지정</option>${L.events.map(e =>
+        `<option value="${e.id}"${m.eventId === e.id ? " selected" : ""}>사건 ${e.id}</option>`).join("")}</select>
+    </label>
+    <div class="row"><span class="ev">강도</span><span class="chips">${[1, 2, 3, 4].map(n =>
+      `<span class="chip ${m.intensity === n ? "on" : ""}" data-int="${i}" data-v="${n}">${n}</span>`).join("")}</span></div>
+    <div class="row"><span class="ev">시점</span><span class="chips">${PHASES.map(([k, ko]) =>
+      `<span class="chip ${m.phase === k ? "on" : ""}" data-ph="${i}" data-v="${k}">${ko}</span>`).join("")}</span></div>
+    <div class="ev">근거 발화: ${m.evidenceIds.length ? m.evidenceIds.map(n => "U" + n).join(" ") : "없음"}</div>
+    <div style="margin-top:6px"><button class="del" data-delem="${i}">감정 삭제</button></div>
+  </fieldset>`;
+}
+
+function isPicked(no) {
+  if (!target) return false;
+  const L = labelOf(sessions[order[cur]].id);
+  const t = target.kind === "event" ? L.events[target.i] : L.emotions[target.i];
+  if (!t) return false;
+  return (target.kind === "event" ? t.evidence : t.evidenceIds).includes(no);
+}
+
+/* ── 이벤트 ───────────────────────────────────────────── */
+function bind() {
+  const L = labelOf(sessions[order[cur]].id);
+  const el = document.getElementById("app");
+
+  el.querySelectorAll(".turn.user").forEach(d => d.onclick = () => {
+    if (!target) return alert("먼저 오른쪽에서 사건이나 감정을 선택하세요.");
+    const t = target.kind === "event" ? L.events[target.i] : L.emotions[target.i];
+    if (!t) return;
+    const arr = target.kind === "event" ? t.evidence : t.evidenceIds;
+    const no = +d.dataset.no, at = arr.indexOf(no);
+    if (at < 0) arr.push(no); else arr.splice(at, 1);
+    arr.sort((a, b) => a - b);
+    save(); render();
+  });
+
+  el.querySelectorAll("[data-pick]").forEach(f => f.onclick = ev => {
+    if (ev.target.closest("button,select,input,.chip")) return;
+    target = JSON.parse(f.dataset.pick); render();
+  });
+
+  el.querySelectorAll("[data-flag]").forEach(c => c.onclick = () => {
+    L[c.dataset.flag] = !L[c.dataset.flag];
+    if (c.dataset.flag === "noEmotion" && L.noEmotion) L.emotions = [];
+    save(); render();
+  });
+
+  el.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
+    if (b.dataset.add === "event") {
+      L.events.push({ id: L.events.length + 1, label: "", evidence: [] });
+      target = { kind: "event", i: L.events.length - 1 };
+    } else {
+      L.emotions.push({ eventId: L.events.length ? 1 : null, normalized: "anxious",
+                        intensity: 2, phase: "during", evidenceIds: [] });
+      target = { kind: "emotion", i: L.emotions.length - 1 };
+    }
+    save(); render();
+  });
+
+  el.querySelectorAll("[data-ev]").forEach(i => i.oninput = () => {
+    L.events[+i.dataset.ev].label = i.value; save();
+  });
+  el.querySelectorAll("[data-em]").forEach(s => s.onchange = () => {
+    L.emotions[+s.dataset.em].normalized = s.value; save();
+  });
+  el.querySelectorAll("[data-evid]").forEach(s => s.onchange = () => {
+    L.emotions[+s.dataset.evid].eventId = s.value ? +s.value : null; save();
+  });
+  el.querySelectorAll("[data-int]").forEach(c => c.onclick = () => {
+    L.emotions[+c.dataset.int].intensity = +c.dataset.v; save(); render();
+  });
+  el.querySelectorAll("[data-ph]").forEach(c => c.onclick = () => {
+    L.emotions[+c.dataset.ph].phase = c.dataset.v; save(); render();
+  });
+  el.querySelectorAll("[data-delev]").forEach(b => b.onclick = () => {
+    L.events.splice(+b.dataset.delev, 1);
+    L.events.forEach((e, n) => e.id = n + 1);
+    L.emotions.forEach(m => { if (!L.events.some(e => e.id === m.eventId)) m.eventId = null; });
+    target = null; save(); render();
+  });
+  el.querySelectorAll("[data-delem]").forEach(b => b.onclick = () => {
+    L.emotions.splice(+b.dataset.delem, 1); target = null; save(); render();
+  });
+}
+
+/* ── 내보내기 ─────────────────────────────────────────── */
+function toGold() {
+  return sessions.map(s => {
+    const L = labelOf(s.id);
+    return {
+      sessionId: s.id,
+      set: "natural",
+      unsure: L.unsure || undefined,
+      events: L.events.filter(e => e.label.trim())
+        .map(e => ({ id: e.id, label: e.label.trim(), summary: e.label.trim(),
+                     evidence: e.evidence })),
+      emotions: L.noEmotion ? [] : L.emotions.map(m => ({
+        eventId: m.eventId, normalized: m.normalized, intensity: m.intensity,
+        phase: m.phase, evidenceIds: m.evidenceIds })),
+    };
+  });
+}
+
+document.getElementById("load").onclick = () => document.getElementById("file").click();
+document.getElementById("file").onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    sessions = parse(r.result);
+    // 순서 랜덤화 — 감정별로 몰아서 라벨링하면 기준이 미끄러진다(계획 §6.3)
+    order = sessions.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    cur = 0; labels = {}; target = null;
+    save(); render();
+  };
+  r.readAsText(f, "utf-8");
+};
+document.getElementById("prev").onclick = () => { cur--; target = null; save(); render(); };
+document.getElementById("next").onclick = () => { cur++; target = null; save(); render(); };
+document.getElementById("export").onclick = () => {
+  if (!sessions.length) return;
+  const blob = new Blob([JSON.stringify(toGold(), null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "gold.json";
+  a.click();
+};
+
+if (restore()) render();
+</script>
+</body>
+</html>

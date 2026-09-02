@@ -1,0 +1,37 @@
+[
+  {
+    "sessionId": "s-001",
+    "set": "natural",
+    "events": [
+      {"id": 1, "label": "팀 발표", "summary": "발표 중 말이 막혔지만 끝까지 마침", "evidence": [1, 2, 3]},
+      {"id": 2, "label": "친구와 다툼", "summary": "사소한 일로 친구와 다툼", "evidence": [4]}
+    ],
+    "emotions": [
+      {"eventId": 1, "normalized": "anxious", "intensity": 3, "phase": "before", "evidenceIds": [2]},
+      {"eventId": 1, "normalized": "calm", "intensity": 2, "phase": "after", "evidenceIds": [3]},
+      {"eventId": 2, "normalized": "frustrated", "intensity": 3, "phase": "during", "evidenceIds": [4]}
+    ]
+  },
+  {
+    "sessionId": "s-002",
+    "set": "natural",
+    "events": [
+      {"id": 1, "label": "엄마와 통화", "summary": "엄마가 화를 내서 통화가 길어짐", "evidence": [1, 2]}
+    ],
+    "emotions": [
+      {"eventId": 1, "normalized": "anxious", "intensity": 2, "phase": "during", "evidenceIds": [2]},
+      {"eventId": 1, "normalized": "angry", "experiencer": "other", "intensity": 4, "phase": "during", "evidenceIds": [1]}
+    ]
+  },
+  {
+    "sessionId": "s-003",
+    "set": "challenge",
+    "events": [
+      {"id": 1, "label": "회의", "summary": "회의에서 말이 전혀 안 통함", "evidence": [1, 2]}
+    ],
+    "emotions": [
+      {"eventId": 1, "normalized": "frustrated", "intensity": 3, "phase": "during", "evidenceIds": [1]},
+      {"eventId": 1, "normalized": "stuck", "intensity": 2, "phase": "now", "evidenceIds": [2]}
+    ]
+  }
+]

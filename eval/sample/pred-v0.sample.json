@@ -1,0 +1,27 @@
+[
+  {
+    "sessionId": "s-001",
+    "events": [
+      {"id": 1, "label": "오늘", "summary": "오늘 있었던 일", "evidence": [1, 2, 3, 4]}
+    ],
+    "emotions": [
+      {"eventId": 1, "normalized": "anxious", "intensity": 2, "phase": "during", "evidenceIds": [2]}
+    ]
+  },
+  {
+    "sessionId": "s-002",
+    "events": [],
+    "emotions": [
+      {"eventId": null, "normalized": "angry", "intensity": 2, "phase": "during", "evidenceIds": [1]}
+    ]
+  },
+  {
+    "sessionId": "s-003",
+    "events": [
+      {"id": 1, "label": "오늘", "summary": "오늘 있었던 일", "evidence": [1, 2]}
+    ],
+    "emotions": [
+      {"eventId": 1, "normalized": "angry", "intensity": 2, "phase": "during", "evidenceIds": [1]}
+    ]
+  }
+]

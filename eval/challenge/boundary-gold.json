@@ -1,0 +1,549 @@
+[
+ {
+  "sessionId": "b01",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "회의",
+    "summary": "회의에서 내 실수만 여러 사람 앞에서 지적당함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "angry",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b02",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "성과 가로채기",
+    "summary": "내가 한 일을 다른 사람이 자기가 했다고 말함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "angry",
+    "intensity": 4,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b03",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "친구 약속",
+    "summary": "친구가 세 번째로 약속을 당일에 취소함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "angry",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b04",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "물건 파손",
+    "summary": "말없이 가져간 내 물건이 망가짐",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "angry",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b05",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "부모님과의 일",
+    "summary": "부모님이 내 얘기를 듣지 않고 결정함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "angry",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b06",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "팀 회의",
+    "summary": "세 번 설명했는데 상대가 계속 딴소리를 함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b07",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "업무 대기",
+    "summary": "승인이 안 나 아무것도 진행하지 못함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b08",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "팀 미팅",
+    "summary": "하고 싶은 말을 분위기상 꺼내지 못함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 2,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b09",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "시스템 오류",
+    "summary": "시스템 오류로 같은 작업을 열 번쯤 반복함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 4,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b10",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "무응답",
+    "summary": "물어봐도 아무도 대답해 주지 않음",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 2,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b11",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "퇴사 후 진로",
+    "summary": "회사를 그만뒀지만 다음 계획이 정해지지 않음",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "stuck",
+    "intensity": 3,
+    "phase": "now",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b12",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "집 보러 가기",
+    "summary": "조건에 맞는 집을 찾지 못함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "stuck",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b13",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "전공 고민",
+    "summary": "전공 변경을 고민하지만 정보가 부족함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "stuck",
+    "intensity": 3,
+    "phase": "now",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b14",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "논문",
+    "summary": "논문 주제를 정하지 못함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "stuck",
+    "intensity": 3,
+    "phase": "now",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b15",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "프로젝트",
+    "summary": "계획이 어긋났는데 팀장이 내 탓만 함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   },
+   {
+    "eventId": 1,
+    "normalized": "angry",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b16",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "반복되는 갈등",
+    "summary": "몇 번을 말해도 고쳐지지 않고 예민하다는 말을 들음",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   },
+   {
+    "eventId": 1,
+    "normalized": "angry",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b17",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "일정 지연",
+    "summary": "일정이 밀리는데 아무도 책임지지 않음",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   },
+   {
+    "eventId": 1,
+    "normalized": "angry",
+    "intensity": 3,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b18",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "회의",
+    "summary": "회의가 계획대로 흘러가지 않음",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 2,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b19",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "야근",
+    "summary": "일이 많아 늦게까지 근무함",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "tired",
+    "intensity": 2,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "sessionId": "b20",
+  "set": "challenge",
+  "events": [
+   {
+    "id": 1,
+    "label": "친구 약속",
+    "summary": "친구가 약속을 다음 주로 미룸",
+    "evidence": [
+     1,
+     2
+    ]
+   }
+  ],
+  "emotions": [
+   {
+    "eventId": 1,
+    "normalized": "frustrated",
+    "intensity": 1,
+    "phase": "during",
+    "evidenceIds": [
+     2
+    ]
+   }
+  ]
+ }
+]
