@@ -206,6 +206,21 @@ class PromptFactoryTest {
     }
 
     @Test
+    @DisplayName("취소된 일정을 사건 이름으로 쓰지 말라는 조건이 모든 변형에 들어 있다")
+    void everyVariantForbidsLabelingCancelledSchedules() {
+        // 2026-09-03 실기기: 일정 「12시 회의」가 취소됐는데 label 이 그 이름으로 붙었다.
+        // AI 가 "회의가 취소되면서..."라고 되물은 대화라 회의라는 말이 히스토리에 남아 있었다.
+        // 실제 그 대화로 잰 결과 이 조건 없이 6/6 오답 · 넣으면 0/6 이라, 조건 자체가 고칩니다.
+        for (EmotionPromptVariant v : List.of(EmotionPromptVariant.ZERO_SHOT,
+                EmotionPromptVariant.FEW_SHOT, EmotionPromptVariant.FEW_SHOT_BOUNDARY,
+                EmotionPromptVariant.FEW_SHOT_COMBINED)) {
+            assertThat(with(v).emotionExtractPrompt(stateWithConversation()))
+                    .as("%s 프롬프트에 실제 수행 조건이 없다", v)
+                    .contains("실제로 했다고 말한 경우에만");
+        }
+    }
+
+    @Test
     @DisplayName("아직 구현하지 않은 2단계 변형은 조용히 zero-shot 으로 떨어지지 않고 실패한다")
     void unimplementedVariantFails() {
         assertThatThrownBy(() -> with(EmotionPromptVariant.TWO_STAGE)
