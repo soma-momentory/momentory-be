@@ -233,28 +233,33 @@ public class RetrospectService {
     }
 
     /**
-     * 일기에 실을 대표 감정 — 확인된 감정 → 추출 감정 순. 둘 다 없으면(감정 없이 끝난 일기) null.
-     * v2 다중 감정 태그가 자리 잡기 전까지 기존 단일 {@code current_emotion} 계약을 채우는 임시 매핑이다.
+     * 일기에 실을 대표 감정 — 확인된 감정 → 추출 감정 → 추론 감정 순.
+     * v2 다중 감정 태그가 자리 잡기 전까지 기존 단일 컬럼 계약을 채우는 임시 매핑이다.
      */
     private static Emotion primaryEmotion(RetrospectState state) {
-        if (!state.confirmedEmotions().isEmpty()) {
-            return state.confirmedEmotions().get(0);
-        }
-        for (var e : state.emotions()) {
-            if (e.normalized() != null) {
-                return e.normalized();
-            }
-        }
-        return null;
+        List<Emotion> tags = emotionTags(state);
+        return tags.isEmpty() ? null : tags.get(0);
     }
 
-    /** v2 일기 감정 태그 — 확인된 감정 + 추출된 정규화 감정(중복 제거, 확인된 것 우선). */
-    private static List<Emotion> emotionTags(RetrospectState state) {
+    /**
+     * v2 일기 감정 태그 — 확인된 감정 + 추출된 정규화 감정(중복 제거, 확인된 것 우선).
+     *
+     * <p>둘 다 없으면 <b>추론 감정</b>을 쓴다. 사실만 말한 대화에서 사용자가 감정 탐색까지 건너뛰면
+     * 화면에 후보를 보여줄 기회조차 없어 일기가 감정 없이 남는다 — 달력의 점도, 리포트의 셈도 빈다.
+     *
+     * <p>추론값이 <b>추출 기록({@code state.emotions})에는 들어가지 않는다</b>는 원칙은 그대로다.
+     * 모델 비교의 채점기는 추출 기록만 보고, 일기의 Unsupported emotion rate 는 일기 <b>본문</b>을
+     * 사람이 재므로 이 태그는 어느 쪽에도 닿지 않는다.
+     */
+    static List<Emotion> emotionTags(RetrospectState state) {
         LinkedHashSet<Emotion> tags = new LinkedHashSet<>(state.confirmedEmotions());
         for (var e : state.emotions()) {
             if (e.normalized() != null) {
                 tags.add(e.normalized());
             }
+        }
+        if (tags.isEmpty() && state.inferredEmotion() != null) {
+            tags.add(state.inferredEmotion());
         }
         return List.copyOf(tags);
     }
