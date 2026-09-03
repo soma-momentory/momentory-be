@@ -238,4 +238,49 @@ class RetrospectEngineTest {
         assertThat(done.phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
         assertThat(state.diaryTurn()).isEqualTo(RetrospectState.DIARY_MAX_TURNS);
     }
+
+    @Test
+    @DisplayName("사건이 상한만큼 나왔으면 체크인 재개 질문이 새 소재를 열지 않는다")
+    void checkinResumeDoesNotOpenNewTopic() {
+        RetrospectState state = new RetrospectState("s-3");
+        engine.start(state, StartCommand.single("팀 발표", null, "정민"));
+        // 슬롯을 다 채우고 사건을 상한까지 만든다(핵심 + 곁가지).
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnMeaning = "계속 곱씹게 된다";
+        fake.turnEmotionPresent = true;
+        engine.handle(state, new TurnCommand("발표가 있었어요", null));
+        state.addSecondaryEvents(java.util.List.of("친구와 다툼"));
+        assertThat(state.knownEventCount()).isEqualTo(RetrospectState.MAX_EVENTS);
+
+        // 단답으로 체크인을 띄운 뒤 「조금 더」를 고른다.
+        fake.turnOffTopic = true;
+        for (int i = 0; i < 3 && state.lastOptions().isEmpty(); i++) {
+            engine.handle(state, new TurnCommand("딱히", null));
+        }
+        assertThat(state.lastOptions()).as("체크인이 떠야 한다").isNotEmpty();
+        ReplyDto resumed = engine.handle(state, new TurnCommand(null, java.util.List.of("2")));
+
+        assertThat(resumed.text()).contains("지금까지 이야기한 것 중에");
+        assertThat(resumed.text()).doesNotContain("조금 더 이야기해 주고 싶은 게 있을까요");
+    }
+
+    @Test
+    @DisplayName("사건이 하나뿐이면 예전대로 열린 질문을 낸다")
+    void openQuestionWhenRoomForAnotherEvent() {
+        RetrospectState state = new RetrospectState("s-4");
+        engine.start(state, StartCommand.single("팀 발표", null, "정민"));
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnMeaning = "계속 곱씹게 된다";
+        fake.turnEmotionPresent = true;
+        engine.handle(state, new TurnCommand("발표가 있었어요", null));
+        assertThat(state.knownEventCount()).isEqualTo(1);
+
+        fake.turnOffTopic = true;
+        for (int i = 0; i < 3 && state.lastOptions().isEmpty(); i++) {
+            engine.handle(state, new TurnCommand("딱히", null));
+        }
+        ReplyDto resumed = engine.handle(state, new TurnCommand(null, java.util.List.of("2")));
+
+        assertThat(resumed.text()).contains("조금 더 이야기해 주고 싶은 게 있을까요");
+    }
 }

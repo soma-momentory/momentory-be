@@ -263,7 +263,14 @@ public class RetrospectEngine {
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
     }
 
-    /** 다음 빈 슬롯을 겨눈 폴백 질문 — AI 실패 시. */
+    /**
+     * 다음 빈 슬롯을 겨눈 폴백 질문 — AI 실패 시와 체크인 재개("조금 더")에서 쓴다.
+     *
+     * <p>⚠ <b>이 자리는 AI 를 거치지 않는다</b> — 프롬프트의 "소재를 넓히지 마세요" 규칙이 닿지
+     * 않는다. 슬롯이 다 찼을 때 "조금 더 이야기해 주고 싶은 게 있을까요?" 처럼 대상을 열어 두면
+     * 사용자가 새 소재를 꺼내고, 사건이 상한을 넘어 추출에서 버려진다(실기기에서 관측). 그래서
+     * 사건이 이미 상한만큼 나왔으면 <b>지금 다루는 것 안</b>으로 질문을 좁힌다.
+     */
     private static String fallbackDiaryQuestion(RetrospectState state) {
         if (state.event() == null) {
             return "그때 무슨 일이 있었는지 조금만 더 들려줄래요?";
@@ -274,7 +281,9 @@ public class RetrospectEngine {
         if (state.meaning() == null) {
             return "지금 돌아보면 어떤 점이 가장 마음에 남아요?";
         }
-        return "조금 더 이야기해 주고 싶은 게 있을까요?";
+        return state.knownEventCount() >= RetrospectState.MAX_EVENTS
+                ? "지금까지 이야기한 것 중에, 조금 더 들려주고 싶은 게 있을까요?"
+                : "조금 더 이야기해 주고 싶은 게 있을까요?";
     }
 
     /**

@@ -258,6 +258,17 @@ public class RetrospectState {
         }
     }
 
+    /**
+     * 대화 <b>중</b>에 서버가 아는 사건 수 — 핵심 사건 + 곁가지.
+     *
+     * <p>확정 사건({@link #events()})은 대화가 끝난 뒤 추출 콜이 채우므로 대화 중에는 비어 있다.
+     * 그래서 슬롯으로 근사한다. "새 소재를 열 질문을 할지" 판단하는 데만 쓰므로 정확한 수가
+     * 아니어도 된다 — 과소평가하면 질문 하나가 더 열릴 뿐이다.
+     */
+    public int knownEventCount() {
+        return (event != null ? 1 : 0) + secondaryEvents.size();
+    }
+
     public List<ExtractedEvent> events() {
         return List.copyOf(events);
     }
