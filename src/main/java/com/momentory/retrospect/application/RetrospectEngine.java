@@ -36,6 +36,7 @@ import com.momentory.retrospect.domain.safety.Guidance;
 import com.momentory.retrospect.domain.safety.PromptGuard;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
+import com.momentory.retrospect.domain.script.Josa;
 import com.momentory.retrospect.infrastructure.ai.LlmRole;
 
 /**
@@ -411,7 +412,10 @@ public class RetrospectEngine {
             options.add(Choice.of(state.inferredEmotion().label()));
         }
         state.lastOptions(options);
-        String text = "그 일을 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?";
+        // 무엇에 대한 질문인지 이름을 밝힌다 — "그 일"만 두면 사용자는 직전 대화를 떠올릴 수밖에 없다.
+        String text = state.mainEvent()
+                .map(e -> emotionConfirmQuestion(e.topicLabel()))
+                .orElse("오늘 하루를 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?");
         state.addAssistantMessage(text + "\n" + optionLines(options));
         return ReplyDto.choices(text, Phase.EMOTION_EXPLORATION, toOptionDtos(options),
                 state.safety().level());
@@ -542,10 +546,27 @@ public class RetrospectEngine {
         return ReplyDto.completed(text, diary, card, state.safety().level());
     }
 
-    /** 상태의 감정 탐색 슬롯으로 바람 카드를 만든다 — 상황은 핵심 event 요약. */
+    /**
+     * 「사건 이름」 + 을/를 — 조사는 <b>괄호가 아니라 이름의 마지막 글자</b>로 고른다.
+     * 괄호째 넘기면 받침 판정이 「」 에 걸려 "개발를"이 된다.
+     */
+    private static String emotionConfirmQuestion(String label) {
+        return "「" + label + "」" + Josa.pick(label, "을", "를")
+                + " 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?";
+    }
+
+    /**
+     * 상태의 감정 탐색 슬롯으로 바람 카드를 만든다.
+     *
+     * <p>상황은 <b>감정 확인 질문과 같은 사건</b>({@link RetrospectState#mainEvent()})을 가리킨다 —
+     * 어긋나면 사용자가 A 를 떠올리고 답했는데 카드에는 B 가 적힌다.
+     */
     private static ReplyDto.WishCardDto buildWishCard(RetrospectState state) {
-        String situation = state.event() != null ? state.event()
-                : state.hasSchedule() ? state.schedule() + "에서 있었던 일" : "오늘 하루 있었던 일";
+        String situation = state.mainEvent().map(e -> e.summary() != null ? e.summary()
+                        : e.topicLabel())
+                .orElseGet(() -> state.event() != null ? state.event()
+                        : state.hasSchedule() ? state.schedule() + "에서 있었던 일"
+                        : "오늘 하루 있었던 일");
         List<String> emotions = state.confirmedEmotions().stream().map(Emotion::key).toList();
         List<ReplyDto.NeedDto> needs = state.needs().stream()
                 .map(n -> new ReplyDto.NeedDto(n.word(), n.meaning())).toList();

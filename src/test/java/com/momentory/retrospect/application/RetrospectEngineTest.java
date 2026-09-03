@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.ExtractedEvent;
+import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
@@ -282,5 +284,22 @@ class RetrospectEngineTest {
         ReplyDto resumed = engine.handle(state, new TurnCommand(null, java.util.List.of("2")));
 
         assertThat(resumed.text()).contains("조금 더 이야기해 주고 싶은 게 있을까요");
+    }
+
+    @Test
+    @DisplayName("감정 확인 질문이 어떤 사건인지 이름을 밝힌다 — 조사는 괄호가 아니라 이름으로 고른다")
+    void emotionConfirmNamesTheEvent() {
+        // 근거가 더 많은 '개발'이 대표 사건이 된다 — 마지막에 언급된 '친구와 다툼'이 아니라.
+        fake.events.add(new ExtractedEvent(1, "개발", "카페에서 개발함", List.of(1, 2, 3)));
+        fake.events.add(new ExtractedEvent(2, "친구와 다툼", "저녁에 다툼", List.of(4)));
+        fake.emotions.add(new ExtractedEmotion(1, "재밌었어", Emotion.HAPPY, 2,
+                EmotionPhase.DURING, "재밌었어", List.of(1)));
+        assertThat(toBranch().phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
+
+        ReplyDto confirm = engine.handle(state, TurnCommand.option("1"));
+
+        assertThat(confirm.text()).contains("「개발」을 떠올렸을 때");
+        assertThat(confirm.text()).doesNotContain("「개발」를");
+        assertThat(confirm.text()).doesNotContain("친구와 다툼");
     }
 }

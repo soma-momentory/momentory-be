@@ -2,6 +2,7 @@ package com.momentory.retrospect.domain;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -284,6 +285,18 @@ public class RetrospectState {
                 events.add(e);
             }
         }
+    }
+
+    /**
+     * 감정 탐색·바람 카드가 가리키는 <b>대표 사건</b> — 근거 발화가 가장 많은 것(=가장 많이 이야기한
+     * 일). 동점이면 먼저 나온 사건이다.
+     *
+     * <p>{@link #event()} 슬롯을 쓰지 않는 이유: 그 값은 매 턴 덮어써서 <b>사건을 언급한 마지막 턴</b>
+     * 의 것이 된다(최신성 편향). 사용자에게 "그 일"이 무엇인지 물을 때 직전 대화가 답이 되면 안 된다.
+     * 여기서는 추출이 대화 전체를 보고 만든 {@link #events()} 를 쓴다.
+     */
+    public Optional<ExtractedEvent> mainEvent() {
+        return events.stream().max(Comparator.comparingInt(e -> e.evidence().size()));
     }
 
     public List<ExtractedEmotion> emotions() {
