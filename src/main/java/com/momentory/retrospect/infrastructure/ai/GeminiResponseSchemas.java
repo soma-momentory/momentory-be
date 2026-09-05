@@ -7,9 +7,8 @@ import java.util.Map;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiActions;
-import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiEmotions;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiExtraction;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
-import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiTopics;
 
 /**
  * Gemini {@code generationConfig.responseSchema} 로 넘길 응답 스키마 (v2 구조화 출력).
@@ -20,10 +19,9 @@ final class GeminiResponseSchemas {
 
     private static final Map<Class<?>, Map<String, Object>> BY_TYPE = Map.of(
             DiaryTurn.class, diaryTurnSchema(),
-            GeminiEmotions.class, emotionsSchema(),
+            GeminiExtraction.class, extractionSchema(),
             GeminiNeeds.class, needsSchema(),
             GeminiActions.class, actionsSchema(),
-            GeminiTopics.class, topicsSchema(),
             DiaryOutput.class, diarySchema());
 
     private GeminiResponseSchemas() {
@@ -44,20 +42,39 @@ final class GeminiResponseSchemas {
         props.put("empathy", str());
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
+        props.put("noMoreToAsk", bool());
         props.put("offTopic", bool());
         props.put("vague", bool());
         return object(props, List.of("question"));
     }
 
-    private static Map<String, Object> emotionsSchema() {
-        LinkedHashMap<String, Object> item = new LinkedHashMap<>();
-        item.put("raw", str());
-        item.put("normalized", str());
-        item.put("timing", str());
-        item.put("cause", str());
-        item.put("evidence", str());
+    /**
+     * 사건(≤2) + 감정 (모델 비교 계획 §3.1).
+     *
+     * <p>사건의 {@code evidence} 는 required 다 — 근거 없이 뽑힌 사건은 채점에서 매칭에 실패해 FP 로
+     * 잡히는데, 이는 환각 사건에 대한 의도된 페널티다(계획 §7.1).
+     */
+    private static Map<String, Object> extractionSchema() {
+        LinkedHashMap<String, Object> event = new LinkedHashMap<>();
+        event.put("id", integer());
+        event.put("label", str());
+        event.put("summary", str());
+        event.put("evidence", arrayOf(integer()));
+
+        LinkedHashMap<String, Object> emotion = new LinkedHashMap<>();
+        emotion.put("eventId", integer());
+        emotion.put("raw", str());
+        emotion.put("normalized", str());
+        emotion.put("intensity", integer());
+        emotion.put("phase", str());
+        emotion.put("evidence", str());
+        emotion.put("evidenceIds", arrayOf(integer()));
+
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
-        props.put("emotions", arrayOf(object(item, List.of("raw"))));
+        props.put("events",
+                arrayOf(object(event, List.of("id", "label", "summary", "evidence"))));
+        props.put("emotions", arrayOf(object(emotion, List.of("raw"))));
+        props.put("inferredEmotion", str());
         return object(props, List.of());
     }
 
@@ -80,17 +97,6 @@ final class GeminiResponseSchemas {
         return object(props, List.of("diary"));
     }
 
-    /** 토픽 추출 — 주 일정·키워드(type/label) + 매칭 감정 키 목록. */
-    private static Map<String, Object> topicsSchema() {
-        LinkedHashMap<String, Object> item = new LinkedHashMap<>();
-        item.put("type", str());
-        item.put("label", str());
-        item.put("emotions", arrayOf(str()));
-        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
-        props.put("topics", arrayOf(object(item, List.of("type", "label"))));
-        return object(props, List.of());
-    }
-
     private static Map<String, Object> object(LinkedHashMap<String, Object> properties,
             List<String> required) {
         LinkedHashMap<String, Object> schema = new LinkedHashMap<>();
@@ -111,5 +117,9 @@ final class GeminiResponseSchemas {
 
     private static Map<String, Object> bool() {
         return Map.of("type", "BOOLEAN");
+    }
+
+    private static Map<String, Object> integer() {
+        return Map.of("type", "INTEGER");
     }
 }

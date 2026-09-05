@@ -15,14 +15,14 @@ import com.momentory.actioncard.application.ActionCardQueryService;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.diary.application.DiaryQueryService;
 import com.momentory.retrospect.domain.Emotion;
-import com.momentory.retrospect.domain.ExtractedTopic;
+import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.TopicType;
 import com.momentory.retrospect.domain.WishSentiment;
-import com.momentory.retrospect.domain.assistant.TopicExtractor;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
@@ -53,14 +53,13 @@ public class RetrospectService {
     private final UserProfileRepository userProfileRepository;
     private final ScheduleRepository scheduleRepository;
     private final ApplicationEventPublisher eventPublisher;
-    private final TopicExtractor topicExtractor;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
             PriorActionCardRecommender priorActionCardRecommender,
             RetrospectStateCodec codec, UserRepository userRepository,
             UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
-            ApplicationEventPublisher eventPublisher, TopicExtractor topicExtractor) {
+            ApplicationEventPublisher eventPublisher) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
@@ -71,7 +70,6 @@ public class RetrospectService {
         this.userProfileRepository = userProfileRepository;
         this.scheduleRepository = scheduleRepository;
         this.eventPublisher = eventPublisher;
-        this.topicExtractor = topicExtractor;
     }
 
     /**
@@ -163,9 +161,8 @@ public class RetrospectService {
                         state.needs().stream().map(Need::word).toList(),
                         state.desiredState(), state.smallAction(),
                         WishSentiment.of(state.confirmedEmotions()).key());
-        // 토픽 추출(G5)은 완료 시점에만 — 일기가 나온 턴에서 대화 전체를 근거로 한 번 뽑는다.
-        // (announceCompletion 은 매 턴 호출되므로, 여기서 매 턴 추출하면 낭비 + 대화 초반 부분 데이터가
-        //  조기 저장되고 완료 시점의 제대로 된 추출이 존재 가드에 막힌다.)
+        // 토픽은 일기가 나온 턴에만 만든다 — announceCompletion 은 매 턴 호출되므로, 매 턴 만들면
+        // 대화 초반의 설익은 사건이 먼저 저장되고 완료 시점의 제대로 된 것이 존재 가드에 막힌다.
         List<RetrospectCompleted.TopicData> topics = diary == null ? List.of() : topicsFrom(state);
         if (diary == null && card == null && topics.isEmpty()) {
             return;
@@ -175,61 +172,94 @@ public class RetrospectService {
     }
 
     /**
-     * 채팅에서 뽑은 토픽(주 일정·키워드 + 매칭 감정) — <b>저장 경로만 먼저 깔았다.</b> 실제 추출(주 일정
-     * 1~2개와 키워드 N개를 대화에서 뽑아 감정을 매칭)은 후속 작업이고, 그때 이 메서드가 {@code state}
-     * 에서 토픽을 만들어 채운다. 지금은 빈 목록이라 토픽 리스너가 돌지 않는다.
+     * 완료 이벤트에 실을 토픽(주 일정·키워드 + 매칭 감정) — <b>추출 결과(G1)에서 파생시킨다.</b>
+     *
+     * <p>예전에는 토픽 전용 LLM 콜(G5)이 같은 대화를 다시 읽고 감정을 <b>두 번째로</b> 판단했다.
+     * 두 판단이 갈리면 어느 쪽이 정답인지 채점할 수 없어(모델 비교 계획 §2.3-1) 감정 판단을 G1 하나로
+     * 모았다. 여기서는 LLM 을 부르지 않는다 — 사건·키워드에 일정 id 를 잇고 감정을 물려줄 뿐이다.
+     *
+     * <p>사건 토픽의 이름은 {@link ExtractedEvent#topicLabel()}(짧은 label, 없으면 요약)이다.
+     *
+     * <p>예전에는 사건과 별개로 '키워드' 토픽({@link TopicType#KEYWORD})도 만들었는데, 모델이 사건
+     * 이름을 그대로 재사용해 같은 주제가 두 행으로 쌓였다(관측: "가족 예배"·"개발"이 SCHEDULE 과
+     * KEYWORD 로 각각 저장). 사건 label 이 이미 같은 역할을 하므로 키워드 생산을 없앴다.
+     * {@code KEYWORD} 상수는 <b>남긴다</b> — 이미 저장된 행을 읽어야 한다.
      */
-    /**
-     * 대화에서 뽑은 토픽(주 일정·키워드 + 매칭 감정)을 완료 이벤트에 실을 형태로 만든다. 대화 소재가
-     * 아예 없으면(사건·일정 둘 다 없음) 추출 호출 없이 빈 목록. 주 일정 토픽이 시작 시 고른 그 일정과
-     * 같으면 실제 일정 id 로 잇는다(자유 텍스트/키워드면 null).
-     */
-    private List<RetrospectCompleted.TopicData> topicsFrom(RetrospectState state) {
-        if (state.event() == null && !state.hasSchedule()) {
+    static List<RetrospectCompleted.TopicData> topicsFrom(RetrospectState state) {
+        List<ExtractedEvent> events = state.events();
+        if (events.isEmpty()) {
             return List.of();
         }
         List<RetrospectCompleted.TopicData> topics = new ArrayList<>();
-        for (ExtractedTopic t : topicExtractor.extract(state)) {
-            topics.add(new RetrospectCompleted.TopicData(t.type(), linkedScheduleId(state, t),
-                    t.label(), t.emotions()));
+        for (ExtractedEvent e : events) {
+            String label = e.topicLabel();
+            if (label == null) {
+                continue;
+            }
+            topics.add(new RetrospectCompleted.TopicData(TopicType.SCHEDULE,
+                    linkedScheduleId(state, label), label, emotionsOfEvent(state, e.id())));
         }
         return topics;
     }
 
-    /** 뽑힌 주 일정이 시작 시 고른 일정과 이름이 겹치면 그 일정 id 로 잇는다. 아니면 null. */
-    private static Long linkedScheduleId(RetrospectState state, ExtractedTopic topic) {
-        if (topic.type() != TopicType.SCHEDULE || state.scheduleId() == null
-                || state.schedule() == null) {
+    /**
+     * 그 사건에 붙은 감정. <b>사건이 하나뿐이면 사건에 못 붙은 감정도 그 사건 것으로 본다</b> —
+     * 사건이 하나인 세션에서 감정이 어디에도 안 붙으면 토픽이 감정 없이 저장되기 때문이다.
+     * 사건이 둘이면 어느 쪽인지 모르므로 붙이지 않는다(잘못 귀속시키느니 비운다).
+     */
+    private static List<Emotion> emotionsOfEvent(RetrospectState state, int eventId) {
+        boolean single = state.events().size() == 1;
+        LinkedHashSet<Emotion> emotions = new LinkedHashSet<>();
+        for (ExtractedEmotion e : state.emotions()) {
+            if (e.normalized() == null) {
+                continue;
+            }
+            boolean mine = e.eventId() != null && e.eventId() == eventId;
+            if (mine || (single && e.eventId() == null)) {
+                emotions.add(e.normalized());
+            }
+        }
+        return List.copyOf(emotions);
+    }
+
+    /** 뽑힌 사건 이름이 시작 시 고른 일정과 겹치면 그 일정 id 로 잇는다. 아니면 null. */
+    private static Long linkedScheduleId(RetrospectState state, String label) {
+        if (state.scheduleId() == null || state.schedule() == null) {
             return null;
         }
         String picked = state.schedule().strip();
-        String label = topic.label().strip();
-        return label.contains(picked) || picked.contains(label) ? state.scheduleId() : null;
+        String name = label.strip();
+        return name.contains(picked) || picked.contains(name) ? state.scheduleId() : null;
     }
 
     /**
-     * 일기에 실을 대표 감정 — 확인된 감정 → 추출 감정 순. 둘 다 없으면(감정 없이 끝난 일기) null.
-     * v2 다중 감정 태그가 자리 잡기 전까지 기존 단일 {@code current_emotion} 계약을 채우는 임시 매핑이다.
+     * 일기에 실을 대표 감정 — 확인된 감정 → 추출 감정 → 추론 감정 순.
+     * v2 다중 감정 태그가 자리 잡기 전까지 기존 단일 컬럼 계약을 채우는 임시 매핑이다.
      */
     private static Emotion primaryEmotion(RetrospectState state) {
-        if (!state.confirmedEmotions().isEmpty()) {
-            return state.confirmedEmotions().get(0);
-        }
-        for (var e : state.emotions()) {
-            if (e.normalized() != null) {
-                return e.normalized();
-            }
-        }
-        return null;
+        List<Emotion> tags = emotionTags(state);
+        return tags.isEmpty() ? null : tags.get(0);
     }
 
-    /** v2 일기 감정 태그 — 확인된 감정 + 추출된 정규화 감정(중복 제거, 확인된 것 우선). */
-    private static List<Emotion> emotionTags(RetrospectState state) {
+    /**
+     * v2 일기 감정 태그 — 확인된 감정 + 추출된 정규화 감정(중복 제거, 확인된 것 우선).
+     *
+     * <p>둘 다 없으면 <b>추론 감정</b>을 쓴다. 사실만 말한 대화에서 사용자가 감정 탐색까지 건너뛰면
+     * 화면에 후보를 보여줄 기회조차 없어 일기가 감정 없이 남는다 — 달력의 점도, 리포트의 셈도 빈다.
+     *
+     * <p>추론값이 <b>추출 기록({@code state.emotions})에는 들어가지 않는다</b>는 원칙은 그대로다.
+     * 모델 비교의 채점기는 추출 기록만 보고, 일기의 Unsupported emotion rate 는 일기 <b>본문</b>을
+     * 사람이 재므로 이 태그는 어느 쪽에도 닿지 않는다.
+     */
+    static List<Emotion> emotionTags(RetrospectState state) {
         LinkedHashSet<Emotion> tags = new LinkedHashSet<>(state.confirmedEmotions());
         for (var e : state.emotions()) {
             if (e.normalized() != null) {
                 tags.add(e.normalized());
             }
+        }
+        if (tags.isEmpty() && state.inferredEmotion() != null) {
+            tags.add(state.inferredEmotion());
         }
         return List.copyOf(tags);
     }

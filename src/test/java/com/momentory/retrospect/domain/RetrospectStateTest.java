@@ -91,4 +91,34 @@ class RetrospectStateTest {
         assertThat(resumed).isEqualTo(Phase.EMOTION_EXPLORATION);
         assertThat(s.phase()).isEqualTo(Phase.EMOTION_EXPLORATION);
     }
+
+    @Test
+    @DisplayName("대표 사건은 가장 많이 이야기한 것 — 마지막에 언급한 것이 아니다")
+    void mainEventIsTheMostTalkedAbout() {
+        RetrospectState state = new RetrospectState("s");
+        state.events(java.util.List.of(
+                new ExtractedEvent(1, "팀 발표", "발표에서 말이 막힘", java.util.List.of(1, 2, 3)),
+                new ExtractedEvent(2, "친구와 다툼", "저녁에 다툼", java.util.List.of(5))));
+        // 슬롯은 매 턴 덮어써서 마지막 사건을 든다 — 대표 사건은 그걸 따르지 않는다.
+        state.event("저녁에 다툼");
+
+        assertThat(state.mainEvent()).map(ExtractedEvent::topicLabel).contains("팀 발표");
+    }
+
+    @Test
+    @DisplayName("근거 수가 같으면 먼저 나온 사건")
+    void tieGoesToTheFirstEvent() {
+        RetrospectState state = new RetrospectState("s");
+        state.events(java.util.List.of(
+                new ExtractedEvent(1, "팀 발표", "발표", java.util.List.of(1, 2)),
+                new ExtractedEvent(2, "친구와 다툼", "다툼", java.util.List.of(3, 4))));
+
+        assertThat(state.mainEvent()).map(ExtractedEvent::topicLabel).contains("팀 발표");
+    }
+
+    @Test
+    @DisplayName("사건이 없으면 대표 사건도 없다")
+    void noEventsNoMainEvent() {
+        assertThat(new RetrospectState("s").mainEvent()).isEmpty();
+    }
 }

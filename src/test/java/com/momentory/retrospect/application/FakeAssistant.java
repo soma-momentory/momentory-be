@@ -4,13 +4,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.domain.assistant.DiaryWriter;
+import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
 
@@ -30,12 +33,15 @@ class FakeAssistant
     boolean turnEmotionPresent;
     String turnQuestion = "조금 더 들려줄래요?";
     String turnEmpathy;
+    boolean turnNoMoreToAsk;
     boolean turnOffTopic;
     boolean turnVague;
     String turnSafetyLevel = "none";
 
-    // 대화 끝 감정 추출 결과
+    // 대화 끝 사건·감정 추출 결과
+    final List<ExtractedEvent> events = new ArrayList<>();
     final List<ExtractedEmotion> emotions = new ArrayList<>();
+    Emotion inferredEmotion;
     // 감정 탐색 후보
     final List<Need> needs = new ArrayList<>();
     final List<String> actions = new ArrayList<>();
@@ -57,13 +63,14 @@ class FakeAssistant
             return Optional.empty();
         }
         return Optional.of(new DiaryTurn(turnEvent, List.of(), turnMeaning, turnEmotionPresent,
-                turnQuestion, turnEmpathy, turnSafetyLevel, List.of(), turnOffTopic, turnVague));
+                turnQuestion, turnEmpathy, turnSafetyLevel, List.of(), turnNoMoreToAsk, turnOffTopic,
+                turnVague));
     }
 
     @Override
-    public List<ExtractedEmotion> extract(RetrospectState state) {
+    public EmotionExtraction extract(RetrospectState state) {
         extractCalls++;
-        return List.copyOf(emotions);
+        return new EmotionExtraction(List.copyOf(events), List.copyOf(emotions), inferredEmotion);
     }
 
     @Override

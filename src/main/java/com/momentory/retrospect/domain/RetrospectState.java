@@ -2,6 +2,7 @@ package com.momentory.retrospect.domain;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,6 +23,8 @@ public class RetrospectState {
 
     /** 일기 작성 최대 턴 (채팅흐름_v2). */
     public static final int DIARY_MAX_TURNS = 6;
+    /** 한 세션에서 뽑는 사건 개수 상한 (모델 비교 계획 §3.1). */
+    public static final int MAX_EVENTS = 2;
     /**
      * 일기 작성 권장 최소 턴 — 엔진은 6턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
      * 이 값을 하한으로 알려 "최소 이만큼은 소재를 넓혀가라"는 진행 안내에 쓴다({@code PromptFactory}).
@@ -59,8 +62,15 @@ public class RetrospectState {
     private String event;
     /** 곁가지로 언급된 사건 — 일기 본문에만 가볍게. */
     private final List<String> secondaryEvents = new ArrayList<>();
+    /** 사건 — 대화 끝에 {@link com.momentory.retrospect.domain.assistant.EmotionExtractor} 가 감정과 함께 채운다(≤2). */
+    private final List<ExtractedEvent> events = new ArrayList<>();
     /** 감정 — 대화 끝에 {@link com.momentory.retrospect.domain.assistant.EmotionExtractor} 가 한 번에 채운다. */
     private final List<ExtractedEmotion> emotions = new ArrayList<>();
+    /**
+     * 대화에 감정이 없을 때 모델이 고른 <b>화면용</b> 감정 — 추출이 아니라 추론이다.
+     * {@link #emotions} 와 섞지 않는다(채점 대상이 아니다). 감정 탐색 1턴의 후보가 빌 때만 쓴다.
+     */
+    private Emotion inferredEmotion;
     /** 감정 표현이 대화에 한 번이라도 담겼는가 — 이른 종료 판정의 감정 신호. */
     private boolean emotionSeen;
     /** 무엇이 마음에 남았는가. */
@@ -249,6 +259,46 @@ public class RetrospectState {
         }
     }
 
+    /**
+     * 대화 <b>중</b>에 서버가 아는 사건 수 — 핵심 사건 + 곁가지.
+     *
+     * <p>확정 사건({@link #events()})은 대화가 끝난 뒤 추출 콜이 채우므로 대화 중에는 비어 있다.
+     * 그래서 슬롯으로 근사한다. "새 소재를 열 질문을 할지" 판단하는 데만 쓰므로 정확한 수가
+     * 아니어도 된다 — 과소평가하면 질문 하나가 더 열릴 뿐이다.
+     */
+    public int knownEventCount() {
+        return (event != null ? 1 : 0) + secondaryEvents.size();
+    }
+
+    public List<ExtractedEvent> events() {
+        return List.copyOf(events);
+    }
+
+    /** 대화 끝에 추출한 사건으로 채운다 — 요약이 있는 것만, 최대 2개. */
+    public void events(List<ExtractedEvent> extracted) {
+        events.clear();
+        if (extracted == null) {
+            return;
+        }
+        for (ExtractedEvent e : extracted) {
+            if (e != null && e.summary() != null && events.size() < MAX_EVENTS) {
+                events.add(e);
+            }
+        }
+    }
+
+    /**
+     * 감정 탐색·바람 카드가 가리키는 <b>대표 사건</b> — 근거 발화가 가장 많은 것(=가장 많이 이야기한
+     * 일). 동점이면 먼저 나온 사건이다.
+     *
+     * <p>{@link #event()} 슬롯을 쓰지 않는 이유: 그 값은 매 턴 덮어써서 <b>사건을 언급한 마지막 턴</b>
+     * 의 것이 된다(최신성 편향). 사용자에게 "그 일"이 무엇인지 물을 때 직전 대화가 답이 되면 안 된다.
+     * 여기서는 추출이 대화 전체를 보고 만든 {@link #events()} 를 쓴다.
+     */
+    public Optional<ExtractedEvent> mainEvent() {
+        return events.stream().max(Comparator.comparingInt(e -> e.evidence().size()));
+    }
+
     public List<ExtractedEmotion> emotions() {
         return List.copyOf(emotions);
     }
@@ -263,6 +313,15 @@ public class RetrospectState {
                 }
             }
         }
+    }
+
+    public Emotion inferredEmotion() {
+        return inferredEmotion;
+    }
+
+    /** 뽑은 감정이 있으면 추론값은 두지 않는다. */
+    public void inferredEmotion(Emotion inferred) {
+        this.inferredEmotion = emotions.isEmpty() ? inferred : null;
     }
 
     public boolean emotionSeen() {
@@ -435,7 +494,8 @@ public class RetrospectState {
         return new RetrospectStateSnapshot(
                 id, nickname, scheduleId, schedule, scheduleEmotion, interest,
                 List.copyOf(restMethods), phase, heldFrom, reasks, abuseStreak,
-                diaryTurn, event, List.copyOf(secondaryEvents), List.copyOf(emotions), emotionSeen,
+                diaryTurn, event, List.copyOf(secondaryEvents), List.copyOf(events),
+                List.copyOf(emotions), inferredEmotion, emotionSeen,
                 meaning, diaryDraft, diaryUserEnded,
                 explorationEntered, explorationTurn, List.copyOf(confirmedEmotions),
                 List.copyOf(needs), desiredState, smallAction,
@@ -462,9 +522,13 @@ public class RetrospectState {
         if (s.secondaryEvents() != null) {
             state.secondaryEvents.addAll(s.secondaryEvents());
         }
+        if (s.events() != null) {
+            state.events.addAll(s.events());
+        }
         if (s.emotions() != null) {
             state.emotions.addAll(s.emotions());
         }
+        state.inferredEmotion = s.inferredEmotion();
         state.emotionSeen = s.emotionSeen();
         state.meaning = s.meaning();
         state.diaryDraft = s.diaryDraft();

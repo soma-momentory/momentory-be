@@ -11,6 +11,9 @@ import org.junit.jupiter.api.Test;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.ExtractedEvent;
+import com.momentory.retrospect.domain.EmotionPhase;
+import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 
@@ -140,7 +143,7 @@ class RetrospectEngineTest {
     @DisplayName("'감정을 더 알아볼래요' → 추출 감정을 후보로 감정 탐색 1턴을 낸다.")
     void branchExploreStartsExploration() {
         toBranch();
-        fake.emotions.add(new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "말을 끊겼어요"));
+        fake.emotions.add(new ExtractedEmotion(null, "무시당한 느낌", Emotion.ANGRY, null, null, "말을 끊겼어요", List.of()));
         // extract 는 toBranch 시점에 이미 불렸으므로 미리 넣어야 후보에 반영된다 → 다시 세팅해 재현.
         // (toBranch 에서 emotions 가 비어 있었어도, 이 테스트는 탐색 진입만 확인한다.)
 
@@ -158,7 +161,7 @@ class RetrospectEngineTest {
     @DisplayName("감정 탐색 3턴을 거치면 바람 카드(작은 행동)까지 만들어 완료한다.")
     void explorationProducesWishCard() {
         // 감정을 미리 심어 두려면 extract 결과가 필요하다 — 탐색 진입 전에 세팅.
-        fake.emotions.add(new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요"));
+        fake.emotions.add(new ExtractedEmotion(null, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
         toBranch();
         engine.handle(state, TurnCommand.option("1")); // 감정 더 알아보기
 
@@ -182,7 +185,7 @@ class RetrospectEngineTest {
     @DisplayName("작은 행동에는 '오늘은 여기까지'가 없다 — 후보를 고르면 그 행동으로 완료한다.")
     void explorationSmallActionHasNoHereEnd() {
         fake.actions.add("따뜻한 물 한 잔 마시기");
-        fake.emotions.add(new ExtractedEmotion("무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요"));
+        fake.emotions.add(new ExtractedEmotion(null, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
         toBranch();
         engine.handle(state, TurnCommand.option("1")); // 탐색 진입
         engine.handle(state, TurnCommand.option("1")); // 감정
@@ -194,5 +197,109 @@ class RetrospectEngineTest {
         assertThat(done.phase()).isEqualTo("complete");
         assertThat(done.wishCard()).isNotNull();
         assertThat(done.wishCard().smallAction()).isEqualTo("따뜻한 물 한 잔 마시기");
+    }
+
+    @Test
+    @DisplayName("더 물어볼 게 없다고 알리면 최소 턴을 채운 뒤 마무리한다 — 다른 소재로 넓히지 않는다")
+    void finishesWhenNoMoreToAsk() {
+        RetrospectState state = new RetrospectState("s-1");
+        engine.start(state, StartCommand.single("팀 발표", null, "정민"));
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnMeaning = "계속 곱씹게 된다";
+        fake.turnEmotionPresent = true;
+
+        // 최소 턴(4) 전에는 신호가 있어도 이어간다.
+        fake.turnNoMoreToAsk = true;
+        for (int i = 0; i < RetrospectState.DIARY_MIN_TURNS - 1; i++) {
+            ReplyDto mid = engine.handle(state, new TurnCommand("네 그랬어요", null));
+            assertThat(mid.phase()).as("%d턴", i + 1).isEqualTo(Phase.DIARY_CHAT.key());
+        }
+
+        // 최소 턴을 채우면 6턴을 기다리지 않고 마무리로 넘어간다.
+        ReplyDto done = engine.handle(state, new TurnCommand("네 그랬어요", null));
+
+        assertThat(done.phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
+        assertThat(state.diaryTurn()).isEqualTo(RetrospectState.DIARY_MIN_TURNS);
+        assertThat(state.diaryTurn()).isLessThan(RetrospectState.DIARY_MAX_TURNS);
+    }
+
+    @Test
+    @DisplayName("신호가 없으면 예전대로 최대 턴까지 이어간다")
+    void keepsGoingWithoutSignal() {
+        RetrospectState state = new RetrospectState("s-2");
+        engine.start(state, StartCommand.single("팀 발표", null, "정민"));
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnNoMoreToAsk = false;
+
+        for (int i = 0; i < RetrospectState.DIARY_MAX_TURNS - 1; i++) {
+            assertThat(engine.handle(state, new TurnCommand("조금 더 얘기할게요", null)).phase())
+                    .isEqualTo(Phase.DIARY_CHAT.key());
+        }
+        ReplyDto done = engine.handle(state, new TurnCommand("조금 더 얘기할게요", null));
+
+        assertThat(done.phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
+        assertThat(state.diaryTurn()).isEqualTo(RetrospectState.DIARY_MAX_TURNS);
+    }
+
+    @Test
+    @DisplayName("사건이 상한만큼 나왔으면 체크인 재개 질문이 새 소재를 열지 않는다")
+    void checkinResumeDoesNotOpenNewTopic() {
+        RetrospectState state = new RetrospectState("s-3");
+        engine.start(state, StartCommand.single("팀 발표", null, "정민"));
+        // 슬롯을 다 채우고 사건을 상한까지 만든다(핵심 + 곁가지).
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnMeaning = "계속 곱씹게 된다";
+        fake.turnEmotionPresent = true;
+        engine.handle(state, new TurnCommand("발표가 있었어요", null));
+        state.addSecondaryEvents(java.util.List.of("친구와 다툼"));
+        assertThat(state.knownEventCount()).isEqualTo(RetrospectState.MAX_EVENTS);
+
+        // 단답으로 체크인을 띄운 뒤 「조금 더」를 고른다.
+        fake.turnOffTopic = true;
+        for (int i = 0; i < 3 && state.lastOptions().isEmpty(); i++) {
+            engine.handle(state, new TurnCommand("딱히", null));
+        }
+        assertThat(state.lastOptions()).as("체크인이 떠야 한다").isNotEmpty();
+        ReplyDto resumed = engine.handle(state, new TurnCommand(null, java.util.List.of("2")));
+
+        assertThat(resumed.text()).contains("지금까지 이야기한 것 중에");
+        assertThat(resumed.text()).doesNotContain("조금 더 이야기해 주고 싶은 게 있을까요");
+    }
+
+    @Test
+    @DisplayName("사건이 하나뿐이면 예전대로 열린 질문을 낸다")
+    void openQuestionWhenRoomForAnotherEvent() {
+        RetrospectState state = new RetrospectState("s-4");
+        engine.start(state, StartCommand.single("팀 발표", null, "정민"));
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnMeaning = "계속 곱씹게 된다";
+        fake.turnEmotionPresent = true;
+        engine.handle(state, new TurnCommand("발표가 있었어요", null));
+        assertThat(state.knownEventCount()).isEqualTo(1);
+
+        fake.turnOffTopic = true;
+        for (int i = 0; i < 3 && state.lastOptions().isEmpty(); i++) {
+            engine.handle(state, new TurnCommand("딱히", null));
+        }
+        ReplyDto resumed = engine.handle(state, new TurnCommand(null, java.util.List.of("2")));
+
+        assertThat(resumed.text()).contains("조금 더 이야기해 주고 싶은 게 있을까요");
+    }
+
+    @Test
+    @DisplayName("감정 확인 질문이 어떤 사건인지 이름을 밝힌다 — 조사는 괄호가 아니라 이름으로 고른다")
+    void emotionConfirmNamesTheEvent() {
+        // 근거가 더 많은 '개발'이 대표 사건이 된다 — 마지막에 언급된 '친구와 다툼'이 아니라.
+        fake.events.add(new ExtractedEvent(1, "개발", "카페에서 개발함", List.of(1, 2, 3)));
+        fake.events.add(new ExtractedEvent(2, "친구와 다툼", "저녁에 다툼", List.of(4)));
+        fake.emotions.add(new ExtractedEmotion(1, "재밌었어", Emotion.HAPPY, 2,
+                EmotionPhase.DURING, "재밌었어", List.of(1)));
+        assertThat(toBranch().phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
+
+        ReplyDto confirm = engine.handle(state, TurnCommand.option("1"));
+
+        assertThat(confirm.text()).contains("「개발」을 떠올렸을 때");
+        assertThat(confirm.text()).doesNotContain("「개발」를");
+        assertThat(confirm.text()).doesNotContain("친구와 다툼");
     }
 }

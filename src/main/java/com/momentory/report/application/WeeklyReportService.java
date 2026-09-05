@@ -53,11 +53,11 @@ public class WeeklyReportService {
         LocalDate startDate = target.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
         LocalDate endDate = startDate.plusDays(WEEK_LENGTH - 1L);
 
-        Map<LocalDate, Emotion> emotionsByDate =
+        Map<LocalDate, List<Emotion>> emotionsByDate =
                 diaryQueryService.getDailyEmotions(userId, startDate, endDate);
         WeeklyMood mood = WeeklyMood.of(IntStream.range(0, WEEK_LENGTH)
                 .mapToObj(offset -> startDate.plusDays(offset))
-                .map(day -> new DailyMood(day, emotionsByDate.get(day)))
+                .map(day -> DailyMood.of(day, emotionsByDate.get(day)))
                 .toList());
 
         // 일정은 목록 화면과 같은 규칙(숨김·삭제 제외)으로 세야 어긋나지 않아 조회 유스케이스를 그대로

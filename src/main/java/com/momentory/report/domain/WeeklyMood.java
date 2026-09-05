@@ -37,11 +37,21 @@ public record WeeklyMood(List<DailyMood> days, Emotion dominantEmotion, String m
         return new WeeklyMood(days, dominant, messageOf(days, dominant));
     }
 
-    /** 가장 많이 나온 감정 — 최다 횟수를 나눠 가진 감정이 둘 이상이거나 기록이 없으면 null. */
+    /**
+     * 가장 많이 나온 감정 — 최다 횟수를 나눠 가진 감정이 둘 이상이거나 기록이 없으면 null.
+     *
+     * <p><b>하루의 감정을 전부 센다</b>(2026-09-05). 「늦게 일어나서 기분 안좋았는데 라면 먹고
+     * 기분 좋아졌어」 같은 하루는 우울함과 행복함이 각각 한 번씩이다 — 대표 감정만 세던 동안
+     * 뒤쪽 감정은 한 주 요약에 한 번도 잡히지 않았다.
+     *
+     * <p>그래서 <b>하루가 여러 표를 던진다</b>. 감정을 둘 남긴 날은 두 감정에 한 표씩 주고,
+     * 하나만 남긴 날은 한 표만 준다. 같은 감정이 하루에 두 번 잡히지는 않는다(목록이 이미
+     * 중복을 접었다) — 한 날이 같은 감정에 두 표를 던지면 그날만 무거워진다.
+     */
     private static Emotion dominantOf(List<DailyMood> days) {
         Map<Emotion, Long> counts = days.stream()
-                .filter(DailyMood::isRecorded)
-                .collect(Collectors.groupingBy(DailyMood::emotion, Collectors.counting()));
+                .flatMap(day -> day.emotions().stream())
+                .collect(Collectors.groupingBy(emotion -> emotion, Collectors.counting()));
         if (counts.isEmpty()) {
             return null;
         }

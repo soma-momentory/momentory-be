@@ -43,15 +43,17 @@ import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 import com.momentory.diary.domain.Diary;
 import com.momentory.diary.infrastructure.DiaryRepository;
 import com.momentory.retrospect.domain.Emotion;
+import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.ExtractedEmotion;
+import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.domain.assistant.DiaryWriter;
+import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
-import com.momentory.retrospect.domain.assistant.TopicExtractor;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;
@@ -96,7 +98,6 @@ class RetrospectApiIntegrationTest {
     @MockitoBean EmotionExtractor emotionExtractor;
     @MockitoBean ExplorationAssistant explorationAssistant;
     @MockitoBean DiaryWriter diaryWriter;
-    @MockitoBean TopicExtractor topicExtractor;
 
     private MockMvc mockMvc;
 
@@ -109,17 +110,19 @@ class RetrospectApiIntegrationTest {
         // 일기 작성 턴 — 사건·의미·감정 표현을 채운 슬롯과 다음 질문을 돌려준다.
         when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.of(new DiaryTurn(
                 "면접 스터디에서 말이 막혔다", List.of(), "계속 곱씹게 된다", true,
-                "조금 더 들려줄래요?", null, "none", List.of(), false, false)));
+                "조금 더 들려줄래요?", null, "none", List.of(), false, false, false)));
         // 대화 끝 감정 추출 — 일기 대표 감정·태그의 근거.
-        when(emotionExtractor.extract(any())).thenReturn(List.of(
-                new ExtractedEmotion("우울한 느낌", Emotion.DEPRESSED, null, null, "우울해요")));
+        when(emotionExtractor.extract(any())).thenReturn(new EmotionExtraction(
+                List.of(new ExtractedEvent(1, "면접 스터디", "면접 스터디에서 말이 막혔다", List.of(1))),
+                List.of(new ExtractedEmotion(1, "우울한 느낌", Emotion.DEPRESSED, 2,
+                        EmotionPhase.NOW, "우울해요", List.of(1))),
+                null));
         // 감정 탐색 후보(이 테스트에선 '감정 더 알아보기' 경로를 타지 않지만, 페이크를 안정적으로 둔다).
         when(explorationAssistant.suggestNeeds(any())).thenReturn(List.of());
         when(explorationAssistant.suggestActions(any())).thenReturn(List.of("따뜻한 물 한 잔 마시기"));
         // 짧은 기록형 일기 1종.
         when(diaryWriter.write(any())).thenReturn(Optional.of(new DiaryOutput("그냥 일기.", null)));
         // 토픽 추출은 이 테스트 범위 밖 — 빈 목록.
-        when(topicExtractor.extract(any())).thenReturn(List.of());
     }
 
     @AfterEach
