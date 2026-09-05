@@ -221,6 +221,52 @@ class WeeklyReportApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("하루에 감정이 여럿이면 전부 내려준다 — 점은 하나라 대표 감정이 앞에 선다")
+    void dayWithSeveralEmotionsSendsThemAll() throws Exception {
+        // 「늦게 일어나서 기분 안좋았는데 라면 먹고 기분 좋아졌어」 — 우울함과 행복함이 함께 남는다.
+        // 점 하나는 대표 감정 색만 맡으므로, 화면이 눌러서 나머지를 보려면 목록이 와야 한다.
+        User user = userRepository.saveAndFlush(User.create());
+        seedDiary(user, Emotion.DEPRESSED, "depressed,happy",
+                Instant.parse("2026-08-17T01:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/reports/weekly")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .param("date", "2026-08-19"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyMoods[1].emotion").value("depressed"))
+                .andExpect(jsonPath("$.dailyMoods[1].emotions.length()").value(2))
+                .andExpect(jsonPath("$.dailyMoods[1].emotions[0]").value("depressed"))
+                .andExpect(jsonPath("$.dailyMoods[1].emotions[1]").value("happy"));
+    }
+
+    @Test
+    @DisplayName("태그가 없는 옛 일기는 대표 감정 하나짜리 목록이 된다")
+    void legacyDiaryWithoutTagsStillSendsOne() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        seedDiary(user, Emotion.CALM, Instant.parse("2026-08-17T01:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/reports/weekly")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .param("date", "2026-08-19"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyMoods[1].emotions.length()").value(1))
+                .andExpect(jsonPath("$.dailyMoods[1].emotions[0]").value("calm"));
+    }
+
+    @Test
+    @DisplayName("기록이 없는 날은 감정 목록이 빈다 — 칸 자리는 그대로 지킨다")
+    void dayWithoutDiaryHasEmptyEmotions() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(get("/api/v1/reports/weekly")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .param("date", "2026-08-19"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyMoods[0].emotion").isEmpty())
+                .andExpect(jsonPath("$.dailyMoods[0].emotions.length()").value(0));
+    }
+
+    @Test
     @DisplayName("기록이 하나도 없는 주 — 일곱 칸은 그대로 비고 셈은 모두 0")
     void emptyWeekReturnsZeroCounts() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
@@ -278,15 +324,21 @@ class WeeklyReportApiIntegrationTest {
 
     /** 회고(FK 대상)를 실제 저장하고, 그에 딸린 일기를 지정한 {@code createdAt} 으로 직접 넣는다. */
     private void seedDiary(User user, Emotion primaryEmotion, Instant createdAt) {
+        seedDiary(user, primaryEmotion, null, createdAt);
+    }
+
+    /** 감정 태그(CSV)까지 함께 심는다 — 하루에 감정이 여럿인 일기를 만들 때 쓴다. */
+    private void seedDiary(User user, Emotion primaryEmotion, String emotionsCsv,
+            Instant createdAt) {
         Retrospect retrospect = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
                 RetrospectStatus.COMPLETED, null, "{}"));
         OffsetDateTime at = OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC);
         jdbcTemplate.update("""
-                INSERT INTO diaries (user_id, retrospect_id, original, primary_emotion,
+                INSERT INTO diaries (user_id, retrospect_id, original, primary_emotion, emotions,
                                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                user.getId(), retrospect.getId(), "본문", primaryEmotion.name(), at, at);
+                user.getId(), retrospect.getId(), "본문", primaryEmotion.name(), emotionsCsv, at, at);
     }
 
     /** {@code doneAt} 이 null 이면 아직 해보지 않은 카드다. */

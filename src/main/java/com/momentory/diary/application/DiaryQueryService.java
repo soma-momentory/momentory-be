@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -62,25 +63,45 @@ public class DiaryQueryService {
     }
 
     /**
-     * {@code [from, to]}(KST, 양끝 포함) 안에서 하루별 현재 감정 — 주간 리포트의 「이번 주의 마음」이
-     * 쓴다. 일기는 하루 한 벌만 남으므로(회고 "하루 한 번" 가드) 날짜 하나에 감정 하나다. 혹시 같은
-     * 날에 둘이 있으면 최신 것을 쓴다. 일기가 없는 날은 키 자체가 없다 — 빈 칸은 부르는 쪽이 채운다.
+     * {@code [from, to]}(KST, 양끝 포함) 안에서 하루별 감정 <b>전부</b> — 주간 리포트의 「이번 주의
+     * 마음」이 쓴다. 일기는 하루 한 벌만 남으므로(회고 "하루 한 번" 가드) 날짜 하나에 일기 하나다.
+     * 혹시 같은 날에 둘이 있으면 최신 것을 쓴다. 일기가 없는 날은 키 자체가 없다 — 빈 칸은 부르는
+     * 쪽이 채운다.
+     *
+     * <p><b>하루에 감정이 여럿일 수 있다.</b> "늦게 일어나서 기분 안좋았는데 라면 먹고 기분
+     * 좋아졌어" 같은 하루는 우울함과 행복함 둘이 남는다 — 첫 감정만 주면 마음이 바뀐 흐름에서
+     * 뒤쪽이 사라진다. <b>대표 감정이 맨 앞</b>이고(점 하나가 그 색을 맡는다) 나머지 태그가 잇는다.
+     *
+     * <p>태그가 비어 있는 옛 일기는 대표 감정 하나짜리 목록이 된다. 대표 감정까지 없으면 그날은
+     * 「기록 없음」이 아니라 <b>빈 목록</b>이다 — 일기는 있었다는 사실은 남긴다.
      *
      * <p>본문은 담지 않는다 — 세는 화면에 일기 내용을 흘리지 않기 위해서다.
      */
     @Transactional(readOnly = true)
-    public Map<LocalDate, Emotion> getDailyEmotions(Long userId, LocalDate from, LocalDate to) {
+    public Map<LocalDate, List<Emotion>> getDailyEmotions(Long userId, LocalDate from,
+            LocalDate to) {
         Instant start = DayBoundary.startOfDay(from);
         Instant end = DayBoundary.startOfDay(to.plusDays(1));
-        Map<LocalDate, Emotion> byDate = new LinkedHashMap<>();
+        Map<LocalDate, List<Emotion>> byDate = new LinkedHashMap<>();
         // 최신순으로 오므로, 같은 날에 둘이 있으면 먼저 담기는 최신 것이 남는다.
         for (Diary diary : diaryRepository
                 .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
                         userId, start, end)) {
-            byDate.putIfAbsent(DayBoundary.toLocalDate(diary.getCreatedAt()),
-                    diary.getPrimaryEmotion());
+            byDate.putIfAbsent(DayBoundary.toLocalDate(diary.getCreatedAt()), emotionsOf(diary));
         }
         return Collections.unmodifiableMap(byDate);
+    }
+
+    /** 대표 감정을 앞에 세우고 감정 태그를 잇는다(중복 접기) — 옛 일기는 대표 감정 하나만 남는다. */
+    private static List<Emotion> emotionsOf(Diary diary) {
+        LinkedHashSet<Emotion> emotions = new LinkedHashSet<>();
+        if (diary.getPrimaryEmotion() != null) {
+            emotions.add(diary.getPrimaryEmotion());
+        }
+        for (String key : DiaryView.splitCsv(diary.getEmotions())) {
+            Emotion.fromKey(key).ifPresent(emotions::add);
+        }
+        return List.copyOf(emotions);
     }
 
     /**

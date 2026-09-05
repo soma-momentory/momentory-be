@@ -122,7 +122,8 @@ class WeeklyMoodTest {
     private static List<DailyMood> week(Emotion... emotions) {
         List<Emotion> values = Arrays.asList(emotions);
         return java.util.stream.IntStream.range(0, values.size())
-                .mapToObj(offset -> new DailyMood(WEEK_START.plusDays(offset), values.get(offset)))
+                .mapToObj(offset -> DailyMood.of(WEEK_START.plusDays(offset),
+                        values.get(offset) == null ? List.of() : List.of(values.get(offset))))
                 .toList();
     }
 }
