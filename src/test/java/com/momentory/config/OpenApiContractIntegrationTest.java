@@ -187,6 +187,7 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/memos/{date}", "delete", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
         assertResponseSchema(apiDocs, "/api/v1/retrospect", "post", "201", "StartRetrospectResponse");
+        assertStartRetrospectRequestProperties(apiDocs);
         assertErrorExample(apiDocs, "/api/v1/retrospect", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "currentEmotion은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/retrospect", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
@@ -343,6 +344,20 @@ class OpenApiContractIntegrationTest {
         assertThat(properties.has("completed")).isTrue();
         assertThat(properties.has("emotion")).isTrue();
         assertThat(properties.has("completionEmotionValid")).isFalse();
+    }
+
+    private void assertStartRetrospectRequestProperties(JsonNode apiDocs) {
+        JsonNode request = apiDocs.at("/components/schemas/StartRetrospectRequest/properties");
+        assertThat(request.has("schedules")).isTrue();
+
+        // 일정 한 줄 — `completed` 는 소재를 고르는 우선순위(관심분야 > 완료)에 쓰인다.
+        // 클라이언트가 보내는 필드가 넷임을 계약으로 못박는다.
+        JsonNode item = apiDocs.at("/components/schemas/ScheduleItemRequest/properties");
+        assertThat(item.size()).isEqualTo(4);
+        assertThat(item.has("id")).isTrue();
+        assertThat(item.has("name")).isTrue();
+        assertThat(item.has("emotion")).isTrue();
+        assertThat(item.has("completed")).isTrue();
     }
 
     private void assertCalendarSyncRequestProperties(JsonNode apiDocs) {
