@@ -72,7 +72,7 @@ class WeeklyMoodTest {
     }
 
     @Test
-    @DisplayName("감정 아홉 종 모두 저마다의 멘트를 갖는다 — 빈 문장도, 겹치는 문장도 없다")
+    @DisplayName("감정 열 종 모두 저마다의 멘트를 갖는다 — 빈 문장도, 겹치는 문장도 없다")
     void everyEmotionHasItsOwnMessage() {
         Set<String> messages = new LinkedHashSet<>();
         for (Emotion emotion : Emotion.values()) {
@@ -100,7 +100,7 @@ class WeeklyMoodTest {
                         + "몸과 마음이 보내는 휴식 신호를 지나치고 있지는 않은지 살펴보세요.");
         assertThat(WeeklyMood.of(week(Emotion.ANGRY, null, null, null, null, null, null))
                 .message())
-                .isEqualTo("이번 주에는 화나고 답답한 마음을 가장 많이 느꼈어요. "
+                .isEqualTo("이번 주에는 화난 마음을 가장 많이 느꼈어요. "
                         + "원하는 대로 되지 않거나 참아야 했던 일이 있었을지도 몰라요.");
     }
 
@@ -119,10 +119,34 @@ class WeeklyMoodTest {
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
+    @Test
+    @DisplayName("하루에 감정이 여럿이면 그 감정들이 각각 한 표씩 셈에 들어간다")
+    void everyEmotionOfADayCounts() {
+        // 「늦게 일어나서 기분 안좋았는데 라면 먹고 기분 좋아졌어」 — 대표 감정만 세면 행복함은
+        // 한 주 요약에 한 번도 안 잡힌다. 이 주는 행복함 2 · 우울함 1 · 평온함 1 이라 행복함이다.
+        WeeklyMood mood = WeeklyMood.of(List.of(
+                DailyMood.of(WEEK_START, List.of(Emotion.DEPRESSED, Emotion.HAPPY)),
+                DailyMood.of(WEEK_START.plusDays(1), List.of(Emotion.CALM, Emotion.HAPPY))));
+
+        assertThat(mood.dominantEmotion()).isEqualTo(Emotion.HAPPY);
+    }
+
+    @Test
+    @DisplayName("여러 감정을 세다 최다가 갈리면 '여러 마음' 멘트로 간다")
+    void tieAcrossAllEmotionsStillMixes() {
+        // 우울함 1 · 행복함 1 — 대표 감정만 셌다면 우울함 하나가 이겼을 자리다.
+        WeeklyMood mood = WeeklyMood.of(List.of(
+                DailyMood.of(WEEK_START, List.of(Emotion.DEPRESSED, Emotion.HAPPY))));
+
+        assertThat(mood.dominantEmotion()).isNull();
+        assertThat(mood.message()).isEqualTo("여러 마음이 번갈아 찾아온 한 주였어요.");
+    }
+
     private static List<DailyMood> week(Emotion... emotions) {
         List<Emotion> values = Arrays.asList(emotions);
         return java.util.stream.IntStream.range(0, values.size())
-                .mapToObj(offset -> new DailyMood(WEEK_START.plusDays(offset), values.get(offset)))
+                .mapToObj(offset -> DailyMood.of(WEEK_START.plusDays(offset),
+                        values.get(offset) == null ? List.of() : List.of(values.get(offset))))
                 .toList();
     }
 }

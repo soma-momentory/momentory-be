@@ -14,3 +14,6 @@ local.properties
 
 # macOS
 .DS_Store
+
+# IDE 가 만드는 빌드 산출물 — Gradle 은 build/ 를 쓰고 이건 Eclipse/VSCode Java 쪽이다
+bin/

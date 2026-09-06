@@ -55,6 +55,7 @@ public interface ActionCardRepository extends JpaRepository<ActionCard, Long> {
      */
     @Query(value = """
             SELECT id, user_id, retrospect_id, situation, target_action,
+                   emotions, needs, desired_state, sentiment,
                    created_date, from_rest_preference, done, done_at, reflection,
                    created_at, updated_at
             FROM action_cards

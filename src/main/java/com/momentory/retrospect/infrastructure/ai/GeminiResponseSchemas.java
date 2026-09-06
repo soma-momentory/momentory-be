@@ -5,21 +5,23 @@ import java.util.List;
 import java.util.Map;
 
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
-import com.momentory.retrospect.domain.assistant.TurnScript;
-import com.momentory.retrospect.domain.assistant.UnderstandingCheck;
+import com.momentory.retrospect.domain.assistant.DiaryTurn;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiActions;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiExtraction;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
 
 /**
- * Gemini {@code generationConfig.responseSchema} 로 넘길 응답 스키마.
+ * Gemini {@code generationConfig.responseSchema} 로 넘길 응답 스키마 (v2 구조화 출력).
  *
- * <p>원본은 Spring AI 가 record 로부터 스키마를 자동 생성했다. RestClient 직접 호출로 바꾸면서
- * 그 스키마를 손으로 만든다(OpenAPI 서브셋, 타입명 대문자). 필드가 record 컴포넌트명과 맞아야
- * Jackson 이 {@code parts[0].text} JSON 을 record 로 역직렬화한다.
+ * <p>필드가 대상 record 컴포넌트명과 맞아야 Jackson 이 {@code parts[0].text} JSON 을 역직렬화한다.
  */
 final class GeminiResponseSchemas {
 
     private static final Map<Class<?>, Map<String, Object>> BY_TYPE = Map.of(
-            UnderstandingCheck.class, understandingSchema(),
-            TurnScript.class, turnSchema(),
+            DiaryTurn.class, diaryTurnSchema(),
+            GeminiExtraction.class, extractionSchema(),
+            GeminiNeeds.class, needsSchema(),
+            GeminiActions.class, actionsSchema(),
             DiaryOutput.class, diarySchema());
 
     private GeminiResponseSchemas() {
@@ -30,35 +32,62 @@ final class GeminiResponseSchemas {
         return BY_TYPE.get(type);
     }
 
-    private static Map<String, Object> understandingSchema() {
+    private static Map<String, Object> diaryTurnSchema() {
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
-        props.put("reflection", str());
-        props.put("situation", str());
+        props.put("event", str());
+        props.put("secondaryEvents", arrayOf(str()));
+        props.put("meaning", str());
+        props.put("emotionPresent", bool());
+        props.put("question", str());
+        props.put("empathy", str());
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
+        props.put("noMoreToAsk", bool());
         props.put("offTopic", bool());
         props.put("vague", bool());
-        props.put("userAsked", bool());
-        return object(props, List.of("reflection", "situation", "safetyLevel"));
+        return object(props, List.of("question"));
     }
 
-    private static Map<String, Object> turnSchema() {
-        LinkedHashMap<String, Object> optionProps = new LinkedHashMap<>();
-        optionProps.put("label", str());
-        optionProps.put("description", str());
-        // 쉬는 행동 카드에서만 의미가 있다 — 그 보기가 온보딩 쉬는 방법 선호를 반영했는지(분석용 내부 표식).
-        optionProps.put("restPreference", bool());
-        Map<String, Object> optionObject = object(optionProps, List.of("label"));
+    /**
+     * 사건(≤2) + 감정 (모델 비교 계획 §3.1).
+     *
+     * <p>사건의 {@code evidence} 는 required 다 — 근거 없이 뽑힌 사건은 채점에서 매칭에 실패해 FP 로
+     * 잡히는데, 이는 환각 사건에 대한 의도된 페널티다(계획 §7.1).
+     */
+    private static Map<String, Object> extractionSchema() {
+        LinkedHashMap<String, Object> event = new LinkedHashMap<>();
+        event.put("id", integer());
+        event.put("label", str());
+        event.put("summary", str());
+        event.put("evidence", arrayOf(integer()));
+
+        LinkedHashMap<String, Object> emotion = new LinkedHashMap<>();
+        emotion.put("eventId", integer());
+        emotion.put("raw", str());
+        emotion.put("normalized", str());
+        emotion.put("intensity", integer());
+        emotion.put("phase", str());
+        emotion.put("evidence", str());
+        emotion.put("evidenceIds", arrayOf(integer()));
 
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
-        props.put("message", str());
-        props.put("options", arrayOf(optionObject));
-        props.put("safetyLevel", str());
-        props.put("safetyFlags", arrayOf(str()));
-        props.put("offTopic", bool());
-        props.put("vague", bool());
-        props.put("userAsked", bool());
-        return object(props, List.of("message"));
+        props.put("events",
+                arrayOf(object(event, List.of("id", "label", "summary", "evidence"))));
+        props.put("emotions", arrayOf(object(emotion, List.of("raw"))));
+        props.put("inferredEmotion", str());
+        return object(props, List.of());
+    }
+
+    private static Map<String, Object> needsSchema() {
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        props.put("words", arrayOf(str()));
+        return object(props, List.of());
+    }
+
+    private static Map<String, Object> actionsSchema() {
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        props.put("actions", arrayOf(str()));
+        return object(props, List.of());
     }
 
     private static Map<String, Object> diarySchema() {
@@ -88,5 +117,9 @@ final class GeminiResponseSchemas {
 
     private static Map<String, Object> bool() {
         return Map.of("type", "BOOLEAN");
+    }
+
+    private static Map<String, Object> integer() {
+        return Map.of("type", "INTEGER");
     }
 }

@@ -8,18 +8,19 @@ import org.junit.jupiter.api.Test;
 class EmotionTest {
 
     @Test
-    @DisplayName("9종이 원본 순서 그대로다 — 클라이언트 번호 선택이 이 순서에 의존한다")
-    void declarationOrderMatchesOriginal() {
+    @DisplayName("10종 — v2 에서 화남/답답이 화남·답답함으로 분리됐다")
+    void declarationOrder() {
         assertThat(Emotion.keys()).containsExactly(
-                "anxious", "depressed", "angry", "happy", "stuck",
+                "anxious", "depressed", "angry", "frustrated", "happy", "stuck",
                 "lethargic", "tired", "proud", "calm");
     }
 
     @Test
-    @DisplayName("라벨이 원본과 같다")
-    void labelsMatchOriginal() {
+    @DisplayName("라벨 — 화남과 답답함이 분리됐다")
+    void labels() {
         assertThat(Emotion.ANXIOUS.label()).isEqualTo("불안함");
-        assertThat(Emotion.ANGRY.label()).isEqualTo("화남/답답");
+        assertThat(Emotion.ANGRY.label()).isEqualTo("화남");
+        assertThat(Emotion.FRUSTRATED.label()).isEqualTo("답답함");
         assertThat(Emotion.LETHARGIC.label()).isEqualTo("무기력");
     }
 
