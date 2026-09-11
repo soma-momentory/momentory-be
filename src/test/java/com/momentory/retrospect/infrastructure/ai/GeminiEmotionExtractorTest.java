@@ -92,19 +92,44 @@ class GeminiEmotionExtractorTest {
     }
 
     @Test
-    @DisplayName("모르는 감정 키·시점은 null 로 둔다 — 고정 10종 밖은 받지 않는다")
-    void unknownKeysBecomeNull() {
+    @DisplayName("모르는 감정 키는 받지 않고 버린다 — 고정 10종 밖은 화면·태그 어디서도 못 쓴다")
+    void dropsEmotionWithUnknownKey() {
         respond(new GeminiExtraction(
                 List.of(),
-                List.of(new GeminiEmotion(null, "설렜어요", "excited", 2, "someday", "설렜어요",
+                List.of(new GeminiEmotion(null, "설렜어요", "excited", 2, "now", "설렜어요",
+                        List.of(1))),
+                null));
+
+        assertThat(extractor.extract(state()).emotions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("감정 키는 알아도 시점이 10종 밖이면 시점만 null 로 둔다")
+    void unknownPhaseBecomesNull() {
+        respond(new GeminiExtraction(
+                List.of(),
+                List.of(new GeminiEmotion(null, "불안했어요", "anxious", 2, "someday", "불안했어요",
                         List.of(1))),
                 null));
 
         EmotionExtraction result = extractor.extract(state());
 
-        assertThat(result.emotions().get(0).normalized()).isNull();
+        assertThat(result.emotions().get(0).normalized()).isEqualTo(Emotion.ANXIOUS);
         assertThat(result.emotions().get(0).phase()).isNull();
-        assertThat(result.emotions().get(0).raw()).isEqualTo("설렜어요");
+    }
+
+    @Test
+    @DisplayName("10종 밖 감정만 나오면 추론 감정이 살아난다 — 유령 항목이 추론을 죽이면 안 된다")
+    void offTaxonomyEmotionDoesNotSuppressInference() {
+        respond(new GeminiExtraction(
+                List.of(new GeminiEvent(1, "업무", "회의와 자료 정리", List.of(1))),
+                List.of(new GeminiEmotion(1, "설렜어요", "excited", 2, "now", "설렜어요", List.of(1))),
+                "calm"));
+
+        EmotionExtraction result = extractor.extract(state());
+
+        assertThat(result.emotions()).isEmpty();
+        assertThat(result.inferredEmotion()).isEqualTo(Emotion.CALM);
     }
 
     @Test

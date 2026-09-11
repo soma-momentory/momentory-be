@@ -303,12 +303,16 @@ public class RetrospectState {
         return List.copyOf(emotions);
     }
 
-    /** 대화 끝에 추출한 감정으로 채운다(정규화된 것만 남긴다). */
+    /**
+     * 대화 끝에 추출한 감정으로 채운다 — <b>정규화된 것만</b> 남긴다. 10종 밖이라 {@code normalized}
+     * 가 비는 항목은 어디서도 쓰지 못하면서 {@link #inferredEmotion(Emotion)} 게이트만 막으므로
+     * 여기서 걸러낸다.
+     */
     public void emotions(List<ExtractedEmotion> extracted) {
         emotions.clear();
         if (extracted != null) {
             for (ExtractedEmotion e : extracted) {
-                if (e != null) {
+                if (e != null && e.normalized() != null) {
                     emotions.add(e);
                 }
             }
