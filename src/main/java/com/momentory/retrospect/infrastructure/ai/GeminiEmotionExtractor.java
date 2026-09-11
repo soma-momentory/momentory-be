@@ -85,11 +85,17 @@ public class GeminiEmotionExtractor implements EmotionExtractor {
             if (e == null) {
                 continue;
             }
+            Emotion normalized = Emotion.fromKey(e.normalized()).orElse(null);
+            // 10종으로 못 맞추는 감정은 버린다 — 화면 후보·일기 태그·채점 어디서도 쓰지 못하면서
+            // emotions 를 비지 않게 만들어 추론 감정(inferredEmotion)까지 함께 죽인다.
+            if (normalized == null) {
+                continue;
+            }
             Integer eventId = eventIds.contains(e.eventId()) ? e.eventId() : null;
             emotions.add(new ExtractedEmotion(
                     eventId,
                     e.raw(),
-                    Emotion.fromKey(e.normalized()).orElse(null),
+                    normalized,
                     e.intensity(),
                     EmotionPhase.fromKey(e.phase()).orElse(null),
                     e.evidence(),
