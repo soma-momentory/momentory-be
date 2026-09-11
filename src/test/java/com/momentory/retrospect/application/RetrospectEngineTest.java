@@ -302,4 +302,26 @@ class RetrospectEngineTest {
         assertThat(confirm.text()).doesNotContain("「개발」를");
         assertThat(confirm.text()).doesNotContain("친구와 다툼");
     }
+
+    // ── 위기 안내 → 이어서 얘기하기 ─────────────────────────────────────
+
+    @Test
+    @DisplayName("위기 안내 후 '이어서 얘기하기' → 위기 발화를 답으로 삼지 않고 직전 질문을 다시 낸다")
+    void safetyResumeReshowsLastQuestion() {
+        start();
+        fake.turnQuestion = "그때 마음이 어땠어요?";
+        ReplyDto question = engine.handle(state, TurnCommand.text("발표 준비를 했어요."));
+        assertThat(question.phase()).isEqualTo(Phase.DIARY_CHAT.key());
+
+        ReplyDto hold = engine.handle(state, TurnCommand.text("죽고 싶어요."));
+        assertThat(hold.phase()).isEqualTo(Phase.SAFETY_HOLD.key());
+
+        int diaryTurnAtHold = state.diaryTurn();
+        ReplyDto resumed = engine.handle(state, TurnCommand.text(""));
+
+        assertThat(resumed.phase()).isEqualTo(Phase.DIARY_CHAT.key());
+        assertThat(resumed.text()).isEqualTo(question.text());
+        // 이어가기는 답변 턴이 아니다 — 일기 턴을 소모하지 않고 질문만 다시 보여준다.
+        assertThat(state.diaryTurn()).isEqualTo(diaryTurnAtHold);
+    }
 }

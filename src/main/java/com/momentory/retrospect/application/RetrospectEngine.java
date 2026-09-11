@@ -648,13 +648,46 @@ public class RetrospectEngine {
         return ReplyDto.safetyHold(text, level);
     }
 
+    /**
+     * 「이어서 얘기하기」 — 위기 안내로 멈추기 전 phase 로 돌아간다. 들어온 입력을 답변으로 처리하지
+     * 않고, <b>멈추기 직전에 보던 질문을 한 번 더 보여준다</b>. 위기 표현이 곧 답변으로 굳어버리면
+     * 사용자가 다시 답할 기회를 잃고, 맥 끊긴 채로 대화가 이어지기 때문이다.
+     *
+     * <p>직전 질문을 찾지 못하는 드문 경우(히스토리가 비정상)엔 예전처럼 phase 에 맞춰 이어간다.
+     */
     private ReplyDto handleSafetyResume(RetrospectState state, TurnCommand command) {
         Phase resumed = state.resumeFromHold();
+        String question = lastQuestionBeforeHold(state);
+        if (question != null && !question.isBlank()) {
+            state.addAssistantMessage(question);
+            return ReplyDto.question(question, resumed, state.safety().level());
+        }
         return switch (resumed) {
             case AWAIT_BRANCH -> handleBranch(state, command);
             case EMOTION_EXPLORATION -> handleExploration(state, command);
             default -> handleDiaryTurn(state, command);
         };
+    }
+
+    /**
+     * 위기 안내로 멈추기 직전 사용자가 답하던 질문 — 마지막 사용자 발화 바로 앞의 AI 발화다.
+     * (히스토리는 … 질문(AI) · 위기 발화(사용자) · 안내(AI) 순이라, 마지막 사용자 발화 앞을 본다.)
+     */
+    private static String lastQuestionBeforeHold(RetrospectState state) {
+        List<Message> messages = state.messages();
+        int lastUser = -1;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i).isUser()) {
+                lastUser = i;
+                break;
+            }
+        }
+        for (int i = lastUser - 1; i >= 0; i--) {
+            if (messages.get(i).isAssistant()) {
+                return messages.get(i).content();
+            }
+        }
+        return null;
     }
 
     // ── 선택지 해석·변환 도우미 ─────────────────────────────────────────
