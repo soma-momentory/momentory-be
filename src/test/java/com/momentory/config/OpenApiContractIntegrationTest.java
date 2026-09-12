@@ -376,7 +376,7 @@ class OpenApiContractIntegrationTest {
 
     private void assertWeeklyReportResponseProperties(JsonNode apiDocs) {
         JsonNode properties = apiDocs.at("/components/schemas/WeeklyReportResponse/properties");
-        assertThat(properties.size()).isEqualTo(10);
+        assertThat(properties.size()).isEqualTo(12);
         assertThat(properties.has("startDate")).isTrue();
         assertThat(properties.has("endDate")).isTrue();
         assertThat(properties.has("dailyMoods")).isTrue();
@@ -386,7 +386,20 @@ class OpenApiContractIntegrationTest {
         assertThat(properties.has("scheduleCompletedCount")).isTrue();
         assertThat(properties.has("actionCardCreatedCount")).isTrue();
         assertThat(properties.has("actionCardCompletedCount")).isTrue();
+        // 「이번 주 바람카드」 — 찾은 바람과 실천한 것이 한 응답에 함께 온다
+        assertThat(properties.has("needs")).isTrue();
+        assertThat(properties.has("practicedWishes")).isTrue();
         assertThat(properties.has("diaryCount")).isTrue();
+
+        JsonNode need = apiDocs.at("/components/schemas/NeedCountResponse/properties");
+        assertThat(need.size()).isEqualTo(2);
+        assertThat(need.has("word")).isTrue();
+        assertThat(need.has("count")).isTrue();
+
+        JsonNode practiced = apiDocs.at("/components/schemas/PracticedWishResponse/properties");
+        assertThat(practiced.size()).isEqualTo(2);
+        assertThat(practiced.has("action")).isTrue();
+        assertThat(practiced.has("needs")).isTrue();
 
         JsonNode daily = apiDocs.at("/components/schemas/DailyMoodResponse/properties");
         assertThat(daily.size()).isEqualTo(3);
