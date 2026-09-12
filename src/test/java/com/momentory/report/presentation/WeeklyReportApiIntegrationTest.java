@@ -169,7 +169,48 @@ class WeeklyReportApiIntegrationTest {
                 .andExpect(jsonPath("$.scheduleCompletedCount").value(3))
                 .andExpect(jsonPath("$.actionCardCreatedCount").value(4))
                 .andExpect(jsonPath("$.actionCardCompletedCount").value(2))
+                // 바람을 고르지 않은 카드들이라 찾은 바람은 없고, 실천 목록만 완료 수만큼 선다.
+                .andExpect(jsonPath("$.needs.length()").value(0))
+                .andExpect(jsonPath("$.practicedWishes.length()").value(2))
                 .andExpect(jsonPath("$.diaryCount").value(5));
+    }
+
+    @Test
+    @DisplayName("이번 주에 찾은 바람은 합쳐서 세고, 실천한 것은 무엇을 했는지까지 온다")
+    void weeklyWishesGatherNeedsAndPracticedActions() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+
+        // 이번 주 카드 셋 — 휴식이 둘(한 카드는 실천), 인정·연결이 하나씩.
+        seedWishCard(user, Instant.parse("2026-08-17T01:00:00Z"), "휴식,인정", "일찍 자기", null);
+        seedWishCard(user, Instant.parse("2026-08-19T01:00:00Z"), "휴식", "30분 산책하기",
+                Instant.parse("2026-08-19T05:00:00Z"));
+        seedWishCard(user, Instant.parse("2026-08-21T01:00:00Z"), "연결", null,
+                Instant.parse("2026-08-21T05:00:00Z"));
+        // 주 밖·남의 카드는 섞이지 않는다.
+        seedWishCard(user, Instant.parse("2026-08-09T01:00:00Z"), "휴식", "지난주 행동", null);
+        seedWishCard(other, Instant.parse("2026-08-18T01:00:00Z"), "휴식", "남의 행동", null);
+
+        mockMvc.perform(get("/api/v1/reports/weekly")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .param("date", "2026-08-19"))
+                .andExpect(status().isOk())
+                // 많이 나온 바람이 앞에 선다 — 같은 횟수면 최신 카드 순이다.
+                .andExpect(jsonPath("$.needs.length()").value(3))
+                .andExpect(jsonPath("$.needs[0].word").value("휴식"))
+                .andExpect(jsonPath("$.needs[0].count").value(2))
+                .andExpect(jsonPath("$.needs[1].word").value("연결"))
+                .andExpect(jsonPath("$.needs[1].count").value(1))
+                .andExpect(jsonPath("$.needs[2].word").value("인정"))
+                .andExpect(jsonPath("$.needs[2].count").value(1))
+                // 실천 목록은 최신순이고, 작은 행동을 안 정하고 해본 카드는 행동이 비어 온다.
+                .andExpect(jsonPath("$.practicedWishes.length()").value(2))
+                .andExpect(jsonPath("$.practicedWishes[0].action").isEmpty())
+                .andExpect(jsonPath("$.practicedWishes[0].needs[0]").value("연결"))
+                .andExpect(jsonPath("$.practicedWishes[1].action").value("30분 산책하기"))
+                .andExpect(jsonPath("$.practicedWishes[1].needs[0]").value("휴식"))
+                .andExpect(jsonPath("$.actionCardCreatedCount").value(3))
+                .andExpect(jsonPath("$.actionCardCompletedCount").value(2));
     }
 
     @Test
@@ -283,6 +324,9 @@ class WeeklyReportApiIntegrationTest {
                 .andExpect(jsonPath("$.scheduleCompletedCount").value(0))
                 .andExpect(jsonPath("$.actionCardCreatedCount").value(0))
                 .andExpect(jsonPath("$.actionCardCompletedCount").value(0))
+                // 빈 주에도 배열 자리는 남는다 — null 을 보내지 않는다.
+                .andExpect(jsonPath("$.needs.length()").value(0))
+                .andExpect(jsonPath("$.practicedWishes.length()").value(0))
                 .andExpect(jsonPath("$.diaryCount").value(0));
     }
 
@@ -354,6 +398,24 @@ class WeeklyReportApiIntegrationTest {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 user.getId(), retrospect.getId(), "상황", "행동",
+                createdAt.atZone(TimeZonePolicy.DEFAULT_ZONE_ID).toLocalDate(), false,
+                doneAt != null, done, at, at);
+    }
+
+    /** 바람(needs CSV)과 작은 행동까지 심는다 — 「이번 주 바람카드」를 볼 때 쓴다. */
+    private void seedWishCard(User user, Instant createdAt, String needsCsv, String targetAction,
+            Instant doneAt) {
+        Retrospect retrospect = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
+                RetrospectStatus.COMPLETED, null, "{}"));
+        OffsetDateTime at = OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC);
+        OffsetDateTime done = doneAt == null ? null : OffsetDateTime.ofInstant(doneAt, ZoneOffset.UTC);
+        jdbcTemplate.update("""
+                INSERT INTO action_cards (user_id, retrospect_id, situation, target_action, needs,
+                                          created_date, from_rest_preference, done, done_at,
+                                          created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                user.getId(), retrospect.getId(), "상황", targetAction, needsCsv,
                 createdAt.atZone(TimeZonePolicy.DEFAULT_ZONE_ID).toLocalDate(), false,
                 doneAt != null, done, at, at);
     }
