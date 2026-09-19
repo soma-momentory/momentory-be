@@ -10,12 +10,13 @@ import java.util.stream.IntStream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.momentory.actioncard.application.ActionCardPeriodCount;
 import com.momentory.actioncard.application.ActionCardQueryService;
+import com.momentory.actioncard.application.ActionCardView;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.diary.application.DiaryQueryService;
 import com.momentory.report.domain.DailyMood;
 import com.momentory.report.domain.WeeklyMood;
+import com.momentory.report.domain.WeeklyWishes;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.schedule.application.ScheduleResult;
 import com.momentory.schedule.application.ScheduleService;
@@ -66,12 +67,19 @@ public class WeeklyReportService {
                 scheduleService.getSchedulesInPeriod(userId, startDate, endDate);
         long scheduleCompletedCount = schedules.stream().filter(ScheduleResult::completed).count();
 
-        ActionCardPeriodCount actionCards =
-                actionCardQueryService.countInPeriod(userId, startDate, endDate);
+        // 바람 카드는 **목록으로** 받는다 — 화면이 「이번 주에 찾은 바람」과 「실천한 것」을 적으므로
+        // 수만으로는 모자란다. 셈도 이 목록에서 나온다(수와 목록이 다른 조회에서 오면 어긋난다).
+        List<ActionCardView> actionCards =
+                actionCardQueryService.findInPeriod(userId, startDate, endDate);
+        long actionCardCompletedCount = actionCards.stream().filter(ActionCardView::done).count();
+        WeeklyWishes wishes = WeeklyWishes.of(actionCards.stream()
+                .map(card -> new WeeklyWishes.WishCard(card.needWords(), card.targetAction(),
+                        card.done()))
+                .toList());
 
-        return new WeeklyReport(startDate, endDate, mood,
+        return new WeeklyReport(startDate, endDate, mood, wishes,
                 schedules.size(), scheduleCompletedCount,
-                actionCards.createdCount(), actionCards.completedCount(),
+                actionCards.size(), actionCardCompletedCount,
                 emotionsByDate.size());
     }
 }

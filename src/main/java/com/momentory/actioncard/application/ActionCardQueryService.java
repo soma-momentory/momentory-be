@@ -45,20 +45,25 @@ public class ActionCardQueryService {
     }
 
     /**
-     * {@code [from, to]}(KST, 양끝 포함) 안에 만들어진 행동 카드 수와 그중 완료된 수 — 주간 리포트가
-     * 쓴다. 보관함 월별 조회와 같은 {@code created_at} 기준이라, 목록에 보이는 카드와 셈이 어긋나지
-     * 않는다.
+     * {@code [from, to]}(KST, 양끝 포함) 안에 만들어진 행동 카드(최신순) — 주간 리포트가 쓴다.
+     * 보관함 월별 조회와 같은 {@code created_at} 기준이라, 목록에 보이는 카드와 리포트가 말하는
+     * 카드가 어긋나지 않는다.
+     *
+     * <p>세기만 하던 자리였는데(옛 {@code countInPeriod}) 리포트가 「이번 주에 찾은 바람」과
+     * 「실천한 것」까지 말하게 되면서 카드 자체가 필요해졌다. 셈도 이 목록에서 나온다 — 수와
+     * 목록을 다른 조회에서 얻으면 둘이 서로 어긋날 자리가 생긴다(한 주는 카드 몇 장이라
+     * 목록으로 받아도 무겁지 않다).
      */
     @Transactional(readOnly = true)
-    public ActionCardPeriodCount countInPeriod(Long userId, LocalDate from, LocalDate to) {
+    public List<ActionCardView> findInPeriod(Long userId, LocalDate from, LocalDate to) {
         Instant start = DayBoundary.startOfDay(from);
         Instant end = DayBoundary.startOfDay(to.plusDays(1));
-        long created = actionCardRepository
-                .countByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(userId, start, end);
-        long completed = actionCardRepository
-                .countByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanAndDoneTrue(
-                        userId, start, end);
-        return new ActionCardPeriodCount(created, completed);
+        return actionCardRepository
+                .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                        userId, start, end)
+                .stream()
+                .map(ActionCardView::from)
+                .toList();
     }
 
     /** 행동 카드 단건 — 소유권을 함께 검증한다. */
