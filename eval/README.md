@@ -1,6 +1,11 @@
-# 모델 비교 채점기
+# 모델 비교 평가 도구
 
 계획: [`../docs/model-comparison-plan.md`](../docs/model-comparison-plan.md)
+
+> ⚠ **택소노미가 두 개 있다.** Notion 정본이 감정 체계(현재 대표 11종)와 강도 척도를 교체했다(계획 §0.1).
+> `labeler.html`·`merge.py` 는 **정본(v2)** 으로 옮겼고, `score.py` 는 아직 **구 택소노미(v1)** 다.
+> 골드·예측 파일의 `taxonomy` 필드가 섞이면 `score.py` 가 **채점을 거부한다** — 라벨 키가
+> 하나도 안 겹쳐 전부 0점이 나오는 것이 가장 위험해서다. 채점기 이전 작업은 계획 §14.3.
 
 ## 무엇을 위한 것인가
 
@@ -38,36 +43,71 @@ python3 score.py --gold sample/gold.sample.json \
 ## 파일럿 도구
 
 ```
-대화 수집(앱)  ──psql──▶  dump.py  ──┬──▶ 대화(프로브 형식) ──▶ 프로브 러너 ──▶ 예측
-                                     └──▶ 예측(운영 설정)
-                                                                    labeler.html ──▶ 골드
-                                                                                      │
-                                                            score.py ◀────────────────┘
+        ┌─ 실사용자 DB ─┐
+             psql
+               ▼
+        dump.py --anonymize --pseudonymize --sample 100
+               │
+               ├──▶ name-candidates.txt ──▶ 사람 검토 ──▶ names.txt ─┐
+               │                                                      │ (2차 실행)
+               ├──▶ conversations.txt ◀───────────────────────────────┘
+               │          │
+               │          ├──▶ labeler.html (A) ──▶ gold-A.json ─┐
+               │          └──▶ labeler.html (B) ──▶ gold-B.json ─┴─▶ merge.py
+               │                                                        │
+               │                                        disagreements.md ┤ 조정
+               │                                        gold-agreed.json ┘
+               │
+               └──▶ 프로브 러너 ──▶ pred-<변형>.json ──▶ score.py
 ```
 
-### `dump.py` — DB 의 state_json 을 꺼낸다
+### `dump.py` — DB 의 state_json 을 꺼내고 비식별화한다
 
-DB 에 직접 붙지 않는다. 내보내기는 psql 이 하고 변환만 맡는다.
+DB 에 직접 붙지 않는다. 내보내기는 psql 이 하고 변환·비식별화만 맡는다.
 
 ```bash
 psql "$DB_URL" -At -c \
-  "SELECT state_json FROM retrospects WHERE status='COMPLETE' ORDER BY id" > sessions.jsonl
-
-python3 dump.py --in sessions.jsonl \
-  --conversations pilot-conversations.txt \
-  --predictions pilot-pred-prod.json
+  "SELECT state_json FROM retrospects WHERE status='COMPLETED' ORDER BY id" > sessions.jsonl
 ```
 
-- **대화**는 프롬프트 변형을 갈아가며 예측을 다시 뽑을 입력이다. 보통 이쪽만 쓴다.
-- **예측**은 앱이 운영 설정(temperature 0.7)으로 이미 만든 결과다. "운영이 실제로 뭘 냈나"를
-  볼 때만 쓴다. 감정이 0개인 세션을 세어 **조용한 호출 실패**를 알려 준다.
-- 선택지 줄은 걷어낸다. `PromptFactory` 도 프롬프트를 만들 때 같은 줄을 빼므로 재실행 프롬프트는
-  동일하다.
+**실사용자 데이터는 두 번 돌린다.** 사람 이름은 자동으로 못 가리기 때문이다.
+
+```bash
+# 1차 — 표본을 정하고 이름 후보를 뽑는다
+python3 dump.py --in sessions.jsonl --anonymize --pseudonymize \
+  --sample 100 --seed 20260927 \
+  --review-names data/name-candidates.txt --id-map data/id-map.json \
+  --conversations data/conversations.txt
+
+# name-candidates.txt 를 사람이 훑어 실제 이름만 남긴다 → names.txt
+
+# 2차 — 검토된 이름까지 가린다
+python3 dump.py --in sessions.jsonl --anonymize --pseudonymize \
+  --sample 100 --seed 20260927 --names data/names.txt \
+  --id-map data/id-map.json --conversations data/conversations.txt
+```
+
+| 옵션 | 뜻 |
+|---|---|
+| `--anonymize` | 전화·이메일·주민번호·계좌·카드·URL·아이디를 가린다. **실사용자 데이터엔 필수** |
+| `--review-names` | 이름 후보와 빈도를 뽑는다. 자동 판별이 아니라 **사람이 검토할 입력**이다 |
+| `--names` | 검토를 마친 이름을 `[사람N]` 으로 치환. 번호는 덤프 전체에서 일관된다 |
+| `--pseudonymize` | 세션 ID 를 해시로. 라벨러가 원본 세션·사용자를 되짚지 못하게 |
+| `--id-map` | 가명 → 원본 ID 매핑. **라벨 세트와 다른 곳에 보관한다** |
+| `--sample N --seed S` | 표본 추출. 시드를 적어 두면 같은 표본을 다시 만들 수 있다 |
+| `--source real\|synthetic` | 대화 헤더에 실린다. 실참여와 가상 대화를 섞어 집계하지 않기 위해(계획 §7.1) |
+
+⚠ **자동 비식별화는 완전하지 않다.** 날짜·지명·직장명·드문 표현으로도 사람이 특정될 수 있다.
+라벨링 전에 사람이 한 번 훑어보는 단계를 건너뛰지 말 것.
+
+⚠ `--predictions` 로 나오는 운영 예측은 **구 택소노미(v1)** 다. 정본 골드와 같은 채점표에
+올리지 않는다. 대화는 감정 키를 담지 않으므로 택소노미와 무관하다 — **실사용 대화를 v2 로
+라벨링해도 된다.**
 
 ### 프로브 러너 — 같은 대화에 변형을 갈아 끼운다
 
 ```bash
-PROBE_IN=pilot-conversations.txt PROBE_OUT=/tmp/pred-comb.json \
+PROBE_IN=data/conversations.txt PROBE_OUT=/tmp/pred-comb.json \
 PROBE_VARIANT=FEW_SHOT_COMBINED \
   ./gradlew cleanTest test --tests "*EmotionExtractionProbeRunner"
 ```
@@ -77,44 +117,176 @@ temperature 0 과 RPM 스로틀(4.5초)이 내장돼 있다.
 
 ### `labeler.html` — 골드를 다는 화면
 
-브라우저에서 그냥 연다(파일 하나, 서버 불필요).
+브라우저에서 그냥 연다(파일 하나, 서버 불필요). **정본(v2) 기준**이다.
 
-- 대화를 `[U1]` `[U2]` 로 번호 붙여 보여주고, **발화를 눌러** 사건 배정·감정 근거를 찍는다
-- 감정 10종 · 강도 1~4 · 시점 4종을 클릭으로. **강도 앵커가 화면에 상시 표시**된다
-- **감정 없음**과 **판단 불가**를 구분한다 — 전자는 정답(빈 목록), 후자는 채점 제외
-- 불러올 때 **순서를 랜덤화**한다(감정별로 몰아서 라벨링하면 기준이 미끄러진다 — 계획 §6.3)
+- 헤더에 **라벨러 ID**(A/B)를 먼저 넣는다. 내보내는 파일 이름이 `gold-A.json` 이 된다
+- 대화를 `[U1]` `[U2]` 로 번호 붙여 보여주고, **발화를 눌러** 사건 배정·감정 근거·강도 근거를 찍는다
+  (강도 근거는 「강도 근거 찍기」를 누른 뒤 — 파란 테두리)
+- 사건마다 **명시적 표현 여부 · 판단 특성 · 라벨링 상태 · 판단 불가**를 찍는다
+- 감정은 사건 **안에** 달린다. 대표 감정 11종 · 강도 **1·2·3·?(판단 어려움)** · 타인의 감정
+- **판단 불가 3종을 구분**한다 — 감정 정보 부족(빈 목록이 정답, 채점 포함) / 대표 감정 판단
+  어려움 / 분류 체계 밖(원문 기록). 뒤 둘은 채점에서 빠진다
+- **11종 구분 기준표**를 화면에서 펼쳐 볼 수 있다. 강도 앵커는 상시 표시
+- 불러올 때 **순서를 랜덤화**한다(감정별로 몰아서 라벨링하면 기준이 미끄러진다 — 계획 §8.8)
 - 모델 출력을 보여주지 않는다(blind)
+- 내보낼 때 **빠진 칸을 알려 준다**
 - 작업은 localStorage 에 자동저장되지만 **수시로 「JSON 내보내기」** 를 눌러 파일로 남길 것
+
+### `aihub/` — AI Hub 018.감성대화 활용
+
+계획 §6.1. **이 코퍼스의 라벨은 쓰지 않는다.** 페르소나와 감정 코드를 주고 작성하게 만든
+데이터라 라벨이 *지시된* 감정이고, 발화에 드러난 감정과 느슨하게 붙어 있다 — 실측으로
+`기쁨|편안한` 3건 중 2건이 우리 기준으로는 기쁨이었다. 정본 §8.1("라벨의 근거는 사용자
+발화에서 찾는다")과 기준이 다르다. 쓰는 것은 **텍스트**다.
+
+| 파일 | 하는 일 |
+|---|---|
+| `mapping.json` | 소분류 60종 → 정본 11종 매핑표. direct / approx / 체계 밖 |
+| `convert.py` | 매핑 적용 + **커버리지 리포트**. 산출물보다 "무엇이 안 덮이는가"가 목적이다 |
+| `harvest.py` | **애정·뿌듯함 후보 발화 수집.** 라벨이 아니라 표현을 긁는다 |
+| `harvest.html` | 후보를 키보드로 빠르게 판정하는 화면. 이어서 하기 지원 |
+| `migrate_reviewed.py` | id 규칙이 바뀌었을 때 예전 판정 파일을 맞춰 준다 |
+
+> ⚠ **후보 id 에 split 이 들어간다.** AI Hub 의 talk-id 는 training 과 validation 사이에서
+> 겹친다(실측 9건 — `Pro_05153_00002` 가 양쪽에 다른 내용으로 있다). split 을 안 붙이면 판정
+> 화면에서 두 항목이 한 판정을 공유해 **하나가 검토되지 않은 채 값이 들어간다.**
+
+⚠ **AI Hub 이용 약관을 확인한 뒤 쓴다.** 변환·수집 결과는 `eval/data/`(gitignore)에 두고
+**매핑표와 스크립트만 커밋한다.**
+
+#### 표적 수집 — 왜 전수 확정이 아닌가
+
+`convert.py --report` 실측(58,268건): **애정 0건 · 뿌듯함 direct 0건.** 그런데 텍스트에는
+표현이 있다 — 라벨 체계에 자리가 없어 슬픔·기쁨으로 흡수돼 있을 뿐이다.
+
+approx 14,943건을 전수 확정하는 길은 막혀 있다. **소분류 단위로 접을 수가 없기 때문이다** —
+`분노|안달하는` 표본 4건이 각각 분노·불안·불안·혼란이고, `당황|한심한`에는 "자식이 하나인
+줄 알았는데 둘이 됐어"가 들어 있다. 개별로 가면 14,943건 × 30초 ≈ 125시간이다.
+
+그래서 **비어 있는 두 감정만 표적으로 모은다.**
+
+```bash
+python3 aihub/harvest.py --dir "…/018.감성대화" --out data/harvest-candidates.jsonl
+```
+
+**재현율 우선**으로 넓게 긁고 정밀도는 사람이 만든다 — 놓친 것은 되찾을 수 없지만 잘못 긁은
+것은 한 번 눌러 버리면 된다. 다만 **기계적으로 확실한 오탐은 보내지 않는다**: 「보고 싶어」
+단독(「이야기해보고 싶어」를 긁는다) · 「든든한」(든든한 직장) · 「소중한」(소중한 시간)은 뺐다.
+
+그다음 `aihub/harvest.html` 을 **브라우저에서 직접 연다**(파일을 더블클릭). 후보 파일을
+불러오면:
+
+- 매치된 표현을 **하이라이트**하고 앞뒤 대화를 함께 보여준다
+- **키 하나 = 그 감정으로 정하고 다음으로.** 찾는 것 `1` 애정 · `2` 뿌듯함 · `3` 애정+뿌듯함,
+  다른 감정 `q` 기쁨 `w` 평온 `e` 슬픔 `r` 불안 `t` 분노 `y` 실망 `u` 부끄러움 `i` 혼란 `p` 미안함,
+  그 외 `o` 체계 밖 · `4` 해당 없음 · `5` 애매
+- **`Shift`+키는 넘어가지 않고 더한다** — 복합 감정("그녀가 더는 나를 사랑하지 않는대" =
+  애정 + 슬픔). 한 번 더 누르면 뺀다. `Enter` 는 그냥 다음
+- **애정·뿌듯함이 아닌 것도 버리지 않는다.** 후보로 걸린 이상 감정 표현이 들어 있는 문장이라
+  어휘 사전의 재료다. `체계 밖`(고마움·미안함·죄책감·후회·질투)은 정본 §8.3 대로 억지로
+  11종에 맞추지 않고 따로 모아 **감정 체계 개편 자료**로 쓴다
+- `←` `→` 로 되돌아가 고칠 수 있다. 상단에 **건진 수**(애정·뿌듯함·다른 감정)가 실시간으로 뜬다
+- **AI Hub 의 원래 라벨을 보여주지 않는다** — 발화만 보고 판단한다
+- 순서를 랜덤화한다(축별로 몰아 보면 기준이 미끄러진다 — 계획 §8.8)
+- localStorage 에 자동저장되지만 **수시로 「JSON 내보내기」** — 40건 넘게 안 내보내면 상단에
+  빨간 경고가 뜬다. localStorage 는 브라우저 데이터를 지우면 함께 사라진다
+
+> ⚠ **후보 목록은 localStorage 에 담지 않는다.** 2,243건이면 3.3MB 이고, 판정마다 동기적으로
+> 통째를 다시 쓰면 **화면이 멈추고 용량 한도(보통 5MB)에 걸려 저장이 통째로 실패한다.**
+> 파일에서 다시 만들 수 있는 것은 저장하지 않고 **판정만** 남긴다(전부 판정해도 150KB 안팎).
+> 그래서 새로고침하면 **후보 파일을 다시 불러와야** 하고, 불러오면 저장돼 있던 판정을 자동으로
+> 이어받는다 — 같은 후보 목록인지는 지문(개수 + 첫·끝 id)으로 확인한다.
+
+#### 이어서 하기
+
+같은 「후보 불러오기」 버튼이 두 형식을 다 받는다. **후보(.jsonl)를 먼저 불러온 뒤 판정
+파일(.json)을 불러오면** 판정이 복원되고 **첫 미판정 항목으로 건너뛴다.**
+
+내보낸 파일에는 `decisions`(모든 판정, `해당 없음` 포함)와 `rows`(쓸 것만 추린 결과)가 함께
+들어간다. `decisions` 가 이어하기용이다.
+
+`harvest.py` 의 id 규칙이 바뀌어 예전 판정 파일이 안 맞으면 `migrate_reviewed.py` 가 문장으로
+짝지어 다시 쓴다:
+
+```bash
+python3 aihub/migrate_reviewed.py --reviewed ~/Downloads/harvest-reviewed.json \
+  --candidates data/harvest-candidates.jsonl --out data/harvest-resume.json
+```
+
+문장이 여러 후보에 걸리면 **건너뛴다** — 잘못 붙이느니 다시 보는 편이 낫다.
+
+내보낸 `harvest-reviewed.json` 은 `verdict`(토큰 배열)·`primary`·`byEmotion` 집계를 담는다.
+`해당 없음`만 빠지고 나머지는 전부 들어간다. 용도는 둘이다. **v2 골드가 아니다**(강도·사건·근거가 없다):
+
+1. **감정 어휘 사전** — V0 베이스라인과 §5.1 명시적 표현 감지기의 재료
+2. **씨앗** — 자체 생성 세트에서 애정·뿌듯함 칸을 채울 출발 문장(§7.3)
+
+### `merge.py` — 2인 독립 라벨을 합치고 불일치를 뽑는다
+
+계획 §8.5 의 조정 절차를 실행 가능하게 만든 자리다.
+
+```bash
+python3 merge.py --a data/gold-A.json --b data/gold-B.json \
+  --report data/disagreements.md --merge data/gold-agreed.json
+```
+
+내는 것:
+
+1. **일치도(IAA)** — 계획 §8.9 의 상한선 좌표. 감정은 라벨별 이진 카파의 매크로 평균(다중
+   라벨이라 단일 카파가 안 된다), 강도는 1·2·3 가중 카파, 보류('판단 어려움')는 따로 센다.
+   **감정별 카파를 낮은 순으로** 내므로 기준 문서를 보강할 후보가 바로 보인다.
+2. **불일치 목록** — 원인을 **사건 구분 / 대표 감정 / 강도 / 명시적 표현 / 판단 불가**로 분류한다.
+   조정 회의에서 이 순서로 훑는다. 각 항목에 체크박스가 붙어 있다.
+3. **합의 골드** — 두 라벨이 완전히 같은 세션만 담는다. 갈린 세션은 **자동으로 한쪽을 고르지
+   않는다** — 사람이 조정한 뒤 직접 넣는다.
+
+감정 일치는 **세션 단위**로 잰다(계획 §9.2). 사건 정렬 규칙의 자의성이 IAA 에 섞이면 "기준이
+안 맞는 건지 정렬이 안 맞는 건지" 구분할 수 없다. 사건·명시적 표현처럼 사건에 매인 항목만
+근거 발화 IoU 로 짝지어 비교한다.
 
 ## 데이터 계약
 
-골드와 예측은 같은 모양이다(골드에만 `set`·`experiencer` 가 붙는다). 필드는 `ExtractedEvent`·
-`ExtractedEmotion` 과 1:1이다.
+골드는 `labeler.html` 이 내는 모양이다. 예측은 `events`·`emotions` 만 같으면 된다.
 
 ```json
 [
   {
-    "sessionId": "s-001",
+    "sessionId": "p-16dc368a",
+    "taxonomy": "v2",
+    "labeler": "A",
+    "source": "real",
     "set": "natural",
     "events": [
-      {"id": 1, "label": "팀 발표", "summary": "발표 중 말이 막혔지만 끝까지 마침",
-       "evidence": [1, 2, 3]}
+      {"id": 1, "label": "회의", "summary": "회의에서 내 의견이 빠짐",
+       "evidence": [1, 2],
+       "explicit": "yes", "status": "final",
+       "traits": ["negation"], "undecidable": null}
     ],
     "emotions": [
-      {"eventId": 1, "normalized": "anxious", "intensity": 3, "phase": "before",
-       "evidenceIds": [2]},
-      {"eventId": 1, "normalized": "angry", "experiencer": "other", "intensity": 4,
-       "phase": "during", "evidenceIds": [1]}
+      {"eventId": 1, "normalized": "disappointed", "intensity": 2,
+       "evidenceIds": [2], "intensityEvidenceIds": [2]}
     ]
   }
 ]
 ```
 
-- `evidence` — 그 사건에 속하는 **사용자 발화 번호 전체**. 사건 정렬의 기준이다.
-- `evidenceIds` — 그 감정의 근거 발화 번호. `evidence` 의 부분집합.
-- `experiencer` — **골드에만.** `"other"` 면 타인 감정이라 자기 감정 채점에서 빠지고,
-  타인→자기 오탐률의 분모가 된다. 생략하면 `"self"`.
-- 감정 키는 `Emotion.java` 의 10종, `phase` 는 `before|during|after|now`.
+| 필드 | 뜻 |
+|---|---|
+| `taxonomy` | `v2` = 정본 11종. 도구가 이 값으로 섞임을 막는다 |
+| `source` | `real`(실참여) / `synthetic`(가상). 섞어서 집계하지 않는다 |
+| `events[].evidence` | 그 사건에 속하는 **사용자 발화 번호 전체**. 사건 정렬의 기준 |
+| `events[].explicit` | `yes` / `no` / `unsure` — 명시적 감정 표현 여부(계획 §5.2) |
+| `events[].status` | `final` / `discuss` / `insufficient` — 라벨링 상태 |
+| `events[].traits` | `negation` `correction` `quote` `other` `phase` `mixed` |
+| `events[].undecidable` | `no_emotion_info`(빈 목록이 정답) / `emotion_unclear` / `out_of_scope` — 뒤 둘은 채점 제외 |
+| `emotions[].normalized` | 정본 11종: `joy` `calm` `proud` `affection` `sad` `anxious` `angry` `disappointed` `ashamed` `confused` `sorry` |
+| `emotions[].intensity` | `1` `2` `3`, 또는 판단 어려움이면 **`null`** |
+| `emotions[].evidenceIds` | 그 감정의 근거 발화 번호. `evidence` 의 부분집합 |
+| `emotions[].intensityEvidenceIds` | 강도 근거. 비우면 감정 근거와 같다고 본다 |
+| `emotions[].experiencer` | `"other"` 면 타인 감정이라 자기 감정 채점에서 빠지고 오탐률의 분모가 된다 |
+
+**시점(`phase`)은 정본에서 채점 대상이 아니다**(계획 §4.1). 사건 당시 감정이 기본이고,
+시점 차이는 `traits: ["phase"]` 메모로만 남긴다.
 
 ## 지표
 
@@ -130,7 +302,7 @@ temperature 0 과 RPM 스로틀(4.5초)이 내장돼 있다.
 | Jaccard | 정답 감정 집합과 예측 집합의 겹침 |
 | 라벨 개수 오차 · Hamming Loss | 과다/과소 예측 |
 | 강도 MAE · QWK | 평균 몇 칸 틀렸나 / 순서형 판단이 얼마나 일치하나 |
-| 시점 Macro F1 | `before/during/after/now` 4종 |
+| ~~시점 Macro F1~~ | **정본에서 삭제.** 채점기에는 아직 남아 있다(계획 §14.3) |
 | 타인→자기 오탐률 | 타인 감정을 사용자 감정으로 잡은 비율 |
 
 ### 사건 — 정렬 필요 (계획 §7.1)

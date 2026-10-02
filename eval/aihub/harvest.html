@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>표적 수집 — 애정·뿌듯함</title>
+<style>
+  :root { --line:#e3e3e0; --muted:#6b6b66; --bg:#faf9f7; --accent:#2f6f4f; --warn:#a4462d;
+          --pink:#9c4f77; --gold:#96702a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
+         background:var(--bg); color:#1a1a18; }
+  header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line);
+           padding:10px 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; z-index:5; }
+  header h1 { font-size:15px; margin:0 8px 0 0; }
+  button { font:inherit; padding:5px 11px; border:1px solid var(--line); background:#fff;
+           border-radius:6px; cursor:pointer; }
+  button:hover { border-color:#bbb; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:default; }
+  .grow { flex:1; }
+  .status { color:var(--muted); font-size:12px; }
+  .tally { font-size:12px; color:var(--muted); }
+  .tally b { color:var(--pink); } .tally i { color:var(--gold); font-style:normal; }
+  .nag { color:#fff; background:var(--warn); padding:2px 8px; border-radius:99px; }
+  .bar { height:3px; background:#eee; }
+  .bar div { height:100%; background:var(--accent); transition:width .15s; }
+  main { max-width:760px; margin:0 auto; padding:20px 16px 60px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:18px 20px; }
+  .axis { display:inline-block; font-size:12px; padding:2px 10px; border-radius:99px;
+          border:1px solid var(--line); color:var(--muted); margin-bottom:12px; }
+  .axis.affection { color:var(--pink); border-color:#e0c4d3; background:#fdf4f8; }
+  .axis.proud { color:var(--gold); border-color:#e5d5ab; background:#fdfaf0; }
+  .focus { font-size:17px; line-height:1.75; margin:6px 0 16px; }
+  .focus mark { background:#ffe9a8; padding:1px 2px; border-radius:3px; }
+  .ctx { border-top:1px solid var(--line); padding-top:12px; margin-top:4px; }
+  .turn { padding:4px 0; color:var(--muted); font-size:13px; }
+  .turn.user { color:#3a3a36; }
+  .turn.on { color:#1a1a18; font-weight:600; }
+  .meta { font-size:12px; color:var(--muted); margin-top:10px; }
+  .grp { display:flex; gap:10px; align-items:baseline; margin-top:12px; }
+  .grp .lbl { font-size:11.5px; color:var(--muted); min-width:56px; padding-top:4px; }
+  .keys { display:flex; gap:6px; flex-wrap:wrap; }
+  .key { padding:7px 11px; border:1px solid var(--line); border-radius:8px; cursor:pointer;
+         background:#fff; font-size:13.5px; }
+  .key:hover { border-color:#bbb; }
+  .key b { display:inline-block; min-width:16px; color:var(--accent); }
+  .key.picked { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .key.picked b { color:#fff; }
+  .help { font-size:12.5px; color:var(--muted); margin-top:14px; line-height:1.8; }
+  .help code { background:#f1f1ee; padding:1px 5px; border-radius:4px; }
+  .empty { padding:60px 16px; text-align:center; color:var(--muted); }
+  .nostore { background:#fdf1ed; border-bottom:2px solid var(--warn); color:#7d3521;
+             padding:10px 16px; font-size:13px; line-height:1.7; }
+  .nostore b { color:#6b2a19; }
+  .nostore pre { background:#fff; border:1px solid #f0d4cb; border-radius:6px;
+                 padding:7px 10px; margin:6px 0; font:12px/1.5 ui-monospace,Menlo,monospace;
+                 overflow-x:auto; }
+  .done { padding:40px 16px; text-align:center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>표적 수집</h1>
+  <button id="prev">◀</button>
+  <span id="progress" class="status">—</span>
+  <button id="next">▶</button>
+  <span class="tally" id="tally"></span>
+  <span class="grow"></span>
+  <span id="saved" class="status"></span>
+  <button id="fetch" hidden>서버에서 다시 불러오기</button>
+  <button id="load">파일 불러오기</button>
+  <button id="export" class="primary">JSON 내보내기</button>
+  <input id="file" type="file" hidden>
+</header>
+<div class="bar"><div id="bar" style="width:0"></div></div>
+
+<div id="nostore" class="nostore" hidden>
+  <b>⚠ 자동저장이 꺼져 있습니다 — 새로고침하면 판정이 모두 사라집니다.</b>
+  <div>브라우저가 <code>file://</code> 로 연 페이지의 저장소를 막습니다.
+    터미널에서 아래를 실행하고
+    <b><a href="http://localhost:8765/aihub/harvest.html">http://localhost:8765/aihub/harvest.html</a></b>
+    로 여세요.</div>
+  <pre>cd /Users/geun/dev/projects/momentory/momentory-be/eval &amp;&amp; python3 -m http.server 8765</pre>
+  <div>지금 창을 유지하시려면 <b>판정 10~20건마다 「JSON 내보내기」</b>를 누르세요.</div>
+</div>
+<main id="app"><div class="card empty">
+  <p><code>eval/data/harvest-candidates.jsonl</code> 을 불러오세요.</p>
+  <p class="status">먼저 <code>python3 eval/aihub/harvest.py</code> 로 후보를 만듭니다.</p>
+  <p class="status">이어서 하려면 후보를 불러온 뒤 <b>같은 버튼</b>으로
+     <code>harvest-reviewed.json</code> 을 불러오세요.</p>
+  <p class="status">파일을 이 창에 <b>끌어다 놓아도</b> 됩니다.</p>
+</div></main>
+
+<script>
+/* 애정·뿌듯함 표적 수집 — 계획 §6.1. AI Hub 라벨은 보여주지 않는다(발화만 보고 판단).
+   판정은 **토큰 배열**이다. 감정 키를 누르면 그것 하나로 바꾸고 넘어가고(빠른 길),
+   Shift+키는 넘어가지 않고 더한다(복합 감정). none·unsure 는 배타적이다. */
+const PRIMARY = [
+  ["affection", "애정",   "1"],
+  ["proud",     "뿌듯함", "2"],
+];
+const OTHERS = [
+  ["joy",         "기쁨",     "q"],
+  ["calm",        "평온",     "w"],
+  ["sad",         "슬픔",     "e"],
+  ["anxious",     "불안",     "r"],
+  ["angry",       "분노",     "t"],
+  ["disappointed","실망",     "y"],
+  ["ashamed",     "부끄러움", "u"],
+  ["confused",    "혼란",     "i"],
+  // 11번째 대표 감정(2026-10-01). 이미 익힌 q~i 자리를 밀지 않으려고 맨 끝 p 에 붙인다.
+  ["sorry",       "미안함",   "p"],
+];
+const EXTRA = [
+  ["out",    "체계 밖",   "o"],
+  ["none",   "해당 없음", "4"],
+  ["unsure", "애매",      "5"],
+];
+const EMOS = [...PRIMARY, ...OTHERS];
+const KO = Object.fromEntries([...EMOS, ...EXTRA].map(([k, ko]) => [k, ko]));
+const EXCLUSIVE = new Set(["none", "unsure"]);
+const HOTKEY = Object.fromEntries([...EMOS, ...EXTRA].map(([k, , h]) => [h, k]));
+const KEY = "momentory-harvest-v1";
+/* 저장소가 살아 있는지 시작할 때 한 번 본다 — file:// 로 열면 브라우저가 막는다.
+   조용히 실패하면 새로고침 한 번에 작업이 통째로 사라지므로 크게 알린다. */
+const CAN_STORE = (() => {
+  try { localStorage.setItem(KEY + ":probe", "1");
+        localStorage.removeItem(KEY + ":probe"); return true; }
+  catch (e) { return false; }
+})();
+let items = [], order = [], cur = 0, picks = {}, exportedAt = 0;
+let pending = null;   // 후보를 아직 안 불러왔을 때 대기 중인 저장분
+
+/* 예전 판정(문자열 하나)을 배열로 올린다 — 작업 중이던 것이 날아가면 안 된다. */
+function migrate(p) {
+  const out = {};
+  for (const [id, v] of Object.entries(p || {})) {
+    if (Array.isArray(v)) out[id] = v;
+    else if (v === "both") out[id] = ["affection", "proud"];
+    else if (v) out[id] = [v];
+  }
+  return out;
+}
+
+/* 후보 목록(items)은 localStorage 에 담지 않는다. 2,243건이면 3.3MB 이고, 판정마다
+   동기적으로 통째를 다시 쓰면 **화면이 멈추고 용량 한도(보통 5MB)에 걸려 저장이 통째로
+   실패한다.** 파일에서 다시 만들 수 있는 것은 저장하지 않고, 되살릴 수 없는 판정만 남긴다.
+   후보 목록이 같은 것인지는 지문(개수 + 첫·끝 id)으로 확인한다. */
+function sig() {
+  return items.length ? `${items.length}:${items[0].id}:${items[items.length - 1].id}` : "";
+}
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(
+      { v: 2, sig: sig(), order, cur, picks, exportedAt }));
+    document.getElementById("saved").textContent = "저장됨 " + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById("saved").textContent = "⚠ 자동저장 불가";
+  }
+}
+function restore() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return false; }
+  if (!s) return false;
+  if (s.items && s.items.length) {        // v1 — items 까지 담던 옛 형식
+    ({ items, order, cur } = s);
+    picks = migrate(s.picks);
+    exportedAt = s.exportedAt || 0;
+    save();                               // 곧바로 작은 형식으로 줄여 다시 쓴다
+    return true;
+  }
+  if (s.picks && Object.keys(s.picks).length) {
+    pending = { sig: s.sig, order: s.order || [], cur: s.cur || 0,
+                picks: migrate(s.picks), exportedAt: s.exportedAt || 0 };
+  }
+  return false;
+}
+function esc(t) {
+  return String(t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+/* 매치된 표현만 표시한다. 문자열 검색이라 정규식 이스케이프가 필요 없다. */
+function highlight(text, match) {
+  const i = match ? text.indexOf(match) : -1;
+  if (i < 0) return esc(text);
+  return esc(text.slice(0, i)) + "<mark>" + esc(match) + "</mark>" + esc(text.slice(i + match.length));
+}
+function verdictOf(it) { return (it && picks[it.id]) || []; }
+
+/* 내보낸 파일로 이어하기. `decisions` 가 있으면 그걸 쓰고(해당 없음까지 담긴다),
+   없으면 옛 형식이라 `rows` 에서 복원한다 — 그때는 '해당 없음'이 빠져 다시 보게 된다. */
+function applyReviewed(obj) {
+  if (!items.length) {
+    alert("후보 파일(harvest-candidates.jsonl)을 먼저 불러온 뒤, 판정 파일을 불러오세요.");
+    return;
+  }
+  const src = obj.decisions
+    || Object.fromEntries((obj.rows || []).map(r => [r.id, r.verdict || [r.primary]]));
+  let n = 0, unknown = 0;
+  const ids = new Set(items.map(it => it.id));
+  for (const [id, v] of Object.entries(src)) {
+    if (!Array.isArray(v) || !v.length) continue;
+    if (!ids.has(id)) { unknown++; continue; }
+    picks[id] = v;
+    n++;
+  }
+  const at = order.findIndex(i => !picks[items[i].id]);
+  cur = at < 0 ? items.length : at;
+  exportedAt = Object.keys(picks).length;
+  save(); render();
+  const lost = obj.decisions ? 0 : (obj.reviewed || 0) - n;
+  alert(`판정 ${n}건을 복원했습니다.` +
+    (lost > 0 ? `\n\n⚠ 옛 형식이라 '해당 없음' ${lost}건은 담겨 있지 않습니다 — 다시 보게 됩니다.` : "") +
+    (unknown ? `\n⚠ 후보 목록에 없는 ${unknown}건은 건너뛰었습니다.` : "") +
+    (cur >= items.length ? "\n\n전부 판정됐습니다." : `\n\n${cur + 1}번째부터 이어갑니다.`));
+}
+
+function chips(list, sel) {
+  return list.map(([v, ko, k]) =>
+    `<span class="key ${sel.includes(v) ? "picked" : ""}" data-v="${v}"><b>${k}</b> ${ko}</span>`
+  ).join("");
+}
+
+function render() {
+  const app = document.getElementById("app");
+  if (!items.length) return;
+  const done = Object.keys(picks).length;
+  document.getElementById("bar").style.width = (done / items.length * 100) + "%";
+
+  const tally = { affection: 0, proud: 0, other: 0 };
+  for (const v of Object.values(picks)) {
+    if (v.includes("affection")) tally.affection++;
+    if (v.includes("proud")) tally.proud++;
+    if (v.some(x => OTHERS.some(([k]) => k === x) || x === "out")) tally.other++;
+  }
+  const unsaved = done - exportedAt;
+  document.getElementById("tally").innerHTML =
+    `건짐 <b>애정 ${tally.affection}</b> · <i>뿌듯함 ${tally.proud}</i> · 다른 감정 ${tally.other}` +
+    (unsaved >= (CAN_STORE ? 40 : 10)
+      ? ` <span class="nag">⚠ ${unsaved}건 미저장 — 내보내세요</span>` : "");
+
+  if (cur >= items.length) {
+    app.innerHTML = `<div class="card done"><h2>다 봤습니다</h2>
+      <p class="status">${done} / ${items.length} 판정 · 애정 ${tally.affection} ·
+        뿌듯함 ${tally.proud} · 다른 감정 ${tally.other}</p>
+      <p>「JSON 내보내기」를 누르세요.</p></div>`;
+    document.getElementById("progress").textContent = `${items.length} / ${items.length}`;
+    return;
+  }
+
+  const it = items[order[cur]];
+  const sel = verdictOf(it);
+  document.getElementById("progress").textContent = `${cur + 1} / ${items.length}`;
+  document.getElementById("prev").disabled = cur === 0;
+
+  const focus = it.context.find(c => c.focus) || { text: it.sentence };
+  app.innerHTML = `
+    <div class="card">
+      <span class="axis ${it.axis}">${it.axis === "affection" ? "애정" : "뿌듯함"} 후보</span>
+      <div class="focus">${highlight(focus.text, it.match)}</div>
+      <div class="ctx">
+        ${it.context.map(c => `<div class="turn ${c.speaker === "user" ? "user" : ""}${c.focus ? " on" : ""}">
+            ${c.speaker === "user" ? "" : "↳ "}${esc(c.text)}</div>`).join("")}
+      </div>
+      <div class="meta">${esc(it.aihub.topic || "—")} · ${esc(it.aihub.age || "—")}</div>
+
+      <div class="grp"><span class="lbl">찾는 것</span>
+        <span class="keys">${chips(PRIMARY, sel)}
+          <span class="key" data-v="__both"><b>3</b> 애정+뿌듯함</span></span></div>
+      <div class="grp"><span class="lbl">다른 감정</span>
+        <span class="keys">${chips(OTHERS, sel)}</span></div>
+      <div class="grp"><span class="lbl">그 외</span>
+        <span class="keys">${chips(EXTRA, sel)}</span></div>
+
+      <div class="help">
+        <b>이 발화에 어떤 감정이 드러나 있나?</b> AI Hub 의 원래 라벨은 보여주지 않습니다 —
+        정본 §8.1 대로 <b>발화만 보고</b> 판단합니다.<br>
+        <b>애정</b> 특정 사람·대상을 향한 호감·친밀감·그리움. 그 사람과의 일이 <i>즐거웠다</i>는
+        내용만이면 애정이 아니라 기쁨입니다.<br>
+        <b>뿌듯함</b> 자신의 행동·노력·결과에 대한 만족·보람. 단순히 일이 즐거웠다면 기쁨입니다.<br>
+        <b>미안함</b> 내 행동·선택이 잘못됐다고 느끼거나 남에게 피해를 줬다고 느낌(죄책감·후회 포함).
+        남에게 <i>어떻게 보일지</i>가 중심이면 부끄러움입니다.<br>
+        <b>체계 밖</b> 질투·혐오처럼 11종 어디에도 안 맞는 것. 고마움은 기쁨, 미안함·죄책감·후회는 미안함입니다. 억지로 맞추지
+        않습니다(정본 §8.3) — 감정 체계 개편을 검토할 자료가 됩니다.<br>
+        키 하나 = <b>그 감정으로 정하고 다음으로</b> · <code>Shift</code>+키 = 넘어가지 않고
+        <b>더하기</b>(복합 감정) · <code>Enter</code> 다음 · <code>←</code> <code>→</code> 이동
+      </div>
+    </div>`;
+  app.querySelectorAll("[data-v]").forEach(el =>
+    el.onclick = ev => choose(el.dataset.v, ev.shiftKey));
+}
+
+function choose(v, add) {
+  const it = items[order[cur]];
+  if (!it) return;
+  if (v === "__both") { picks[it.id] = ["affection", "proud"]; cur++; save(); render(); return; }
+
+  let sel = verdictOf(it).slice();
+  if (add && !EXCLUSIVE.has(v)) {
+    sel = sel.filter(x => !EXCLUSIVE.has(x));
+    const at = sel.indexOf(v);
+    if (at < 0) sel.push(v); else sel.splice(at, 1);
+    picks[it.id] = sel;
+    if (!sel.length) delete picks[it.id];
+    save(); render();                       // 더하기는 넘어가지 않는다
+    return;
+  }
+  picks[it.id] = [v];
+  cur++;
+  save(); render();
+}
+
+document.addEventListener("keydown", e => {
+  if (!items.length || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (HOTKEY[k]) { e.preventDefault(); choose(HOTKEY[k], e.shiftKey); return; }
+  if (k === "3") { e.preventDefault(); choose("__both", false); return; }
+  if (k === "Enter" && cur < items.length) { e.preventDefault(); cur++; save(); render(); return; }
+  if (k === "ArrowLeft" && cur > 0) { e.preventDefault(); cur--; save(); render(); }
+  if (k === "ArrowRight" && cur < items.length) { e.preventDefault(); cur++; save(); render(); }
+});
+
+document.getElementById("prev").onclick = () => { if (cur > 0) { cur--; save(); render(); } };
+document.getElementById("next").onclick = () => { if (cur < items.length) { cur++; save(); render(); } };
+document.getElementById("load").onclick = () => document.getElementById("file").click();
+
+function loadText(txt, name) {
+  txt = (txt || "").trim();
+  if (!txt) { alert(`${name}: 파일이 비어 있습니다.`); return; }
+  // 형식 판별: 첫 글자로 가르면 안 된다 — JSONL 도 줄마다 "{" 로 시작한다.
+  // 전체를 한 덩어리 JSON 으로 읽어 성공하면 판정 파일(또는 배열 후보), 실패하면 JSONL 이다.
+  let whole = null;
+  try { whole = JSON.parse(txt); } catch (_) { /* JSONL 이다 */ }
+  if (whole && !Array.isArray(whole)) {
+    if (whole.decisions || whole.rows) { applyReviewed(whole); return; }
+    if (!whole.sentence) { alert(`${name}: 후보도 판정 파일도 아닙니다.`); return; }
+  }
+  if (items.length &&
+      !confirm("후보를 새로 불러오면 현재 판정이 사라집니다. 내보내기는 하셨나요?")) return;
+  items = Array.isArray(whole) ? whole
+        : txt.split("\n").filter(Boolean).map(l => JSON.parse(l));
+  if (!items.length || !items[0].sentence) {
+    items = [];
+    alert(`${name}: 후보 형식이 아닙니다 (sentence 필드가 없습니다).`);
+    return;
+  }
+  // 순서 랜덤화 — 축별로 몰아서 보면 기준이 미끄러진다(계획 §8.8)
+  order = items.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  if (pending) {
+    const same = pending.sig === sig() && pending.order.length === items.length;
+    if (same) {
+      ({ order, cur, picks, exportedAt } = pending);   // 같은 목록이면 보던 자리까지 되살린다
+    } else {
+      // 후보 목록이 바뀌었다(줄이거나 다시 뽑았다). **판정은 id 로 살린다** —
+      // 지문이 다르다고 버리면 작업이 통째로 날아간다. 순서·위치만 새로 잡는다.
+      const known = new Set(items.map(it => it.id));
+      picks = Object.fromEntries(
+        Object.entries(pending.picks).filter(([id]) => known.has(id)));
+      exportedAt = 0;
+      const at = order.findIndex(i => !picks[items[i].id]);
+      cur = at < 0 ? items.length : at;
+    }
+    const n = Object.keys(picks).length;
+    const dropped = Object.keys(pending.picks).length - n;
+    pending = null;
+    save(); render();
+    if (n) alert(`저장돼 있던 판정 ${n}건을 이어받았습니다.` +
+      (dropped ? `\n(후보에서 빠진 ${dropped}건은 제외했습니다 — 내보낸 파일에는 남아 있습니다.)` : "") +
+      `\n\n${cur >= items.length ? "전부 판정됐습니다." : `${cur + 1}번째부터 이어갑니다.`}`);
+    return;
+  }
+  cur = 0; picks = {}; exportedAt = 0;
+  save(); render();
+}
+
+function readFile(f) {
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try { loadText(r.result, f.name); }
+    catch (err) { alert(`${f.name} 을 읽지 못했습니다:\n${err.message}`); }
+  };
+  r.onerror = () => alert(`${f.name} 을 읽지 못했습니다: ${r.error && r.error.name}`);
+  r.readAsText(f, "utf-8");
+}
+
+document.getElementById("file").onchange = e => {
+  readFile(e.target.files[0]);
+  e.target.value = "";          // 같은 파일을 다시 골라도 onchange 가 뜨도록
+};
+
+/* 선택창이 막히는 환경을 위해 끌어다 놓기도 받는다. */
+["dragover", "drop"].forEach(t => document.addEventListener(t, ev => {
+  ev.preventDefault();
+  document.body.style.outline = t === "dragover" ? "3px dashed var(--accent)" : "";
+  if (t === "drop") readFile(ev.dataTransfer.files[0]);
+}));
+document.addEventListener("dragleave", () => document.body.style.outline = "");
+
+/* http 로 열었으면 옆 디렉터리에서 후보와 판정을 **함께** 받아온다 — 선택창을 아예 건너뛴다. */
+async function loadFromServer(quiet) {
+  const res = await fetch("../data/harvest-candidates.jsonl", { cache: "no-store" });
+  if (!res.ok) throw new Error("후보 HTTP " + res.status);
+  loadText(await res.text(), "harvest-candidates.jsonl");
+  if (!items.length) return;
+
+  // localStorage 에서 이미 이어받았으면 덮어쓰지 않는다 — 그쪽이 더 최신이다.
+  if (Object.keys(picks).length) {
+    if (!quiet) alert(`저장돼 있던 판정 ${Object.keys(picks).length}건으로 이어갑니다.`);
+    return;
+  }
+  const r2 = await fetch("../data/harvest-resume.json", { cache: "no-store" });
+  if (!r2.ok) return;                       // 판정 파일이 없으면 그냥 새로 시작
+  applyReviewed(JSON.parse(await r2.text()));
+}
+
+if (location.protocol.startsWith("http")) {
+  const b = document.getElementById("fetch");
+  b.hidden = false;
+  const run = async (quiet) => {
+    b.disabled = true;
+    const was = b.textContent;
+    b.textContent = "받는 중…";
+    try { await loadFromServer(quiet); }
+    catch (err) {
+      alert("서버에서 받지 못했습니다: " + err.message +
+            "\n\neval/ 에서 서버를 띄웠는지 확인하세요:\n" +
+            "cd .../momentory-be/eval && python3 -m http.server 8765");
+    } finally { b.disabled = false; b.textContent = was; }
+  };
+  b.onclick = () => run(false);
+  if (!items.length) run(true);             // 열자마자 자동으로
+}
+
+document.getElementById("export").onclick = () => {
+  if (!items.length) return;
+  const rows = items
+    .filter(it => {
+      const v = verdictOf(it);
+      return v.length && !v.includes("none");
+    })
+    .map(it => {
+      const v = verdictOf(it);
+      return {
+        id: it.id, verdict: v, primary: v[0], taxonomy: "v2", source: "aihub-harvest",
+        sentence: it.sentence, match: it.match,
+        context: it.context.map(c => ({ speaker: c.speaker, text: c.text })),
+        aihub: it.aihub, split: it.split,
+      };
+    });
+  const byEmotion = {};
+  for (const r of rows) for (const v of r.verdict) byEmotion[v] = (byEmotion[v] || 0) + 1;
+  const blob = new Blob([JSON.stringify({
+    reviewed: Object.keys(picks).length, total: items.length, kept: rows.length,
+    byEmotion,
+    // 이어하기용 — '해당 없음'까지 전부 담는다. rows 는 쓸 것만 추린 결과물.
+    decisions: picks,
+    rows,
+  }, null, 1)], { type: "application/json" });
+  exportedAt = Object.keys(picks).length;
+  save();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "harvest-reviewed.json";
+  a.click();
+};
+
+if (!CAN_STORE) document.getElementById("nostore").hidden = false;
+if (restore()) render();
+else if (pending) {
+  document.querySelector("#app .empty").insertAdjacentHTML("afterbegin",
+    `<p><b>저장돼 있던 판정 ${Object.keys(pending.picks).length}건이 있습니다.</b><br>
+      <span class="status">후보 파일을 불러오면 이어집니다.</span></p>`);
+}
+</script>
+</body>
+</html>
