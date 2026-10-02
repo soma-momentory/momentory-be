@@ -22,6 +22,7 @@ import importlib.util
 import json
 import os
 import random
+import re
 import sys
 from collections import Counter, defaultdict
 
@@ -50,10 +51,34 @@ def is_eval_profile(profile, mod=10):
     return int(hashlib.md5(profile.encode("utf-8")).hexdigest(), 16) % mod == 0
 
 
-def allocate(groups, quota, picked, per_profile, cap, rng):
-    """감정별 묶음(groups: proxy → [row])에서 quota 를 최대한 고르게 뽑는다."""
+def grams(text, n=3):
+    t = re.sub(r"\s+", " ", text)
+    return {t[i:i + n] for i in range(max(0, len(t) - n + 1))}
+
+
+def too_close(g, refs, limit):
+    """이미 뽑힌 것(refs) 중 하나라도 글자 3-gram Jaccard 가 limit 이상이면 True."""
+    for h in refs:
+        inter = len(g & h)
+        if inter and inter / len(g | h) >= limit:
+            return True
+    return False
+
+
+def allocate(groups, quota, picked, per_profile, cap, rng, refs, dup, topic_share):
+    """
+    감정별 묶음(groups: proxy → [row])에서 quota 를 최대한 고르게 뽑는다.
+
+    다양성 제약 두 가지(오버피팅 방지 — diversity.py 로 확인):
+      · 이미 뽑힌 대화(refs, 표적 수집 포함)와 거의 같으면 건너뛴다. AI Hub 는 같은 상황을
+        다른 인물로 고쳐 쓴 대화가 있어 인물 분리만으로는 학습–평가 유출을 못 막는다
+      · 한 감정 묶음 안에서 한 상황(AI Hub 상황 키워드)이 topic_share 를 넘지 않게 한다
+    """
     classes = [c for c in EMOTIONS if groups.get(c)]
     pools = {c: rng.sample(groups[c], len(groups[c])) for c in classes}
+    per_class = max(1, -(-quota // max(1, len(classes))))
+    topic_cap = max(2, -(-int(per_class * topic_share * 100) // 100))
+    topic_n = Counter()
     out, cursor = [], {c: 0 for c in classes}
     while len(out) < quota and classes:
         progressed = False
@@ -65,7 +90,14 @@ def allocate(groups, quota, picked, per_profile, cap, rng):
                 r = pool[i]; i += 1
                 if r["key"] in picked or per_profile[r["profile"]] >= cap:
                     continue
+                if topic_n[(c, r["aihub"]["topic"])] >= topic_cap:
+                    continue
+                g = r.setdefault("_g", grams(r["text"]))
+                if too_close(g, refs, dup):
+                    continue
                 out.append(r); picked.add(r["key"]); per_profile[r["profile"]] += 1
+                topic_n[(c, r["aihub"]["topic"])] += 1
+                refs.append(g)
                 progressed = True
                 break
             cursor[c] = i
@@ -104,6 +136,8 @@ def main():
     ap.add_argument("--safety-from-seeds", type=int, default=5, help="안전판 중 표적 수집에서 가져올 애정·뿌듯함 각각")
     ap.add_argument("--train-indirect", type=int, default=250, help="학습 간접 1차")
     ap.add_argument("--cap", type=int, default=2, help="같은 인물 최대 건수")
+    ap.add_argument("--dup", type=float, default=0.45, help="이미 뽑힌 것과 이 이상 비슷하면 건너뜀(글자 3-gram Jaccard)")
+    ap.add_argument("--topic-share", type=float, default=0.4, help="한 감정 묶음에서 한 상황의 최대 비율")
     args = ap.parse_args()
 
     cv = _load("cv", os.path.join(HERE, "convert.py"))
@@ -123,7 +157,7 @@ def main():
                 "key": f"{split}_{r['id']}", "split": split, "profile": profile_of(split, r["id"]),
                 "stratum": "명시" if kind == "명시" else "간접", "lex": kind,
                 "hits": [f"{h[0]}→{h[1]}" for h in hits][:4], "multi": len(emos) >= 2,
-                "proxy": proxy, "turns": r["turns"],
+                "proxy": proxy, "turns": r["turns"], "text": text,
                 "aihub": {"major": r["major"], "minor": r["minor"], "age": r["age"], "topic": r["topic"]},
             })
     by_key = {r["key"]: r for r in rows}
@@ -140,6 +174,7 @@ def main():
         return "eval" if (is_eval_profile(r["profile"]) and r["profile"] not in seed_profiles) else "train"
 
     picked, per_profile = set(seed_keys), Counter()
+    refs = [grams(by_key[k]["text"]) for k in seed_keys if k in by_key]   # 표적 수집과도 겹치지 않게
     for k in seed_keys:
         if k in by_key:
             per_profile[by_key[k]["profile"]] += 1
@@ -154,18 +189,18 @@ def main():
     out = defaultdict(list)
     # ── 평가: 명시(복합 최소치 먼저) · 간접 ──
     m = allocate(groups(lambda r: side(r) == "eval" and r["stratum"] == "명시" and r["multi"]),
-                 args.eval_explicit_multi, picked, per_profile, args.cap, rng)
+                 args.eval_explicit_multi, picked, per_profile, args.cap, rng, refs, args.dup, args.topic_share)
     m += allocate(groups(lambda r: side(r) == "eval" and r["stratum"] == "명시"),
-                  args.eval_explicit - len(m), picked, per_profile, args.cap, rng)
+                  args.eval_explicit - len(m), picked, per_profile, args.cap, rng, refs, args.dup, args.topic_share)
     i = allocate(groups(lambda r: side(r) == "eval" and r["stratum"] == "간접"),
-                 args.eval_indirect, picked, per_profile, args.cap, rng)
+                 args.eval_indirect, picked, per_profile, args.cap, rng, refs, args.dup, args.topic_share)
     out["eval"] = [record(r, "eval", "AB") for r in m + i]
 
     # ── 파일럿 (학습 쪽 인물, 두 명 모두) ──
     p = allocate(groups(lambda r: side(r) == "train" and r["stratum"] == "명시"),
-                 args.pilot_explicit, picked, per_profile, args.cap, rng)
+                 args.pilot_explicit, picked, per_profile, args.cap, rng, refs, args.dup, args.topic_share)
     p += allocate(groups(lambda r: side(r) == "train" and r["stratum"] == "간접"),
-                  args.pilot_indirect, picked, per_profile, args.cap, rng)
+                  args.pilot_indirect, picked, per_profile, args.cap, rng, refs, args.dup, args.topic_share)
     out["pilot"] = [record(r, "pilot", "AB") for r in p]
 
     # ── 학습 명시 안전판: 애정·뿌듯함은 표적 수집에서, 나머지 9종은 AI Hub 명시에서 고르게 ──
@@ -173,24 +208,30 @@ def main():
     for emo in ("affection", "proud"):
         cand = [s for s in seeds if s.get("verdict") == [emo] or (emo in (s.get("verdict") or []) and len(s["verdict"]) == 1)]
         rng.shuffle(cand)
-        taken = 0
+        taken, seen_match = 0, set()
+        # 같은 표현만 반복되지 않게 걸린 표현(match)이 다른 것부터 고른다(애정이 '그리워'로만 채워지는 것 방지)
+        cand.sort(key=lambda s: s.get("match", ""))
+        cand = [s for s in cand if s.get("match") not in seen_match and not seen_match.add(s.get("match"))] + \
+               [s for s in cand]
+        used = set()
         for s in cand:
             k = seed_key(s)
-            if taken >= args.safety_from_seeds or k not in by_key:
+            if taken >= args.safety_from_seeds or k not in by_key or k in used:
                 continue
+            used.add(k)
             if by_key[k]["stratum"] != "명시":      # 안전판은 감지기가 명시로 볼 대화만
                 continue
             safety.append(record(by_key[k], "safety", prefill={"emotions": s["verdict"], "from": "harvest"}))
             taken += 1
     rest = allocate(groups(lambda r: side(r) == "train" and r["stratum"] == "명시"
                            and r["proxy"] not in ("affection", "proud")),
-                    args.safety - len(safety), picked, per_profile, args.cap, rng)
+                    args.safety - len(safety), picked, per_profile, args.cap, rng, refs, args.dup, args.topic_share)
     safety += [record(r, "safety") for r in rest]
     out["safety"] = safety
 
     # ── 학습 간접 1차 ──
     t = allocate(groups(lambda r: side(r) == "train" and r["stratum"] == "간접"),
-                 args.train_indirect, picked, per_profile, args.cap, rng)
+                 args.train_indirect, picked, per_profile, args.cap, rng, refs, args.dup, args.topic_share)
     out["train"] = [record(r, "train") for r in t]
 
     # 학습분은 두 라벨러에게 감정이 고르게 가도록 번갈아 배정한다
