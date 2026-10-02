@@ -2,15 +2,16 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>감정 라벨링 도구</title>
+<title>감정 라벨링 (정본 v0.2)</title>
 <style>
-  :root { --line:#e3e3e0; --muted:#6b6b66; --bg:#faf9f7; --accent:#2f6f4f; --warn:#a4462d; }
+  :root { --line:#e3e3e0; --muted:#6b6b66; --bg:#faf9f7; --accent:#2f6f4f; --warn:#a4462d;
+          --blue:#2f5a8f; }
   * { box-sizing:border-box; }
   body { margin:0; font:14px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
          background:var(--bg); color:#1a1a18; }
   header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line);
-           padding:10px 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; z-index:5; }
-  header h1 { font-size:15px; margin:0 12px 0 0; }
+           padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; z-index:5; }
+  header h1 { font-size:15px; margin:0 8px 0 0; }
   button { font:inherit; padding:5px 11px; border:1px solid var(--line); background:#fff;
            border-radius:6px; cursor:pointer; }
   button:hover { border-color:#bbb; }
@@ -18,10 +19,18 @@
   button:disabled { opacity:.4; cursor:default; }
   .grow { flex:1; }
   .status { color:var(--muted); font-size:12px; }
+  #labeler { width:54px; text-align:center; }
   .anchors { background:#fff7e8; border-bottom:1px solid #f0e2c4; padding:6px 16px;
              font-size:12.5px; color:#6a5320; }
   .anchors b { color:#3d2f0a; }
-  main { display:grid; grid-template-columns:minmax(320px,1fr) minmax(360px,440px);
+  .anchors a { color:#6a5320; }
+  details.guide { background:#fff; border-bottom:1px solid var(--line); font-size:12.5px; }
+  details.guide summary { padding:6px 16px; cursor:pointer; color:var(--muted); }
+  details.guide table { border-collapse:collapse; margin:0 16px 12px; font-size:12.5px; }
+  details.guide td, details.guide th { border:1px solid var(--line); padding:3px 7px;
+                                       text-align:left; vertical-align:top; }
+  details.guide th { background:#f6f6f3; font-weight:600; }
+  main { display:grid; grid-template-columns:minmax(320px,1fr) minmax(400px,480px);
          gap:16px; padding:16px; align-items:start; }
   .panel { background:#fff; border:1px solid var(--line); border-radius:8px; padding:14px; }
   .turn { padding:6px 8px; border-radius:6px; margin-bottom:4px; }
@@ -29,32 +38,40 @@
   .turn.user { cursor:pointer; border:1px solid transparent; }
   .turn.user:hover { background:#f2f6f3; border-color:#cfe0d5; }
   .turn.user.picked { background:#e6f2ea; border-color:var(--accent); }
+  .turn.user.picked2 { background:#e8eff7; border-color:var(--blue); }
   .uno { display:inline-block; min-width:34px; font-weight:600; color:var(--accent); }
   .hint { font-size:12px; color:var(--muted); margin:2px 0 10px; }
   fieldset { border:1px solid var(--line); border-radius:8px; margin:0 0 12px; padding:10px 12px; }
   legend { font-size:12px; color:var(--muted); padding:0 4px; }
   fieldset.active { border-color:var(--accent); box-shadow:0 0 0 2px #e6f2ea; }
+  fieldset.active2 { border-color:var(--blue); box-shadow:0 0 0 2px #e8eff7; }
+  fieldset.emo { margin:10px 0 0 14px; background:#fcfcfb; }
   label.row { display:flex; gap:8px; align-items:center; margin:5px 0; flex-wrap:wrap; }
+  .row { display:flex; gap:8px; align-items:center; margin:5px 0; flex-wrap:wrap; }
   input[type=text] { flex:1; min-width:120px; padding:4px 7px; border:1px solid var(--line);
                      border-radius:5px; font:inherit; }
   select { padding:4px 6px; border:1px solid var(--line); border-radius:5px; font:inherit; }
+  textarea { width:100%; height:54px; font:inherit; border:1px solid var(--line);
+             border-radius:6px; padding:6px 8px; }
   .chip { padding:3px 9px; border:1px solid var(--line); border-radius:99px; cursor:pointer;
-          font-size:12.5px; background:#fff; }
+          font-size:12.5px; background:#fff; user-select:none; }
   .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .chip.on.blue { background:var(--blue); border-color:var(--blue); }
+  .chip.on.warn { background:var(--warn); border-color:var(--warn); }
   .chips { display:flex; gap:5px; flex-wrap:wrap; }
-  .ev { font-size:12px; color:var(--muted); }
-  .del { color:var(--warn); border-color:#e6c9c0; }
-  .flags { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
-  .flags .chip.on { background:var(--warn); border-color:var(--warn); }
-  textarea { width:100%; height:160px; font:12px/1.5 ui-monospace,Menlo,monospace;
-             border:1px solid var(--line); border-radius:6px; padding:8px; }
+  .ev { font-size:12px; color:var(--muted); min-width:74px; }
+  .del { color:var(--warn); border-color:#e6c9c0; font-size:12px; padding:3px 8px; }
   .empty { padding:40px 16px; text-align:center; color:var(--muted); }
+  .warnbox { background:#fdf1ed; border:1px solid #f0d4cb; color:#7d3521; border-radius:6px;
+             padding:7px 10px; font-size:12.5px; margin-bottom:10px; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>감정 라벨링</h1>
+  <span class="status">라벨러</span>
+  <input id="labeler" type="text" placeholder="A" maxlength="8">
   <button id="prev">◀ 이전</button>
   <span id="progress" class="status">—</span>
   <button id="next">다음 ▶</button>
@@ -66,25 +83,67 @@
 </header>
 
 <div class="anchors">
-  <b>강도</b> 1 살짝 · 2 보통 · 3 강함 · 4 압도적(몸이 반응하거나 잠·일상이 무너질 정도)
-  &nbsp;|&nbsp; <b>시점</b> 전 = 사건 전 · 중 = 사건 중 · 후 = 직후 · 지금 = 아직 남아 있음
-  &nbsp;|&nbsp; <b>경계</b> 화남=대상이 있는 부당함 · 답답=막힘 · 막막=방향 없음
+  <b>강도</b> 1 약함(“조금 아쉬웠어”) · 2 보통(“결과가 아쉬웠어”) · 3 강함(매우 강하다고 명시하거나
+  행동·집중에 큰 영향) · <b>?</b> 판단 어려움
+  &nbsp;|&nbsp; <b>2 vs ?</b> 감정 단어는 분명한데 강도 단서가 없으면 <b>2</b>,
+  사건만 보고 조심스럽게 추정했으면 <b>?</b>
+  &nbsp;|&nbsp; 기본은 <b>사건 당시</b>의 감정 (채팅 시점 감정과 구분)
 </div>
+
+<details class="guide">
+  <summary>대표 감정 11종 구분 기준 — 헷갈릴 때 펼쳐 보세요</summary>
+  <table>
+    <tr><th>대표 감정</th><th>선택하는 경우</th><th>주요 구분 기준</th></tr>
+    <tr><td>기쁨</td><td>좋은 일·경험으로 기쁘고 즐거운 마음</td><td>자신이 해낸 일의 만족·보람이 중심이면 <b>뿌듯함</b></td></tr>
+    <tr><td>평온</td><td>편안하거나 긴장·부담이 풀린 상태</td><td>성취에 따른 만족이 중심이면 <b>뿌듯함</b></td></tr>
+    <tr><td>뿌듯함</td><td>자신의 행동·노력·결과에 만족하거나 보람</td><td>단순히 일이 즐거웠다면 <b>기쁨</b></td></tr>
+    <tr><td>애정</td><td>특정 대상을 향한 호감·친밀감·그리움</td><td>그 사람과의 좋은 일이 즐거웠다는 내용만이면 <b>기쁨</b></td></tr>
+    <tr><td>슬픔</td><td>상실, 외로움, 마음의 아픔·가라앉음</td><td>기대한 결과·반응을 못 얻은 게 중심이면 <b>실망</b></td></tr>
+    <tr><td>불안</td><td>앞으로 일어날 일·불확실한 상황을 걱정·두려워함</td><td>이해나 다음 행동 결정이 어려운 게 중심이면 <b>혼란</b></td></tr>
+    <tr><td>분노</td><td>부당함·침해·갈등으로 화·짜증·원망</td><td>기대에 못 미쳐 서운·허탈한 게 중심이면 <b>실망</b></td></tr>
+    <tr><td>실망</td><td>기대한 결과·관심·반응을 못 얻어 마음이 가라앉음</td><td>상실 자체로 아픈 게 중심이면 <b>슬픔</b> · 자기 선택을 탓하는 게 중심이면 <b>미안함</b></td></tr>
+    <tr><td>부끄러움</td><td>드러남·타인의 시선이 의식되어 창피·민망</td><td>갑작스러운 상황을 이해 못해 당황한 것이면 <b>혼란</b> · 내가 잘못했다·피해를 줬다는 게 중심이면 <b>미안함</b></td></tr>
+    <tr><td>혼란</td><td>예상 밖 상황의 이해·결정이 어려워 당황·심란·막막</td><td>앞으로의 결과가 걱정되는 게 중심이면 <b>불안</b></td></tr>
+    <tr><td>미안함</td><td>자신의 행동·선택이 잘못됐다고 느끼거나 남에게 피해를 줬다고 느낌</td><td>남에게 어떻게 보일지가 중심이면 <b>부끄러움</b> · 바깥에서 기대한 결과를 못 얻은 게 중심이면 <b>실망</b></td></tr>
+  </table>
+  <table>
+    <tr><th>규칙</th><th>예시</th></tr>
+    <tr><td>두 감정의 근거가 각각 있으면 둘 다 선택</td><td>“발표를 마쳐서 뿌듯했는데 결과는 걱정돼” → 뿌듯함 + 불안</td></tr>
+    <tr><td>부정한 감정은 선택하지 않는다</td><td>“화난 건 아니고 서운했어” → 실망만</td></tr>
+    <tr><td>정정하면 정정한 표현을 우선</td><td>단, 시간에 따라 둘 다 경험했다면 둘 다 + <b>시점 차이</b> 특성</td></tr>
+    <tr><td>타인의 감정을 사용자 감정으로 옮기지 않는다</td><td>“친구가 화가 났대” → 타인 감정 표시</td></tr>
+    <tr><td>추측해서 추가하지 않는다</td><td>각 감정에 뒷받침하는 사용자 발화가 있어야 한다</td></tr>
+  </table>
+  <table>
+    <tr><th>판단 불가</th><th>기준</th><th>예시</th></tr>
+    <tr><td>감정 정보 부족</td><td>사건은 있지만 감정 근거가 없음 — <b>정답은 빈 목록</b>(채점 포함)</td><td>“오늘 발표했어.”</td></tr>
+    <tr><td>대표 감정 판단 어려움</td><td>감정은 있으나 어느 범주인지 불분명 — 채점 제외</td><td>“기분이 복잡했어.”</td></tr>
+    <tr><td>분류 체계 밖</td><td>감정은 분명하나 11종 어디에도 안 맞음 — 채점 제외, 원문 기록</td><td>“친구가 잘되는 게 질투가 났어.”</td></tr>
+  </table>
+</details>
 
 <main id="app"><div class="panel empty">「대화 불러오기」로 프로브 형식 파일을 여세요.</div></main>
 
 <script>
-const EMOTIONS = [["anxious","불안"],["depressed","우울"],["angry","화남"],["frustrated","답답"],
-  ["happy","행복"],["stuck","막막"],["lethargic","무기력"],["tired","피곤"],["proud","뿌듯"],["calm","평온"]];
-const PHASES = [["before","전"],["during","중"],["after","후"],["now","지금"]];
-const KEY = "momentory-labeler-v1";
+/* 정본: Notion「모멘토리 감정 라벨링 기준 초안 v0.2」/ 계획 docs/model-comparison-plan.md §3·§8 */
+const TAXONOMY = "v2";
+const EMOTIONS = [["joy","기쁨"],["calm","평온"],["proud","뿌듯함"],["affection","애정"],
+  ["sad","슬픔"],["anxious","불안"],["angry","분노"],["disappointed","실망"],
+  ["ashamed","부끄러움"],["confused","혼란"],["sorry","미안함"]];
+const EXPLICIT = [["yes","있음"],["no","없음"],["unsure","판단 어려움"]];
+const STATUS   = [["final","확정 가능"],["discuss","의견 조정 필요"],["insufficient","정보 부족"]];
+const TRAITS   = [["negation","부정"],["correction","정정"],["quote","인용"],
+  ["other","타인의 감정"],["phase","시점 차이"],["mixed","복합 감정"]];
+const UNDECIDABLE = [["no_emotion_info","감정 정보 부족"],
+  ["emotion_unclear","대표 감정 판단 어려움"],["out_of_scope","분류 체계 밖"]];
+const KEY = "momentory-labeler-v2";
 
-let sessions = [], order = [], cur = 0, labels = {}, target = null;
+let sessions = [], order = [], cur = 0, labels = {}, labeler = "", target = null;
 
 /* ── 저장 ─────────────────────────────────────────────── */
 function save() {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ sessions, order, cur, labels }));
+    localStorage.setItem(KEY, JSON.stringify({ sessions, order, cur, labels, labeler }));
     document.getElementById("saved").textContent = "저장됨 " + new Date().toLocaleTimeString();
   } catch (e) {
     document.getElementById("saved").textContent = "⚠ 자동저장 불가 — 수시로 내보내세요";
@@ -95,6 +154,8 @@ function restore() {
     const s = JSON.parse(localStorage.getItem(KEY) || "null");
     if (s && s.sessions && s.sessions.length) {
       ({ sessions, order, cur, labels } = s);
+      labeler = s.labeler || "";
+      document.getElementById("labeler").value = labeler;
       return true;
     }
   } catch (e) { /* 무시 */ }
@@ -102,6 +163,7 @@ function restore() {
 }
 
 /* ── 대화 파싱 (프로브 형식) ───────────────────────────── */
+/* 헤더: #세션ID|일정|출처   출처는 real(실참여) | synthetic(가상), 생략하면 real */
 function parse(text) {
   return text.trim().split(/\n\s*\n/).map(block => {
     const lines = block.trim().split("\n");
@@ -111,12 +173,21 @@ function parse(text) {
       const user = l.startsWith("U:");
       return { user, text: l.slice(2), no: user ? ++u : null };
     });
-    return { id: head[0], schedule: head[1] || "없음", turns };
+    return { id: head[0], schedule: head[1] || "없음",
+             source: (head[2] || "real").trim() === "synthetic" ? "synthetic" : "real", turns };
   }).filter(s => s.turns.some(t => t.user));
 }
 
-function blank() { return { events: [], emotions: [], noEmotion: false, unsure: false }; }
+function blank() { return { events: [], note: "", source: null }; }
 function labelOf(id) { return labels[id] || (labels[id] = blank()); }
+function newEvent(n) {
+  return { id: n, label: "", summary: "", evidence: [], explicit: null, status: null,
+           traits: [], undecidable: null, outOfScopeRaw: "", emotions: [] };
+}
+function newEmotion() {
+  return { normalized: "joy", intensity: 2, evidenceIds: [], intensityEvidenceIds: [],
+           experiencer: "self" };
+}
 
 /* ── 렌더 ─────────────────────────────────────────────── */
 function render() {
@@ -124,85 +195,126 @@ function render() {
   if (!sessions.length) return;
   const s = sessions[order[cur]];
   const L = labelOf(s.id);
-  document.getElementById("progress").textContent =
-    `${cur + 1} / ${sessions.length} · ${s.id}`;
+  document.getElementById("progress").textContent = `${cur + 1} / ${sessions.length} · ${s.id}`;
   document.getElementById("prev").disabled = cur === 0;
   document.getElementById("next").disabled = cur === sessions.length - 1;
+  const src = L.source || s.source;
 
   const conv = s.turns.map(t => t.user
-    ? `<div class="turn user${isPicked(t.no) ? " picked" : ""}" data-no="${t.no}">
+    ? `<div class="turn user${pickClass(t.no)}" data-no="${t.no}">
          <span class="uno">[U${t.no}]</span>${esc(t.text)}</div>`
     : `<div class="turn ai">${esc(t.text)}</div>`).join("");
 
   app.innerHTML = `
     <div class="panel">
-      <div class="hint">일정: ${esc(s.schedule)} · 발화를 누르면 아래에서 <b>선택 중인 항목</b>의 근거로 들어갑니다.</div>
+      <div class="hint">일정: ${esc(s.schedule)} · 발화를 누르면 <b>선택 중인 항목</b>의 근거로
+        들어갑니다. <span style="color:var(--blue)">파란 테두리</span>면 강도 근거로 들어갑니다.</div>
+      <div class="row"><span class="ev">데이터 출처</span><span class="chips">
+        <span class="chip ${src === "real" ? "on" : ""}" data-src="real">실참여</span>
+        <span class="chip ${src === "synthetic" ? "on" : ""}" data-src="synthetic">가상</span>
+      </span></div>
       ${conv}
     </div>
     <div class="panel">
-      <div class="flags">
-        <span class="chip ${L.noEmotion ? "on" : ""}" data-flag="noEmotion">감정 없음</span>
-        <span class="chip ${L.unsure ? "on" : ""}" data-flag="unsure">판단 불가 (채점 제외)</span>
-      </div>
       ${L.events.map((e, i) => eventBox(e, i)).join("")}
       ${L.events.length < 2 ? `<button data-add="event">+ 사건 추가</button>` : ""}
-      <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
-      ${L.noEmotion ? `<div class="hint">감정 없음으로 표시됨.</div>`
-        : L.emotions.map((m, i) => emotionBox(m, i, L)).join("") +
-          `<button data-add="emotion">+ 감정 추가</button>`}
+      <div class="row" style="margin-top:14px"><span class="ev">불일치·검토 메모</span></div>
+      <textarea data-note placeholder="조정 때 볼 메모. 왜 이렇게 판단했는지 한 줄.">${esc(L.note || "")}</textarea>
     </div>`;
   bind();
 }
-function esc(t) { return t.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+function esc(t) { return String(t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+function pickClass(no) {
+  if (!target) return "";
+  const L = labelOf(sessions[order[cur]].id);
+  const e = L.events[target.e];
+  if (!e) return "";
+  if (target.kind === "event") return e.evidence.includes(no) ? " picked" : "";
+  const m = e.emotions[target.m];
+  if (!m) return "";
+  if (target.kind === "emotion") return m.evidenceIds.includes(no) ? " picked" : "";
+  return m.intensityEvidenceIds.includes(no) ? " picked2" : "";
+}
 
 function eventBox(e, i) {
-  const on = target && target.kind === "event" && target.i === i;
-  return `<fieldset class="${on ? "active" : ""}" data-pick='{"kind":"event","i":${i}}'>
+  const on = target && target.kind === "event" && target.e === i;
+  const blocked = e.undecidable === "emotion_unclear" || e.undecidable === "out_of_scope";
+  return `<fieldset class="${on ? "active" : ""}" data-pick='{"kind":"event","e":${i}}'>
     <legend>사건 ${e.id}</legend>
-    <label class="row"><input type="text" data-ev="${i}" value="${esc(e.label || "")}"
-      placeholder="짧은 이름 (예: 팀 발표)"></label>
-    <div class="ev">배정 발화: ${e.evidence.length ? e.evidence.map(n => "U" + n).join(" ") : "없음 — 발화를 누르세요"}</div>
-    <div style="margin-top:6px"><button class="del" data-delev="${i}">사건 삭제</button></div>
+    <label class="row"><span class="ev">짧은 이름</span>
+      <input type="text" data-elabel="${i}" value="${esc(e.label)}" placeholder="예: 회의"></label>
+    <label class="row"><span class="ev">한 줄 요약</span>
+      <input type="text" data-esum="${i}" value="${esc(e.summary)}"
+        placeholder="예: 회의에서 내 의견이 빠짐"></label>
+    <div class="ev" style="margin:6px 0">배정 발화:
+      ${e.evidence.length ? e.evidence.map(n => "U" + n).join(" ") : "없음 — 발화를 누르세요"}</div>
+
+    <div class="row"><span class="ev">명시적 표현</span><span class="chips">${EXPLICIT.map(([k, ko]) =>
+      `<span class="chip ${e.explicit === k ? "on" : ""}" data-expl="${i}" data-v="${k}">${ko}</span>`).join("")}</span></div>
+    <div class="row"><span class="ev">판단 특성</span><span class="chips">${TRAITS.map(([k, ko]) =>
+      `<span class="chip ${e.traits.includes(k) ? "on" : ""}" data-trait="${i}" data-v="${k}">${ko}</span>`).join("")}</span></div>
+    <div class="row"><span class="ev">라벨링 상태</span><span class="chips">${STATUS.map(([k, ko]) =>
+      `<span class="chip ${e.status === k ? "on" : ""}" data-status="${i}" data-v="${k}">${ko}</span>`).join("")}</span></div>
+    <div class="row"><span class="ev">판단 불가</span><span class="chips">${UNDECIDABLE.map(([k, ko]) =>
+      `<span class="chip warn ${e.undecidable === k ? "on warn" : ""}" data-und="${i}" data-v="${k}">${ko}</span>`).join("")}</span></div>
+    ${e.undecidable === "out_of_scope"
+      ? `<label class="row"><span class="ev">체계 밖 원문</span>
+           <input type="text" data-oos="${i}" value="${esc(e.outOfScopeRaw)}"
+             placeholder="사용자가 쓴 표현 그대로 (예: 질투가 났어)"></label>` : ""}
+    ${e.undecidable === "no_emotion_info"
+      ? `<div class="warnbox">감정 정보 부족 — <b>빈 감정 목록이 정답</b>입니다. 채점에 포함됩니다.</div>` : ""}
+    ${blocked
+      ? `<div class="warnbox">채점 제외 사건입니다. 감정을 달지 않습니다.</div>`
+      : e.emotions.map((m, j) => emotionBox(m, i, j)).join("") +
+        `<div style="margin-top:8px"><button data-add="emotion" data-e="${i}">+ 감정 추가</button></div>`}
+    <div style="margin-top:8px"><button class="del" data-delev="${i}">사건 삭제</button></div>
   </fieldset>`;
 }
 
-function emotionBox(m, i, L) {
-  const on = target && target.kind === "emotion" && target.i === i;
-  return `<fieldset class="${on ? "active" : ""}" data-pick='{"kind":"emotion","i":${i}}'>
-    <legend>감정 ${i + 1}</legend>
-    <label class="row">
-      <select data-em="${i}">${EMOTIONS.map(([k, ko]) =>
+function emotionBox(m, i, j) {
+  const on  = target && target.kind === "emotion"  && target.e === i && target.m === j;
+  const on2 = target && target.kind === "intensity" && target.e === i && target.m === j;
+  return `<fieldset class="emo ${on ? "active" : ""}${on2 ? " active2" : ""}"
+      data-pick='{"kind":"emotion","e":${i},"m":${j}}'>
+    <legend>감정 ${j + 1}</legend>
+    <label class="row"><span class="ev">대표 감정</span>
+      <select data-em="${i}-${j}">${EMOTIONS.map(([k, ko]) =>
         `<option value="${k}"${m.normalized === k ? " selected" : ""}>${ko}</option>`).join("")}</select>
-      <select data-evid="${i}"><option value="">사건 미지정</option>${L.events.map(e =>
-        `<option value="${e.id}"${m.eventId === e.id ? " selected" : ""}>사건 ${e.id}</option>`).join("")}</select>
-    </label>
-    <div class="row"><span class="ev">강도</span><span class="chips">${[1, 2, 3, 4].map(n =>
-      `<span class="chip ${m.intensity === n ? "on" : ""}" data-int="${i}" data-v="${n}">${n}</span>`).join("")}</span></div>
-    <div class="row"><span class="ev">시점</span><span class="chips">${PHASES.map(([k, ko]) =>
-      `<span class="chip ${m.phase === k ? "on" : ""}" data-ph="${i}" data-v="${k}">${ko}</span>`).join("")}</span></div>
-    <div class="ev">근거 발화: ${m.evidenceIds.length ? m.evidenceIds.map(n => "U" + n).join(" ") : "없음"}</div>
-    <div style="margin-top:6px"><button class="del" data-delem="${i}">감정 삭제</button></div>
+      <span class="chip ${m.experiencer === "other" ? "on warn" : ""}"
+        data-exp="${i}-${j}">타인의 감정</span></label>
+    <div class="row"><span class="ev">강도</span><span class="chips">${[1, 2, 3].map(n =>
+      `<span class="chip ${m.intensity === n ? "on" : ""}" data-int="${i}-${j}" data-v="${n}">${n}</span>`).join("")}
+      <span class="chip ${m.intensity === null ? "on warn" : ""}" data-int="${i}-${j}" data-v="null"
+        title="판단 어려움">?</span></span></div>
+    <div class="row"><span class="ev">감정 근거</span>
+      <span>${m.evidenceIds.length ? m.evidenceIds.map(n => "U" + n).join(" ") : "없음"}</span></div>
+    <div class="row"><span class="ev">강도 근거</span>
+      <span>${m.intensityEvidenceIds.length ? m.intensityEvidenceIds.map(n => "U" + n).join(" ")
+             : "감정 근거와 동일"}</span>
+      <button data-pick2="${i}-${j}">강도 근거 찍기</button></div>
+    <div style="margin-top:6px"><button class="del" data-delem="${i}-${j}">감정 삭제</button></div>
   </fieldset>`;
-}
-
-function isPicked(no) {
-  if (!target) return false;
-  const L = labelOf(sessions[order[cur]].id);
-  const t = target.kind === "event" ? L.events[target.i] : L.emotions[target.i];
-  if (!t) return false;
-  return (target.kind === "event" ? t.evidence : t.evidenceIds).includes(no);
 }
 
 /* ── 이벤트 ───────────────────────────────────────────── */
 function bind() {
-  const L = labelOf(sessions[order[cur]].id);
+  const s = sessions[order[cur]];
+  const L = labelOf(s.id);
   const el = document.getElementById("app");
+  const pair = d => d.split("-").map(Number);
 
   el.querySelectorAll(".turn.user").forEach(d => d.onclick = () => {
     if (!target) return alert("먼저 오른쪽에서 사건이나 감정을 선택하세요.");
-    const t = target.kind === "event" ? L.events[target.i] : L.emotions[target.i];
-    if (!t) return;
-    const arr = target.kind === "event" ? t.evidence : t.evidenceIds;
+    const e = L.events[target.e];
+    if (!e) return;
+    let arr;
+    if (target.kind === "event") arr = e.evidence;
+    else {
+      const m = e.emotions[target.m];
+      if (!m) return;
+      arr = target.kind === "emotion" ? m.evidenceIds : m.intensityEvidenceIds;
+    }
     const no = +d.dataset.no, at = arr.indexOf(no);
     if (at < 0) arr.push(no); else arr.splice(at, 1);
     arr.sort((a, b) => a - b);
@@ -210,80 +322,151 @@ function bind() {
   });
 
   el.querySelectorAll("[data-pick]").forEach(f => f.onclick = ev => {
-    if (ev.target.closest("button,select,input,.chip")) return;
+    if (ev.target.closest("button,select,input,textarea,.chip")) return;
+    ev.stopPropagation();
     target = JSON.parse(f.dataset.pick); render();
   });
-
-  el.querySelectorAll("[data-flag]").forEach(c => c.onclick = () => {
-    L[c.dataset.flag] = !L[c.dataset.flag];
-    if (c.dataset.flag === "noEmotion" && L.noEmotion) L.emotions = [];
-    save(); render();
+  el.querySelectorAll("[data-pick2]").forEach(b => b.onclick = ev => {
+    ev.stopPropagation();
+    const [e, m] = pair(b.dataset.pick2);
+    target = { kind: "intensity", e, m }; render();
   });
+
+  el.querySelectorAll("[data-src]").forEach(c => c.onclick = () => {
+    L.source = c.dataset.src; save(); render();
+  });
+  el.querySelectorAll("[data-note]").forEach(t => t.oninput = () => { L.note = t.value; save(); });
 
   el.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
     if (b.dataset.add === "event") {
-      L.events.push({ id: L.events.length + 1, label: "", evidence: [] });
-      target = { kind: "event", i: L.events.length - 1 };
+      L.events.push(newEvent(L.events.length + 1));
+      target = { kind: "event", e: L.events.length - 1 };
     } else {
-      L.emotions.push({ eventId: L.events.length ? 1 : null, normalized: "anxious",
-                        intensity: 2, phase: "during", evidenceIds: [] });
-      target = { kind: "emotion", i: L.emotions.length - 1 };
+      const i = +b.dataset.e;
+      L.events[i].emotions.push(newEmotion());
+      target = { kind: "emotion", e: i, m: L.events[i].emotions.length - 1 };
     }
     save(); render();
   });
 
-  el.querySelectorAll("[data-ev]").forEach(i => i.oninput = () => {
-    L.events[+i.dataset.ev].label = i.value; save();
+  el.querySelectorAll("[data-elabel]").forEach(i =>
+    i.oninput = () => { L.events[+i.dataset.elabel].label = i.value; save(); });
+  el.querySelectorAll("[data-esum]").forEach(i =>
+    i.oninput = () => { L.events[+i.dataset.esum].summary = i.value; save(); });
+  el.querySelectorAll("[data-oos]").forEach(i =>
+    i.oninput = () => { L.events[+i.dataset.oos].outOfScopeRaw = i.value; save(); });
+
+  el.querySelectorAll("[data-expl]").forEach(c => c.onclick = () => {
+    const e = L.events[+c.dataset.expl];
+    e.explicit = e.explicit === c.dataset.v ? null : c.dataset.v; save(); render();
   });
-  el.querySelectorAll("[data-em]").forEach(s => s.onchange = () => {
-    L.emotions[+s.dataset.em].normalized = s.value; save();
+  el.querySelectorAll("[data-status]").forEach(c => c.onclick = () => {
+    const e = L.events[+c.dataset.status];
+    e.status = e.status === c.dataset.v ? null : c.dataset.v; save(); render();
   });
-  el.querySelectorAll("[data-evid]").forEach(s => s.onchange = () => {
-    L.emotions[+s.dataset.evid].eventId = s.value ? +s.value : null; save();
+  el.querySelectorAll("[data-trait]").forEach(c => c.onclick = () => {
+    const e = L.events[+c.dataset.trait], v = c.dataset.v, at = e.traits.indexOf(v);
+    if (at < 0) e.traits.push(v); else e.traits.splice(at, 1);
+    save(); render();
+  });
+  el.querySelectorAll("[data-und]").forEach(c => c.onclick = () => {
+    const e = L.events[+c.dataset.und], v = c.dataset.v;
+    e.undecidable = e.undecidable === v ? null : v;
+    if (e.undecidable && e.undecidable !== "no_emotion_info") e.emotions = [];
+    if (e.undecidable === "no_emotion_info") e.emotions = [];
+    target = null; save(); render();
+  });
+
+  el.querySelectorAll("[data-em]").forEach(s2 => s2.onchange = () => {
+    const [i, j] = pair(s2.dataset.em);
+    L.events[i].emotions[j].normalized = s2.value; save();
+  });
+  el.querySelectorAll("[data-exp]").forEach(c => c.onclick = () => {
+    const [i, j] = pair(c.dataset.exp), m = L.events[i].emotions[j];
+    m.experiencer = m.experiencer === "other" ? "self" : "other"; save(); render();
   });
   el.querySelectorAll("[data-int]").forEach(c => c.onclick = () => {
-    L.emotions[+c.dataset.int].intensity = +c.dataset.v; save(); render();
-  });
-  el.querySelectorAll("[data-ph]").forEach(c => c.onclick = () => {
-    L.emotions[+c.dataset.ph].phase = c.dataset.v; save(); render();
+    const [i, j] = pair(c.dataset.int);
+    L.events[i].emotions[j].intensity = c.dataset.v === "null" ? null : +c.dataset.v;
+    save(); render();
   });
   el.querySelectorAll("[data-delev]").forEach(b => b.onclick = () => {
     L.events.splice(+b.dataset.delev, 1);
     L.events.forEach((e, n) => e.id = n + 1);
-    L.emotions.forEach(m => { if (!L.events.some(e => e.id === m.eventId)) m.eventId = null; });
     target = null; save(); render();
   });
   el.querySelectorAll("[data-delem]").forEach(b => b.onclick = () => {
-    L.emotions.splice(+b.dataset.delem, 1); target = null; save(); render();
+    const [i, j] = pair(b.dataset.delem);
+    L.events[i].emotions.splice(j, 1); target = null; save(); render();
   });
 }
 
 /* ── 내보내기 ─────────────────────────────────────────── */
+/* 채점 계약(eval/README.md)에 맞춰 events/emotions 를 평평하게 편다. */
 function toGold() {
   return sessions.map(s => {
     const L = labelOf(s.id);
+    const emotions = [];
+    L.events.forEach(e => e.emotions.forEach(m => emotions.push({
+      eventId: e.id, normalized: m.normalized,
+      intensity: m.intensity === null ? null : m.intensity,
+      evidenceIds: m.evidenceIds,
+      intensityEvidenceIds: m.intensityEvidenceIds.length ? m.intensityEvidenceIds : m.evidenceIds,
+      experiencer: m.experiencer === "other" ? "other" : undefined,
+    })));
     return {
       sessionId: s.id,
+      taxonomy: TAXONOMY,
+      labeler: labeler || null,
+      source: L.source || s.source,
       set: "natural",
-      unsure: L.unsure || undefined,
-      events: L.events.filter(e => e.label.trim())
-        .map(e => ({ id: e.id, label: e.label.trim(), summary: e.label.trim(),
-                     evidence: e.evidence })),
-      emotions: L.noEmotion ? [] : L.emotions.map(m => ({
-        eventId: m.eventId, normalized: m.normalized, intensity: m.intensity,
-        phase: m.phase, evidenceIds: m.evidenceIds })),
+      note: L.note || undefined,
+      events: L.events.map(e => ({
+        id: e.id, label: e.label.trim(), summary: e.summary.trim() || e.label.trim(),
+        evidence: e.evidence, explicit: e.explicit, status: e.status,
+        traits: e.traits, undecidable: e.undecidable,
+        outOfScopeRaw: e.undecidable === "out_of_scope" ? e.outOfScopeRaw.trim() : undefined,
+      })),
+      emotions,
     };
   });
 }
 
+/* ── 미입력 점검 — 내보내기 전에 빠진 칸을 알려 준다 ──── */
+function gaps() {
+  const out = [];
+  sessions.forEach(s => {
+    const L = labels[s.id];
+    if (!L || !L.events.length) { out.push(`${s.id}: 사건 없음`); return; }
+    L.events.forEach(e => {
+      const w = [];
+      if (!e.summary.trim() && !e.label.trim()) w.push("요약");
+      if (!e.evidence.length) w.push("배정 발화");
+      if (!e.explicit) w.push("명시적 표현");
+      if (!e.status) w.push("라벨링 상태");
+      if (e.undecidable === "out_of_scope" && !e.outOfScopeRaw.trim()) w.push("체계 밖 원문");
+      if (!e.undecidable && !e.emotions.length) w.push("감정(또는 판단 불가)");
+      e.emotions.forEach((m, j) => {
+        if (!m.evidenceIds.length) w.push(`감정${j + 1} 근거`);
+      });
+      if (w.length) out.push(`${s.id} 사건${e.id}: ${w.join(", ")}`);
+    });
+  });
+  return out;
+}
+
+document.getElementById("labeler").oninput = e => { labeler = e.target.value.trim(); save(); };
 document.getElementById("load").onclick = () => document.getElementById("file").click();
 document.getElementById("file").onchange = e => {
   const f = e.target.files[0];
   if (!f) return;
+  if (sessions.length && !confirm("현재 작업을 버리고 새로 불러옵니다. 내보내기는 하셨나요?")) {
+    e.target.value = ""; return;
+  }
   const r = new FileReader();
   r.onload = () => {
     sessions = parse(r.result);
-    // 순서 랜덤화 — 감정별로 몰아서 라벨링하면 기준이 미끄러진다(계획 §6.3)
+    // 순서 랜덤화 — 감정별로 몰아서 라벨링하면 기준이 미끄러진다(계획 §8.8)
     order = sessions.map((_, i) => i);
     for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -293,15 +476,20 @@ document.getElementById("file").onchange = e => {
     save(); render();
   };
   r.readAsText(f, "utf-8");
+  e.target.value = "";
 };
 document.getElementById("prev").onclick = () => { cur--; target = null; save(); render(); };
 document.getElementById("next").onclick = () => { cur++; target = null; save(); render(); };
 document.getElementById("export").onclick = () => {
   if (!sessions.length) return;
+  if (!labeler) return alert("라벨러 ID를 먼저 입력하세요 (A 또는 B).");
+  const g = gaps();
+  if (g.length && !confirm(`빠진 칸 ${g.length}건:\n\n${g.slice(0, 15).join("\n")}` +
+      `${g.length > 15 ? "\n…" : ""}\n\n그래도 내보낼까요?`)) return;
   const blob = new Blob([JSON.stringify(toGold(), null, 1)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "gold.json";
+  a.download = `gold-${labeler}.json`;
   a.click();
 };
 

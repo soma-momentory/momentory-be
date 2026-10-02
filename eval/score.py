@@ -18,11 +18,32 @@ import sys
 from collections import defaultdict
 from itertools import permutations
 
-# 도메인과 같은 고정 목록 — Emotion.java / EmotionPhase.java 와 일치해야 한다.
+# ⚠ 구 택소노미(v1)다. Notion 정본이 감정 10종·강도 척도를 교체했고(계획 §0.1) 이 채점기는
+#   아직 옮기지 않았다. 남은 일은 계획 §14.3 에 있다:
+#     · EMOTIONS 를 v2 11종(joy/calm/proud/affection/sad/anxious/angry/disappointed/
+#       ashamed/confused/sorry)으로 교체
+#     · 강도 0~4 → 1~3 + null(판단 어려움). QWK 범위와 함께 2단계 오차율·판단 보류율·응답 비율 추가
+#     · PHASES·phase_macro_f1 삭제 (정본에서 시점은 채점 대상이 아니다)
+#     · sample/*.json 재작성
+#   그때까지 v2 골드는 아래 가드가 막는다 — 라벨 키가 하나도 안 겹쳐 **조용히 전부 0점**이
+#   나오는 것이 가장 위험하다.
+TAXONOMY = "v1"
 EMOTIONS = ["anxious", "depressed", "angry", "frustrated", "happy",
             "stuck", "lethargic", "tired", "proud", "calm"]
 PHASES = ["before", "during", "after", "now"]
 INTENSITY_LEVELS = 5  # 0~4
+
+
+def check_taxonomy(rows, who):
+    """골드·예측의 택소노미가 채점기와 같은지 본다. 다르면 채점하지 않는다."""
+    found = {r.get("taxonomy") or "v1" for r in rows if isinstance(r, dict)}
+    bad = found - {TAXONOMY}
+    if bad:
+        sys.exit(
+            "{}: 택소노미가 채점기({})와 다릅니다 — {}.\n"
+            "  이대로 채점하면 라벨 키가 겹치지 않아 전부 0점으로 나옵니다.\n"
+            "  채점기를 정본으로 옮기는 작업은 계획 §14.3 을 보세요."
+            .format(who, TAXONOMY, ", ".join(sorted(bad))))
 
 # 사건 정렬 IoU 임계값 (계획 §7.1) — 하나로 고정하지 않고 민감도를 함께 본다.
 IOU_THRESHOLDS = [0.3, 0.5, 0.7]
@@ -291,9 +312,10 @@ def score_events(pairs, threshold):
 
 # ── 입출력 ───────────────────────────────────────────────────────────────
 
-def load(path):
+def load(path, who=None):
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
+    check_taxonomy(data, who or path)
     return {s["sessionId"]: s for s in data}
 
 
@@ -390,13 +412,13 @@ def main():
     ap.add_argument("--per-emotion", metavar="버전", help="이 버전의 감정별 P/R/F1 을 함께 낸다")
     args = ap.parse_args()
 
-    gold = load(args.gold)
+    gold = load(args.gold, "골드")
     results = {}
     for spec in args.pred:
         if "=" not in spec:
             sys.exit(f"--pred 는 '이름=경로' 형식이어야 합니다: {spec}")
         name, path = spec.split("=", 1)
-        pairs, missing = build_pairs(gold, load(path), args.subset)
+        pairs, missing = build_pairs(gold, load(path, name), args.subset)
         if missing:
             print(f"[경고] {name}: 예측에 없는 세션 {len(missing)}개를 건너뜁니다 "
                   f"({', '.join(missing[:5])}{'…' if len(missing) > 5 else ''})", file=sys.stderr)
