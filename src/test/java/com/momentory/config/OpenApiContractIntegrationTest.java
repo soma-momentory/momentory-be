@@ -186,6 +186,16 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/memos/{date}", "delete", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/memos/{date}", "delete", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
+        assertResponseSchema(apiDocs, "/api/v1/treasures", "post", "201", "TreasureResponse");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "post", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "post", "400", "ApiErrorResponse", "contentRequiredOrBlank", "INVALID_REQUEST", "보물 내용을 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "post", "400", "ApiErrorResponse", "contentTooLong", "INVALID_REQUEST", "보물 내용은 최대 100자입니다.");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/treasures", "get", "200", "TreasureListResponse");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "get", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
         assertResponseSchema(apiDocs, "/api/v1/retrospect", "post", "201", "StartRetrospectResponse");
         assertStartRetrospectRequestProperties(apiDocs);
         assertErrorExample(apiDocs, "/api/v1/retrospect", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "currentEmotion은 필수입니다.");
