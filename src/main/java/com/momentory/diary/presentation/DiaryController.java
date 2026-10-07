@@ -41,10 +41,54 @@ public class DiaryController {
 
     private final DiaryQueryService diaryQueryService;
     private final DiaryService diaryService;
+    private final com.momentory.diary.application.DiaryWeatherService weatherService;
 
-    public DiaryController(DiaryQueryService diaryQueryService, DiaryService diaryService) {
+    public DiaryController(DiaryQueryService diaryQueryService, DiaryService diaryService,
+            com.momentory.diary.application.DiaryWeatherService weatherService) {
         this.diaryQueryService = diaryQueryService;
         this.diaryService = diaryService;
+        this.weatherService = weatherService;
+    }
+
+    @Operation(summary = "오늘 일기에 현재 위치의 날씨 기록",
+            description = "날씨가 없는 오늘 일기에만 위치 기반 예보를 기록한다. 이미 기록한 날씨는 유지하며 좌표는 저장하지 않는다.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "기록된 일기",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = DiaryResponse.class))),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청입니다.",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "INVALID_REQUEST", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"잘못된 요청입니다.\"}"),
+                                    @ExampleObject(name = "latitudeRequired", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"위도를 입력해주세요.\"}"),
+                                    @ExampleObject(name = "latitudeRange", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"위도는 -90부터 90까지입니다.\"}"),
+                                    @ExampleObject(name = "longitudeRequired", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"경도를 입력해주세요.\"}"),
+                                    @ExampleObject(name = "longitudeRange", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"경도는 -180부터 180까지입니다.\"}") })),
+            @ApiResponse(responseCode = "401", description = "인증이 필요합니다.",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = @ExampleObject(name = "AUTHENTICATION_REQUIRED", value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}"))),
+            @ApiResponse(responseCode = "404", description = "일기를 찾을 수 없습니다.",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = @ExampleObject(name = "DIARY_NOT_FOUND", value = "{\"code\":\"DIARY_NOT_FOUND\",\"message\":\"일기를 찾을 수 없습니다.\"}"))),
+            @ApiResponse(responseCode = "409", description = "지난 일기에는 현재 날씨를 기록할 수 없습니다.",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = @ExampleObject(name = "DIARY_WEATHER_DATE_MISMATCH", value = "{\"code\":\"DIARY_WEATHER_DATE_MISMATCH\",\"message\":\"지난 일기에는 현재 날씨를 기록할 수 없습니다.\"}"))),
+            @ApiResponse(responseCode = "503", description = "날씨를 가져오지 못했어요. 일기는 그대로 저장돼요.",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = @ExampleObject(name = "WEATHER_UNAVAILABLE", value = "{\"code\":\"WEATHER_UNAVAILABLE\",\"message\":\"날씨를 가져오지 못했어요. 일기는 그대로 저장돼요.\"}")))
+    })
+    @PutMapping(value = "/{id}/weather", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public DiaryResponse recordWeather(@Login LoginPrincipal principal, @PathVariable Long id,
+            @Valid @RequestBody DiaryWeatherRequest request) {
+        return DiaryResponse.from(weatherService.record(principal.userId(), id,
+                request.latitude().doubleValue(), request.longitude().doubleValue()));
     }
 
     @Operation(summary = "월별 일기 목록 조회", description = "연·월(KST 기준)에 작성된 일기를 최신순으로 돌려준다.")

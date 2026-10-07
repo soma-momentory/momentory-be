@@ -24,6 +24,7 @@ import jakarta.persistence.Table;
  * 생성 시기는 {@link BaseTimeEntity#getCreatedAt()}.
  */
 @Entity
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "diaries")
 public class Diary extends BaseTimeEntity {
 
@@ -48,6 +49,18 @@ public class Diary extends BaseTimeEntity {
     /** v2 감정 태그(CSV 키) — 일기에서 드러난 감정 전체. 라벨은 읽는 쪽이 Emotion 에서 역참조. */
     @Column(columnDefinition = "TEXT")
     private String emotions;
+
+    @Column(length = 80)
+    private String weather;
+
+    public String getWeather() {
+        return weather;
+    }
+
+    /** 한 번 기록한 날씨는 이후 조회나 재시도로 바꾸지 않는다. */
+    public void recordWeather(String weather) {
+        if (this.weather == null) this.weather = Objects.requireNonNull(weather);
+    }
 
     protected Diary() {
     }
