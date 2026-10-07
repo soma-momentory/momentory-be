@@ -10,6 +10,10 @@ import com.momentory.diary.domain.Diary;
 
 public interface DiaryRepository extends JpaRepository<Diary, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select d from Diary d where d.id = :id and d.userId = :userId")
+    Optional<Diary> findForWeather(Long id, Long userId);
+
     /** 그날의 회고에 딸린 일기 — 회고 한 벌에 하나뿐이다. */
     Optional<Diary> findByRetrospectId(Long retrospectId);
 

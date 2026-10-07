@@ -65,6 +65,24 @@ class OpenApiContractIntegrationTest {
     }
 
     @Test
+    void documentsDiaryWeather() throws Exception {
+        JsonNode docs = getApiDocs();
+        String path = "/api/v1/diaries/{id}/weather";
+        assertResponseSchema(docs, path, "put", "200", "DiaryResponse");
+        assertErrorExample(docs, path, "put", "400", "ApiErrorResponse", "latitudeRange", "INVALID_REQUEST", "위도는 -90부터 90까지입니다.");
+        assertErrorExample(docs, path, "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, path, "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(docs, path, "put", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
+        assertErrorExample(docs, path, "put", "409", "ApiErrorResponse", "DIARY_WEATHER_DATE_MISMATCH", "DIARY_WEATHER_DATE_MISMATCH", "지난 일기에는 현재 날씨를 기록할 수 없습니다.");
+        assertErrorExample(docs, path, "put", "503", "ApiErrorResponse", "WEATHER_UNAVAILABLE", "WEATHER_UNAVAILABLE", "날씨를 가져오지 못했어요. 일기는 그대로 저장돼요.");
+        JsonNode properties = docs.path("components").path("schemas").path("DiaryWeatherRequest").path("properties");
+        assertThat(properties.size()).isEqualTo(2);
+        assertThat(properties.has("latitude")).isTrue();
+        assertThat(properties.has("longitude")).isTrue();
+        assertThat(docs.path("components").path("schemas").path("DiaryResponse").path("properties").has("weather")).isTrue();
+    }
+
+    @Test
     void documentsResponseSchemasAndErrorExamplesForPublicApis() throws Exception {
         JsonNode apiDocs = getApiDocs();
 

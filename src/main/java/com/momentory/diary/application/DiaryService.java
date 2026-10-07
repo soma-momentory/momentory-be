@@ -19,6 +19,21 @@ public class DiaryService {
         this.diaryRepository = diaryRepository;
     }
 
+    /** 외부 조회는 트랜잭션 밖에서 수행하고, 기록 시 소유권과 날짜를 다시 검사한다. */
+    @Transactional
+    public DiaryView recordWeather(Long userId, Long id, String weather) {
+        Diary diary = diaryRepository.findForWeather(id, userId)
+                .orElseThrow(DiaryNotFoundException::new);
+        if (diary.getWeather() == null) {
+            if (!com.momentory.common.time.DayBoundary.toLocalDate(diary.getCreatedAt())
+                    .equals(com.momentory.common.time.DayBoundary.today())) {
+                throw new DiaryWeatherDateException();
+            }
+            diary.recordWeather(weather);
+        }
+        return DiaryView.from(diary);
+    }
+
     /**
      * 일기 한 벌을 지운다 — 소유권을 함께 검증한다.
      *
