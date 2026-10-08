@@ -1,0 +1,1 @@
+ALTER TABLE diaries ADD COLUMN weather VARCHAR(80);

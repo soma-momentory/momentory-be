@@ -65,6 +65,24 @@ class OpenApiContractIntegrationTest {
     }
 
     @Test
+    void documentsDiaryWeather() throws Exception {
+        JsonNode docs = getApiDocs();
+        String path = "/api/v1/diaries/{id}/weather";
+        assertResponseSchema(docs, path, "put", "200", "DiaryResponse");
+        assertErrorExample(docs, path, "put", "400", "ApiErrorResponse", "latitudeRange", "INVALID_REQUEST", "위도는 -90부터 90까지입니다.");
+        assertErrorExample(docs, path, "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, path, "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(docs, path, "put", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
+        assertErrorExample(docs, path, "put", "409", "ApiErrorResponse", "DIARY_WEATHER_DATE_MISMATCH", "DIARY_WEATHER_DATE_MISMATCH", "지난 일기에는 현재 날씨를 기록할 수 없습니다.");
+        assertErrorExample(docs, path, "put", "503", "ApiErrorResponse", "WEATHER_UNAVAILABLE", "WEATHER_UNAVAILABLE", "날씨를 가져오지 못했어요. 일기는 그대로 저장돼요.");
+        JsonNode properties = docs.path("components").path("schemas").path("DiaryWeatherRequest").path("properties");
+        assertThat(properties.size()).isEqualTo(2);
+        assertThat(properties.has("latitude")).isTrue();
+        assertThat(properties.has("longitude")).isTrue();
+        assertThat(docs.path("components").path("schemas").path("DiaryResponse").path("properties").has("weather")).isTrue();
+    }
+
+    @Test
     void documentsResponseSchemasAndErrorExamplesForPublicApis() throws Exception {
         JsonNode apiDocs = getApiDocs();
 
@@ -185,6 +203,28 @@ class OpenApiContractIntegrationTest {
         assertNoResponseContent(apiDocs, "/api/v1/memos/{date}", "delete", "204");
         assertErrorExample(apiDocs, "/api/v1/memos/{date}", "delete", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/memos/{date}", "delete", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/treasures", "post", "201", "TreasureResponse");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "post", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "post", "400", "ApiErrorResponse", "contentRequiredOrBlank", "INVALID_REQUEST", "보물 내용을 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "post", "400", "ApiErrorResponse", "contentTooLong", "INVALID_REQUEST", "보물 내용은 최대 100자입니다.");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/treasures", "get", "200", "TreasureListResponse");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "get", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/treasures", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/rest-records", "post", "201", "RestRecordResponse");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "contentRequired", "INVALID_REQUEST", "쉼터를 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "completedRequired", "INVALID_REQUEST", "끝까지 했는지 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "completedWithoutMood", "INVALID_REQUEST", "끝까지 했을 때는 기분을 골라주세요.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "incompleteWithMood", "INVALID_REQUEST", "끝까지 하지 않았을 때는 기분을 남길 수 없습니다.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/rest-records", "get", "200", "RestRecordListResponse");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "get", "400", "ApiErrorResponse", "invalidContent", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
         assertResponseSchema(apiDocs, "/api/v1/retrospect", "post", "201", "StartRetrospectResponse");
         assertStartRetrospectRequestProperties(apiDocs);

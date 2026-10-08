@@ -15,7 +15,7 @@ import com.momentory.diary.domain.Diary;
  * (일기에서 드러난 감정 키 전체 — 저장된 CSV 를 나눈 것). 본문은 {@code original} 하나다.
  */
 public record DiaryView(Long id, Long retrospectId, Emotion primaryEmotion,
-        List<String> emotions, String original, Instant createdAt) {
+        List<String> emotions, String original, Instant createdAt, String weather) {
 
     public DiaryView {
         emotions = emotions == null ? List.of() : List.copyOf(emotions);
@@ -23,7 +23,7 @@ public record DiaryView(Long id, Long retrospectId, Emotion primaryEmotion,
 
     static DiaryView from(Diary diary) {
         return new DiaryView(diary.getId(), diary.getRetrospectId(), diary.getPrimaryEmotion(),
-                splitCsv(diary.getEmotions()), diary.getOriginal(), diary.getCreatedAt());
+                splitCsv(diary.getEmotions()), diary.getOriginal(), diary.getCreatedAt(), diary.getWeather());
     }
 
     static List<String> splitCsv(String csv) {
