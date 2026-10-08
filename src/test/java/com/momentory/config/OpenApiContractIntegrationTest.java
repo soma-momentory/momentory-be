@@ -214,6 +214,18 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/treasures", "get", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/treasures", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
+        assertResponseSchema(apiDocs, "/api/v1/rest-records", "post", "201", "RestRecordResponse");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "contentRequired", "INVALID_REQUEST", "쉼터를 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "completedRequired", "INVALID_REQUEST", "끝까지 했는지 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "completedWithoutMood", "INVALID_REQUEST", "끝까지 했을 때는 기분을 골라주세요.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "incompleteWithMood", "INVALID_REQUEST", "끝까지 하지 않았을 때는 기분을 남길 수 없습니다.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/rest-records", "get", "200", "RestRecordListResponse");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "get", "400", "ApiErrorResponse", "invalidContent", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/rest-records", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
         assertResponseSchema(apiDocs, "/api/v1/retrospect", "post", "201", "StartRetrospectResponse");
         assertStartRetrospectRequestProperties(apiDocs);
         assertErrorExample(apiDocs, "/api/v1/retrospect", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "currentEmotion은 필수입니다.");
