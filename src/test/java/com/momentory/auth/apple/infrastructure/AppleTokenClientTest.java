@@ -1,5 +1,6 @@
 package com.momentory.auth.apple.infrastructure;
 
+import io.micrometer.observation.ObservationRegistry;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -119,7 +120,7 @@ class AppleTokenClientTest {
                 server.url("/auth/token").toString(),
                 server.url("/auth/revoke").toString()
         );
-        return new AppleTokenClient(properties, new AppleClientSecretGenerator(properties));
+        return new AppleTokenClient(properties, new AppleClientSecretGenerator(properties), ObservationRegistry.NOOP);
     }
 
     private MockResponse jsonResponse(int status, String body) {

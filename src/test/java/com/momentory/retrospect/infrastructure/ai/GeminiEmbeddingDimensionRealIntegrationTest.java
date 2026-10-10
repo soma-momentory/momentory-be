@@ -1,5 +1,6 @@
 package com.momentory.retrospect.infrastructure.ai;
 
+import io.micrometer.observation.ObservationRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
@@ -35,7 +36,7 @@ class GeminiEmbeddingDimensionRealIntegrationTest {
                 System.getenv("GEMINI_API_KEY"),
                 "gemini-flash-lite-latest",
                 0.7, Duration.ofSeconds(3), Duration.ofSeconds(30), embeddingModel);
-        RestClient restClient = new GeminiApiClientConfiguration().geminiRestClient(properties);
+        RestClient restClient = new GeminiApiClientConfiguration().geminiRestClient(properties, ObservationRegistry.NOOP);
 
         // GeminiSituationEmbedder 와 동일한 요청 형식으로 raw 호출(차원 가드에 걸러지기 전 원본을 본다).
         EmbeddingResponse response = restClient.post()

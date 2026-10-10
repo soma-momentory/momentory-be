@@ -1,5 +1,6 @@
 package com.momentory.auth.apple.infrastructure;
 
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -53,12 +54,14 @@ public class AppleTokenClient {
 
     public AppleTokenClient(
             AppleAuthProperties properties,
-            AppleClientSecretGenerator clientSecretGenerator
+            AppleClientSecretGenerator clientSecretGenerator,
+            ObservationRegistry observationRegistry
     ) {
         this.properties = properties;
         this.clientSecretGenerator = clientSecretGenerator;
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory(properties))
+                .observationRegistry(observationRegistry)
                 .build();
     }
 

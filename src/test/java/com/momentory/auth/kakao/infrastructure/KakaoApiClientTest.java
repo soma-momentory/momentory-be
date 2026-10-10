@@ -1,5 +1,6 @@
 package com.momentory.auth.kakao.infrastructure;
 
+import io.micrometer.observation.ObservationRegistry;
 import com.momentory.auth.kakao.application.KakaoUserInfo;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -142,7 +143,7 @@ class KakaoApiClientTest {
                 readTimeout
         );
         KakaoApiClientConfiguration configuration = new KakaoApiClientConfiguration();
-        return new KakaoApiClient(configuration.kakaoRestClient(properties), properties);
+        return new KakaoApiClient(configuration.kakaoRestClient(properties, ObservationRegistry.NOOP), properties);
     }
 
     private KakaoApiClient unavailableClient() {
@@ -154,7 +155,7 @@ class KakaoApiClientTest {
                 Duration.ofMillis(100)
         );
         KakaoApiClientConfiguration configuration = new KakaoApiClientConfiguration();
-        return new KakaoApiClient(configuration.kakaoRestClient(properties), properties);
+        return new KakaoApiClient(configuration.kakaoRestClient(properties, ObservationRegistry.NOOP), properties);
     }
 
     private void enqueueTokenInfo(Long userId, Long appId, Long expiresIn) {
