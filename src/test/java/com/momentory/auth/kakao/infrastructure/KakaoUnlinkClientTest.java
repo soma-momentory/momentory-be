@@ -1,5 +1,6 @@
 package com.momentory.auth.kakao.infrastructure;
 
+import io.micrometer.observation.ObservationRegistry;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -93,7 +94,7 @@ class KakaoUnlinkClientTest {
         );
         KakaoApiClientConfiguration configuration = new KakaoApiClientConfiguration();
         return new KakaoUnlinkClient(
-                configuration.kakaoRestClient(properties),
+                configuration.kakaoRestClient(properties, ObservationRegistry.NOOP),
                 properties,
                 JsonMapper.builder().build()
         );

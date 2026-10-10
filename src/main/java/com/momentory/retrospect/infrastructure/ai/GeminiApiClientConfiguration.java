@@ -2,6 +2,8 @@ package com.momentory.retrospect.infrastructure.ai;
 
 import java.net.http.HttpClient;
 
+import io.micrometer.observation.ObservationRegistry;
+
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,7 +15,7 @@ import org.springframework.web.client.RestClient;
 public class GeminiApiClientConfiguration {
 
     @Bean
-    RestClient geminiRestClient(GeminiApiProperties properties) {
+    RestClient geminiRestClient(GeminiApiProperties properties, ObservationRegistry observationRegistry) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
                 .build();
@@ -23,6 +25,7 @@ public class GeminiApiClientConfiguration {
         return RestClient.builder()
                 .baseUrl(properties.baseUrl())
                 .requestFactory(requestFactory)
+                .observationRegistry(observationRegistry)
                 .build();
     }
 }

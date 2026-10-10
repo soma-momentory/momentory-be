@@ -1,5 +1,6 @@
 package com.momentory.auth.kakao.infrastructure;
 
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,7 +14,7 @@ import java.net.http.HttpClient;
 public class KakaoApiClientConfiguration {
 
     @Bean
-    RestClient kakaoRestClient(KakaoApiProperties properties) {
+    RestClient kakaoRestClient(KakaoApiProperties properties, ObservationRegistry observationRegistry) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
                 .build();
@@ -23,6 +24,7 @@ public class KakaoApiClientConfiguration {
         return RestClient.builder()
                 .baseUrl(properties.baseUrl())
                 .requestFactory(requestFactory)
+                .observationRegistry(observationRegistry)
                 .build();
     }
 }

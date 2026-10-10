@@ -1,5 +1,6 @@
 package com.momentory.retrospect.infrastructure.ai;
 
+import io.micrometer.observation.ObservationRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -157,7 +158,7 @@ class GeminiApiClientTest {
         GeminiApiProperties properties = new GeminiApiProperties(
                 server.url("/").toString(), "test-key", "gemini-flash-lite-latest",
                 0.7, Duration.ofSeconds(1), Duration.ofSeconds(5), "text-embedding-004");
-        RestClient restClient = new GeminiApiClientConfiguration().geminiRestClient(properties);
+        RestClient restClient = new GeminiApiClientConfiguration().geminiRestClient(properties, ObservationRegistry.NOOP);
         return new GeminiApiClient(restClient, mapper, events::add, properties);
     }
 

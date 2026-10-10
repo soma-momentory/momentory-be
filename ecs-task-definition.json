@@ -32,6 +32,10 @@
           "value": "prod"
         },
         {
+          "name": "GRAFANA_OTLP_ENABLED",
+          "value": "true"
+        },
+        {
           "name": "KAKAO_CONNECT_TIMEOUT",
           "value": "3s"
         },
@@ -48,6 +52,14 @@
       "mountPoints": [],
       "volumesFrom": [],
       "secrets": [
+        {
+          "name": "GRAFANA_OTLP_URL",
+          "valueFrom": "/momentory/prod/GRAFANA_OTLP_URL"
+        },
+        {
+          "name": "GRAFANA_OTLP_AUTH",
+          "valueFrom": "/momentory/prod/GRAFANA_OTLP_AUTH"
+        },
         {
           "name": "DB_URL",
           "valueFrom": "/momentory/prod/DB_URL"
