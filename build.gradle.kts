@@ -27,6 +27,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
+    // Boot 4 의 OTLP 메트릭 자동 설정은 spring-boot-opentelemetry 가 있어야 켜진다(트레이싱은 넣지 않는다).
+    implementation("org.springframework.boot:spring-boot-opentelemetry")
+    runtimeOnly("io.micrometer:micrometer-registry-otlp")
     runtimeOnly("org.postgresql:postgresql")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

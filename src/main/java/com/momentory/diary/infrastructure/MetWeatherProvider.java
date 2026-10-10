@@ -9,6 +9,7 @@ import java.util.Map;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -27,11 +28,13 @@ public class MetWeatherProvider implements WeatherProvider {
 
 
     public MetWeatherProvider(
-            @Value("${weather.base-url:https://api.met.no}") String baseUrl) {
+            @Value("${weather.base-url:https://api.met.no}") String baseUrl,
+            ObservationRegistry observationRegistry) {
         var factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3)).build());
         factory.setReadTimeout(Duration.ofSeconds(5));
         client = RestClient.builder().baseUrl(baseUrl).requestFactory(factory)
+                .observationRegistry(observationRegistry)
                 .defaultHeader("User-Agent", "Momentory/1.2 (https://momentory.co.kr)")
                 .build();
     }

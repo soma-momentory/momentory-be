@@ -118,3 +118,21 @@ management:
     health:
       probes:
         enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # 앱에서 계산한 백분위수만 보낸다. percentiles-histogram 은 버킷마다 시계열이 생겨
+      # Grafana Cloud 무료 한도(활성 시계열 1만)에 닿는다.
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+        http.client.requests: 0.5, 0.95, 0.99
+  otlp:
+    metrics:
+      export:
+        # dev 작업 정의도 prod 프로필을 쓰므로 프로필이 아니라 환경 변수로 켠다(운영 작업 정의만 true).
+        enabled: ${GRAFANA_OTLP_ENABLED:false}
+        url: ${GRAFANA_OTLP_URL:http://localhost:4318/v1/metrics}
+        headers:
+          Authorization: ${GRAFANA_OTLP_AUTH:}
+        base-time-unit: seconds
