@@ -24,7 +24,7 @@ from itertools import combinations
 
 KO = {"joy": "기쁨", "calm": "평온", "proud": "뿌듯함", "affection": "애정", "sad": "슬픔",
       "anxious": "불안", "angry": "분노", "disappointed": "실망", "ashamed": "부끄러움",
-      "confused": "혼란", "sorry": "미안함", None: "체계 밖"}
+      "confused": "혼란", "sorry": "미안함", "exhausted": "지침", None: "체계 밖"}
 JOSA = re.compile(r"(이랑|에서|에게|한테|으로|이나|까지|부터|처럼|보다|이|가|을|를|은|는|에|도|만|과|와|랑|로|의)$")
 STOP = set("""너무 정말 진짜 그래서 그런데 그리고 하지만 내가 나는 나도 나를 나한테 내 우리 오늘 요즘 지금 이제
 그냥 좀 많이 계속 다시 이번 같아 있어 없어 했어 해서 하고 하는 하면 그게 이게 저게 어떻게 무슨 어떤 그런 이런

@@ -11,7 +11,7 @@
 내는 것:
 
   1) **일치도(IAA)** — 계획 §8.9 의 상한선 좌표.
-     · 감정: 대표 감정 11종을 라벨별 이진 카파로 재고 매크로 평균한다(다중 라벨이라 단일 카파 불가)
+     · 감정: 대표 감정 12종을 라벨별 이진 카파로 재고 매크로 평균한다(다중 라벨이라 단일 카파 불가)
      · 강도: 1·2·3 가중 카파(quadratic). '판단 어려움'은 등급이 아니라 **보류**라 따로 센다
      · 명시적 표현·사건 개수: 단순 카파와 일치율
   2) **불일치 목록** — 원인을 사건 구분 / 대표 감정 / 강도 / 명시적 표현 중 무엇인지로 분류한다.
@@ -30,10 +30,10 @@ import sys
 from collections import Counter, defaultdict
 
 EMOTIONS = ["joy", "calm", "proud", "affection", "sad",
-            "anxious", "angry", "disappointed", "ashamed", "confused", "sorry"]
+            "anxious", "angry", "disappointed", "ashamed", "confused", "sorry", "exhausted"]
 KO = {"joy": "기쁨", "calm": "평온", "proud": "뿌듯함", "affection": "애정", "sad": "슬픔",
       "anxious": "불안", "angry": "분노", "disappointed": "실망", "ashamed": "부끄러움",
-      "confused": "혼란", "sorry": "미안함"}
+      "confused": "혼란", "sorry": "미안함", "exhausted": "지침"}
 EXPLICIT_KO = {"yes": "있음", "no": "없음", "unsure": "판단 어려움", None: "미입력"}
 UND_KO = {"no_emotion_info": "감정 정보 부족", "emotion_unclear": "대표 감정 판단 어려움",
           "out_of_scope": "분류 체계 밖", None: "—"}

@@ -6,7 +6,7 @@
 
 뽑는 기준
   · 표현 유형(명시/간접)은 감정 어휘 사전으로 미리 가른다 — 층화의 첫 축
-  · 각 층 안에서 감정이 고르게 나오도록, AI Hub 라벨을 11종으로 바꾼 값(proxy)으로 나눠 뽑는다.
+  · 각 층 안에서 감정이 고르게 나오도록, AI Hub 라벨을 12종으로 바꾼 값(proxy)으로 나눠 뽑는다.
     proxy 는 사람 판정과 25%만 맞으므로 "대략 고르게"일 뿐이다 — 1차 라벨링 후 모자란 감정을 겨냥해 2차를 뽑는다
   · 복합 감정은 미리 알 수 없다. 명시 쪽만 사전으로 "서로 다른 감정 단어 2개 이상"을 찾아 평가셋에 최소치를 넣는다
   · 인물 단위로 나눈다 — 평가 인물과 학습 인물은 겹치지 않고, 같은 인물은 전체에서 최대 2건
@@ -28,10 +28,10 @@ from collections import Counter, defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EMOTIONS = ["joy", "calm", "proud", "affection", "sad", "anxious", "angry",
-            "disappointed", "ashamed", "confused", "sorry"]
+            "disappointed", "ashamed", "confused", "sorry", "exhausted"]
 KO = {"joy": "기쁨", "calm": "평온", "proud": "뿌듯함", "affection": "애정", "sad": "슬픔",
       "anxious": "불안", "angry": "분노", "disappointed": "실망", "ashamed": "부끄러움",
-      "confused": "혼란", "sorry": "미안함"}
+      "confused": "혼란", "sorry": "미안함", "exhausted": "지침"}
 
 
 def _load(name, path):

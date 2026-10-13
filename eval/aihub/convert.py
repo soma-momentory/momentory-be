@@ -2,7 +2,7 @@
 """
 AI Hub 018.감성대화 → 모멘토리 정본(v2) 택소노미로 라벨 변환.
 
-`mapping.json` 의 소분류 60종 → 대표 감정 11종 매핑을 적용하고, **커버리지를 먼저 보고한다.**
+`mapping.json` 의 소분류 60종 → 대표 감정 12종 매핑을 적용하고, **커버리지를 먼저 보고한다.**
 변환 자체보다 "무엇이 안 덮이는가"가 이 스크립트의 산출물이다.
 
     python3 convert.py --dir "…/018.감성대화" --report
@@ -24,9 +24,9 @@ from collections import Counter, defaultdict
 
 KO = {"joy": "기쁨", "calm": "평온", "proud": "뿌듯함", "affection": "애정", "sad": "슬픔",
       "anxious": "불안", "angry": "분노", "disappointed": "실망", "ashamed": "부끄러움",
-      "confused": "혼란", "sorry": "미안함"}
+      "confused": "혼란", "sorry": "미안함", "exhausted": "지침"}
 ORDER = ["joy", "calm", "proud", "affection", "sad", "anxious", "angry", "disappointed",
-         "ashamed", "confused", "sorry"]
+         "ashamed", "confused", "sorry", "exhausted"]
 
 SPLITS = {
     "training": ("Training_221115_add", "Training"),
@@ -157,7 +157,7 @@ def main():
         for k, n in unmapped.most_common():
             print(f"    {k}  {n}건")
 
-    print(f"\n── 정본 11종 커버리지 ──")
+    print(f"\n── 정본 12종 커버리지 ──")
     print(f"  {'감정':<6} {'direct':>8} {'approx':>8} {'합계':>8}")
     for e in ORDER:
         d, a = per_emotion[e]["direct"], per_emotion[e]["approx"]

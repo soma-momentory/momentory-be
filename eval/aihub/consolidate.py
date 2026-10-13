@@ -26,10 +26,10 @@ from collections import Counter, defaultdict
 
 KO = {"joy": "기쁨", "calm": "평온", "proud": "뿌듯함", "affection": "애정", "sad": "슬픔",
       "anxious": "불안", "angry": "분노", "disappointed": "실망", "ashamed": "부끄러움",
-      "confused": "혼란", "sorry": "미안함",
+      "confused": "혼란", "sorry": "미안함", "exhausted": "지침",
       "out": "체계 밖", "unsure": "애매", "none": "해당 없음"}
 ORDER = ["joy", "calm", "proud", "affection", "sad", "anxious", "angry",
-         "disappointed", "ashamed", "confused", "sorry", "out", "unsure", "none"]
+         "disappointed", "ashamed", "confused", "sorry", "exhausted", "out", "unsure", "none"]
 SIT = {
     "진로,취업,직장": "일·학업", "학업 및 진로": "일·학업", "직장, 업무 스트레스": "일·학업",
     "가족관계": "가까운 관계", "연애,결혼,출산": "가까운 관계", "대인관계(부부, 자녀)": "가까운 관계",
@@ -126,7 +126,7 @@ def main():
         if cnt[k]:
             print(f"  {KO[k]:<7}{cnt[k]:>5}")
 
-    print("\n── 감정 × 상황 (씨앗으로 쓸 11종만) ──")
+    print("\n── 감정 × 상황 (씨앗으로 쓸 12종만) ──")
     grid = defaultdict(Counter)
     for r in rows:
         for v in r["verdict"]:
