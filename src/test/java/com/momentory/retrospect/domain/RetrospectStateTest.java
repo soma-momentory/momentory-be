@@ -121,4 +121,28 @@ class RetrospectStateTest {
     void noEventsNoMainEvent() {
         assertThat(new RetrospectState("s").mainEvent()).isEmpty();
     }
+
+    @Test
+    @DisplayName("카드 상황은 대표 사건 요약이다 — 마지막 턴에 덮어쓴 사건 슬롯이 아니다")
+    void cardSituationPrefersMainEventSummary() {
+        RetrospectState state = new RetrospectState("s");
+        state.event("다음엔 혼자 끌어안지 않겠다고 다짐한 것");
+        state.events(List.of(new ExtractedEvent(1, "팀 발표", "팀 발표 자료를 혼자 만듦", List.of(1, 2))));
+
+        assertThat(state.cardSituation()).isEqualTo("팀 발표 자료를 혼자 만듦");
+    }
+
+    @Test
+    @DisplayName("대표 사건이 없으면 카드 상황은 사건 슬롯 → 일정 → 기본 문구 순으로 대신한다")
+    void cardSituationFallsBack() {
+        RetrospectState withSlot = new RetrospectState("s1");
+        withSlot.event("발표에서 말이 막혔다");
+        assertThat(withSlot.cardSituation()).isEqualTo("발표에서 말이 막혔다");
+
+        RetrospectState withSchedule = new RetrospectState("s2");
+        withSchedule.begin("면접 스터디", null, null, null, null);
+        assertThat(withSchedule.cardSituation()).isEqualTo("면접 스터디에서 있었던 일");
+
+        assertThat(new RetrospectState("s3").cardSituation()).isEqualTo("오늘 하루 있었던 일");
+    }
 }

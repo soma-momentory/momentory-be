@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -72,6 +73,20 @@ public class RetrospectEngine {
 
     /** 직접 입력·작은 행동의 방어 상한(글자) — 한 줄로 받는다. */
     private static final int CUSTOM_MAX_LENGTH = 200;
+
+    /**
+     * 작은 행동 칸에 남기지 않을 거절 답 — 공백·문장부호·ㅠㅜ 를 떼고 <b>정확히 일치</b>할 때만 거른다.
+     * 일기 대화의 {@link AnswerGate} 와 따로 두는 이유: 그 게이트를 넓히면 일기 대화의 단답 판정까지
+     * 바뀌고, 길이 기준(2자 미만)이 "잠" 같은 한 글자 행동도 버린다.
+     */
+    private static final Set<String> NO_ACTION_ANSWERS = Set.of(
+            "없어", "없어요", "없음", "없는데", "몰라", "몰라요", "모르겠어", "모르겠어요",
+            "잘모르겠어", "잘모르겠어요", "딱히", "딱히요", "딱히없어", "딱히없어요",
+            "글쎄", "글쎄요", "패스");
+
+    /** 거절 판정 전에 떼는 것 — 유니코드 공백·문장부호·기호(전각 ～！, 이모지 포함)와 ㅠㅜㅋㅎ. */
+    private static final Pattern NO_ACTION_NOISE =
+            Pattern.compile("[\\s\\p{P}\\p{S}ㅠㅜㅋㅎ]", Pattern.UNICODE_CHARACTER_CLASS);
 
     private final SafetyPolicy safetyPolicy;
     private final DiaryChatAssistant diaryChatAssistant;
@@ -495,7 +510,10 @@ public class RetrospectEngine {
             options.add(Choice.of(a));
         }
         state.lastOptions(options);
-        String text = "이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?";
+        // 감정 확인 질문처럼 사건 이름을 밝힌다 — 후보도 그 사건을 가리키므로 질문과 후보가 맞물린다.
+        String text = state.mainEvent()
+                .map(e -> smallActionQuestion(e.topicLabel()))
+                .orElse("이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?");
         state.addAssistantMessage(text + "\n" + optionLines(options));
         return ReplyDto.choices(text, Phase.EMOTION_EXPLORATION, toOptionDtos(options),
                 state.safety().level());
@@ -506,8 +524,12 @@ public class RetrospectEngine {
             return finishComplete(state); // 행동 미정 허용 — 실패로 처리하지 않는다.
         }
         if (command.hasContent()) {
-            state.smallAction(clamp(command.content()));
-            state.addUserMessage(clamp(command.content()));
+            String typed = clamp(command.content());
+            state.addUserMessage(typed);
+            // "없어"·"딱히" 같은 거절 답은 행동이 아니다 — 카드에 그대로 남기지 않고 빈칸(아직 정하지 않음)으로 둔다.
+            if (!isNoActionAnswer(typed)) {
+                state.smallAction(typed);
+            }
         } else {
             Optional<Choice> c = resolveSingle(state, command);
             if (c.isPresent() && !c.get().input()) {
@@ -517,6 +539,10 @@ public class RetrospectEngine {
         }
         state.bumpExplorationTurn();
         return finishComplete(state);
+    }
+
+    private static boolean isNoActionAnswer(String typed) {
+        return NO_ACTION_ANSWERS.contains(NO_ACTION_NOISE.matcher(typed).replaceAll(""));
     }
 
     /** 쉬는 방법 선호가 있으면 반영한 폴백 행동. */
@@ -555,6 +581,12 @@ public class RetrospectEngine {
                 + " 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?";
     }
 
+    /** 「사건 이름」 + 을/를 — 조사 규칙은 {@link #emotionConfirmQuestion} 과 같다. */
+    private static String smallActionQuestion(String label) {
+        return "「" + label + "」" + Josa.pick(label, "을", "를")
+                + " 떠올리며, 이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?";
+    }
+
     /**
      * 상태의 감정 탐색 슬롯으로 바람 카드를 만든다.
      *
@@ -562,11 +594,7 @@ public class RetrospectEngine {
      * 어긋나면 사용자가 A 를 떠올리고 답했는데 카드에는 B 가 적힌다.
      */
     private static ReplyDto.WishCardDto buildWishCard(RetrospectState state) {
-        String situation = state.mainEvent().map(e -> e.summary() != null ? e.summary()
-                        : e.topicLabel())
-                .orElseGet(() -> state.event() != null ? state.event()
-                        : state.hasSchedule() ? state.schedule() + "에서 있었던 일"
-                        : "오늘 하루 있었던 일");
+        String situation = state.cardSituation();
         List<String> emotions = state.confirmedEmotions().stream().map(Emotion::key).toList();
         List<ReplyDto.NeedDto> needs = state.needs().stream()
                 .map(n -> new ReplyDto.NeedDto(n.word(), n.meaning())).toList();

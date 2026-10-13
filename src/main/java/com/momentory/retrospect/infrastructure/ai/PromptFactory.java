@@ -296,21 +296,65 @@ public class PromptFactory {
                 사건: %s
                 확인된 감정: %s
                 """.formatted(Needs.ALL.stream().map(Need::word).collect(Collectors.joining(", ")),
-                orNone(state.event()), emotionKeys(state));
+                state.cardSituation(), emotionLabels(state));
     }
 
-    /** 작은 행동(G2) — 부담 없는 작은 행동 2~3개. */
+    /**
+     * 작은 행동(G2) — 카드 상황과 같은 사건에 묶인, 한 문장만 읽어도 통하는 작은 행동 3개.
+     *
+     * <p>2026-10 바람카드 점검에서 행동의 절반 가까이가 사건과 무관한 진정 팁(물·심호흡·눕기)이었다.
+     * 대부분은 사건 대신 마음 상태가 재료로 들어간 탓이고({@link RetrospectState#cardSituation()} 로
+     * 고쳤다), 나머지는 사건이 멀쩡해도 지시가 느슨해 무난한 답으로 흐른 탓이다 — 그래서 규칙과
+     * 나쁜 예를 둔다. 사용자는 셋 중 하나만 골라 카드에 남기므로 제안끼리 이어 쓰면 안 된다.
+     */
     public String actionsPrompt(RetrospectState state) {
         return """
-                사용자가 부담 없이 오늘이나 다음에 해볼 수 있는 아주 작은 행동 2~3개를 제안하세요.
-                구체적이고 사용자가 통제할 수 있어야 합니다. "해결책"이 아니라 작은 한 걸음입니다.
+                사용자가 오늘이나 내일 해볼 수 있는 아주 작은 행동 3개를 제안하세요.
+                [사건]이 좋았던 일이면 그 경험을 한 번 더 누리거나 이어가는 행동을,
+                힘들었던 일이면 [바람]을 조금이라도 채워주는 행동을 제안합니다.
 
-                [맥락]
-                사건: %s
-                감정: %s
-                바람: %s
-                """.formatted(orNone(state.event()), emotionKeys(state),
-                state.needs().stream().map(Need::word).collect(Collectors.joining(", ")));
+                [규칙]
+                1. [사건]에 나온 사람·장소·일 이름을 <b>하나 이상 그대로</b> 넣습니다.
+                   "그 일", "문제가 된 일", "마음에 걸리는 일"처럼 대상을 감추는 말은 쓰지 않습니다.
+                2. 물 마시기, 숨 고르기·심호흡, 눕기·눈 감기, 음악 듣기, 차 마시기, 스트레칭처럼
+                   <b>어떤 사건에든 붙는 진정 팁은 쓰지 않습니다.</b> 사건 이름을 앞에 붙여도 진정 팁은
+                   진정 팁입니다("발표 생각은 잊고 노래 한 곡 듣기"도 안 됩니다). 사건 자체가 그 행동과
+                   이어질 때만 씁니다(예: 자전거를 타다 다친 날 → "내일은 자전거 대신 가볍게 걷기").
+                3. 일·공부 때문에 힘들었던 사건이면 <b>그 일을 처리하는 행동</b>(끝내기, 목록 만들기, 분류하기,
+                   우선순위 정하기)은 쓰지 않습니다. 그 일을 해낸 나를 알아주거나, 그 일 때문에 밀려난 것을
+                   되찾는 행동을 제안합니다.
+                4. 제안 3개는 <b>서로 독립</b>입니다. 사용자는 하나만 골라 카드에 남기므로 그 한 문장만
+                   읽어도 뜻이 통해야 합니다. "각각", "정리한 ~", "그다음"처럼 다른 제안을 전제하지 않습니다.
+                5. 10분 안에 사용자 혼자 시작할 수 있어야 합니다. 한 문장, 40자 안쪽, "~하기"로 끝냅니다.
+                6. [사건]에 없는 사실·인물은 지어내지 않습니다.
+
+                [예시 1 · 힘들었던 일]
+                사건: 팀 회의에서 낸 아이디어를 팀장이 제대로 듣지 않고 넘김 / 감정: 답답함
+                바람: 존중(내 의견과 존재가 가볍게 다뤄지지 않길 바라는 마음)
+                - 나쁨: "따뜻한 물 한 잔 마시며 숨 고르기" → 사건과 상관없는 진정 팁
+                - 나쁨: "오늘 문제가 된 일 하나를 골라 핵심을 각각 한 줄로 정리하기" → 사건 이름이 없고 '각각'이 가리키는 게 없음
+                - 좋음: "회의에서 낸 아이디어를 내 말로 메모장에 세 줄 남겨두기"
+                - 좋음: "아이디어에 맞장구쳐 준 동료에게 고맙다고 메시지 보내기"
+
+                [예시 2 · 좋았던 일]
+                사건: 동네 친구와 오랜만에 배드민턴을 치고 떡볶이를 먹음 / 감정: 행복함
+                바람: 우정(마음 맞는 벗과 함께이고 싶은 마음)
+                - 나쁨: "편한 자세로 앉아 시원한 물 한 잔 마시기" → 좋았던 일에 진정 팁
+                - 좋음: "배드민턴 친 친구에게 다음에 또 치자고 날짜 물어보기"
+                - 좋음: "같이 간 떡볶이집을 지도 앱에 저장해 두기"
+
+                [예시 3 · 일 때문에 힘들었던 일]
+                사건: 분기 보고서 마감에 쫓겨 점심도 거르고 밤늦게까지 일함 / 감정: 피곤함
+                바람: 휴식(지친 몸과 마음을 쉬게 하고 싶은 마음)
+                - 나쁨: "분기 보고서 생각은 잠시 잊고 좋아하는 노래 한 곡 듣기" → 사건 이름만 붙인 진정 팁
+                - 나쁨: "분기 보고서에서 남은 항목 하나만 골라 먼저 끝내기" → 일을 처리하는 요령
+                - 좋음: "분기 보고서 때문에 거른 점심을 내일은 30분 비워 두기"
+                - 좋음: "분기 보고서 마감을 버틴 나에게 퇴근길 간식 하나 사 주기"
+
+                [사건] %s
+                [감정] %s
+                [바람] %s
+                """.formatted(state.cardSituation(), emotionLabels(state), needsWithMeaning(state));
     }
 
     /** 일기 생성(G4) — 사용자가 말한 사실·감정을 살 붙여 1인칭으로, 최소 5문장 이상. */
@@ -404,10 +448,16 @@ public class PromptFactory {
 
     // ── 도우미 ───────────────────────────────────────────────────────────
 
-    private static String emotionKeys(RetrospectState state) {
-        String keys = state.confirmedEmotions().stream().map(Emotion::key)
-                .collect(Collectors.joining(", "));
-        return keys.isBlank() ? "없음" : keys;
+    /** 확인 감정의 한국어 이름 — 영어 키("frustrated")보다 모델이 사용자 맥락으로 읽는다. */
+    private static String emotionLabels(RetrospectState state) {
+        return orNone(state.confirmedEmotions().stream().map(Emotion::label)
+                .collect(Collectors.joining(", ")));
+    }
+
+    /** 확인 바람을 "단어(뜻)"으로 — 단어만 주면 어떤 마음을 채우려는 행동인지 연결하지 못한다. */
+    private static String needsWithMeaning(RetrospectState state) {
+        return orNone(state.needs().stream().map(n -> n.word() + "(" + n.meaning() + ")")
+                .collect(Collectors.joining(", ")));
     }
 
     private static String orNone(String value) {

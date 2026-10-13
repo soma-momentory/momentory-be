@@ -7,6 +7,8 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
@@ -301,6 +303,65 @@ class RetrospectEngineTest {
         assertThat(confirm.text()).contains("「개발」을 떠올렸을 때");
         assertThat(confirm.text()).doesNotContain("「개발」를");
         assertThat(confirm.text()).doesNotContain("친구와 다툼");
+    }
+
+    /** 대표 사건('개발')을 심고 작은 행동 턴까지 몰아준다 — 사건 슬롯은 toBranch 의 '면접 스터디…'. */
+    private ReplyDto toSmallActionTurn() {
+        fake.events.add(new ExtractedEvent(1, "개발", "카페에서 개발함", List.of(1, 2, 3)));
+        fake.emotions.add(new ExtractedEmotion(1, "재밌었어", Emotion.HAPPY, 2,
+                EmotionPhase.DURING, "재밌었어", List.of(1)));
+        toBranch();
+        engine.handle(state, TurnCommand.option("1")); // 탐색 진입
+        engine.handle(state, TurnCommand.option("1")); // 감정
+        return engine.handle(state, TurnCommand.option("1")); // 바람 → 행동 턴
+    }
+
+    @Test
+    @DisplayName("작은 행동 질문도 대표 사건 이름을 밝히고, 카드 상황은 사건 슬롯이 아니라 대표 사건이다")
+    void smallActionQuestionNamesTheEvent() {
+        ReplyDto actionTurn = toSmallActionTurn();
+
+        assertThat(actionTurn.text()).startsWith("「개발」을 떠올리며,");
+
+        ReplyDto done = engine.handle(state, TurnCommand.option("1"));
+        assertThat(done.wishCard().situation()).isEqualTo("카페에서 개발함");
+    }
+
+    @Test
+    @DisplayName("대표 사건이 없으면 작은 행동 질문은 원래 문구 그대로다")
+    void smallActionQuestionWithoutMainEvent() {
+        fake.emotions.add(new ExtractedEmotion(null, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
+        toBranch();
+        engine.handle(state, TurnCommand.option("1")); // 탐색 진입
+        engine.handle(state, TurnCommand.option("1")); // 감정
+        ReplyDto actionTurn = engine.handle(state, TurnCommand.option("1")); // 바람 → 행동 턴
+
+        assertThat(actionTurn.text()).isEqualTo("이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?");
+    }
+
+    @ParameterizedTest(name = "[{index}] \"{0}\"")
+    @ValueSource(strings = {"없어", "없어.", "딱히..", "몰라ㅠ", "모르겠어", "딱히 없어요!", "없어～", "없어ㅋㅋ",
+            "딱히 😅", "없어 "})
+    @DisplayName("작은 행동에 거절 답을 적으면 문장부호가 붙어도 행동으로 남기지 않는다 — 카드는 빈칸으로 완료")
+    void refusalIsNotSavedAsSmallAction(String refusal) {
+        toSmallActionTurn();
+
+        ReplyDto done = engine.handle(state, TurnCommand.text(refusal));
+
+        assertThat(done.phase()).isEqualTo("complete");
+        assertThat(done.wishCard()).isNotNull();
+        assertThat(done.wishCard().smallAction()).isNull();
+    }
+
+    @ParameterizedTest(name = "[{index}] \"{0}\"")
+    @ValueSource(strings = {"동기에게 오늘 찍은 사진 보내기", "잠", "딱히 없지만 산책하기"})
+    @DisplayName("작은 행동을 직접 적으면 그 글이 행동으로 남는다 — 한 글자도, 거절어로 시작하는 진짜 행동도")
+    void typedSmallActionIsSaved(String action) {
+        toSmallActionTurn();
+
+        ReplyDto done = engine.handle(state, TurnCommand.text(action));
+
+        assertThat(done.wishCard().smallAction()).isEqualTo(action);
     }
 
     // ── 위기 안내 → 이어서 얘기하기 ─────────────────────────────────────
