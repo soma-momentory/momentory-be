@@ -214,6 +214,15 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/treasures", "get", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/treasures", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
+        assertResponseSchema(apiDocs, "/api/v1/worries", "post", "201", "WorryResponse");
+        assertErrorExample(apiDocs, "/api/v1/worries", "post", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/worries", "post", "400", "ApiErrorResponse", "contentRequiredOrBlank", "INVALID_REQUEST", "걱정 내용을 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/worries", "post", "400", "ApiErrorResponse", "contentTooLong", "INVALID_REQUEST", "걱정 내용은 최대 100자입니다.");
+        assertErrorExample(apiDocs, "/api/v1/worries", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/worries", "get", "200", "WorryListResponse");
+        assertErrorExample(apiDocs, "/api/v1/worries", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
         assertResponseSchema(apiDocs, "/api/v1/inquiries", "post", "201", "InquiryResponse");
         assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "400", "ApiErrorResponse", "categoryRequired", "INVALID_REQUEST", "문의 종류를 골라주세요.");
