@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>빠른 라벨링 — AI Hub 층화 표본</title>
+<style>
+  :root { --line:#e3e3e0; --muted:#6b6b66; --bg:#faf9f7; --accent:#2f6f4f; --warn:#a4462d;
+          --blue:#2f5a8f; --hint:#fff1c2; --hint2:#eceae4; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
+         background:var(--bg); color:#1a1a18; }
+  header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line);
+           padding:8px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; z-index:5; }
+  header h1 { font-size:15px; margin:0 6px 0 0; }
+  button { font:inherit; padding:4px 10px; border:1px solid var(--line); background:#fff;
+           border-radius:6px; cursor:pointer; }
+  button:hover { border-color:#bbb; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.on { background:#1a1a18; color:#fff; border-color:#1a1a18; }
+  button:disabled { opacity:.4; cursor:default; }
+  .seg { display:inline-flex; }
+  .seg button { border-radius:0; margin-left:-1px; }
+  .seg button:first-child { border-radius:6px 0 0 6px; margin-left:0; }
+  .seg button:last-child { border-radius:0 6px 6px 0; }
+  .seg button small { color:inherit; opacity:.7; }
+  .grow { flex:1; }
+  .status { color:var(--muted); font-size:12px; }
+  .nag { color:#fff; background:var(--warn); padding:2px 8px; border-radius:99px; font-size:12px; }
+  .bar { height:3px; background:#eee; }
+  .bar div { height:100%; background:var(--accent); transition:width .15s; }
+  .anchors { background:#fff7e8; border-bottom:1px solid #f0e2c4; padding:5px 16px;
+             font-size:12.5px; color:#6a5320; }
+  .anchors b { color:#3d2f0a; }
+  details.guide { background:#fff; border-bottom:1px solid var(--line); font-size:12.5px; }
+  details.guide summary { padding:5px 16px; cursor:pointer; color:var(--muted); }
+  details.guide table { border-collapse:collapse; margin:0 16px 12px; font-size:12.5px; }
+  details.guide td, details.guide th { border:1px solid var(--line); padding:3px 7px;
+                                       text-align:left; vertical-align:top; }
+  details.guide th { background:#f6f6f3; font-weight:600; }
+  main { max-width:880px; margin:0 auto; padding:16px 16px 60px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px 18px;
+          margin-bottom:12px; }
+  .meta { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size:12px;
+          color:var(--muted); margin-bottom:8px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:99px; border:1px solid var(--line);
+           font-size:11.5px; }
+  .badge.explicit { background:var(--hint); border-color:#ecd98a; color:#5d4a07; }
+  .badge.pre { background:#e8eff7; border-color:#c6d5e8; color:var(--blue); }
+  .turn { padding:5px 8px; border-radius:6px; margin-bottom:3px; font-size:15px; }
+  .turn.ai { color:var(--muted); font-size:13px; padding-left:42px; }
+  .turn.user { cursor:pointer; border:1px solid transparent; }
+  .turn.user:hover { background:#f2f6f3; }
+  .turn.user.ev { background:#e6f2ea; border-color:var(--accent); }
+  .uno { display:inline-block; min-width:34px; font-weight:600; color:var(--accent); font-size:13px; }
+  .uno kbd { margin-left:2px; }
+  mark { background:var(--hint); padding:0 1px; border-radius:3px; }
+  mark.weak { background:var(--hint2); }
+  kbd { display:inline-block; min-width:16px; padding:0 4px; border:1px solid #d6d6d1;
+        border-bottom-width:2px; border-radius:4px; font:11px/1.5 ui-monospace,Menlo,monospace;
+        text-align:center; color:#45453f; background:#fafaf8; }
+  .grp { display:flex; gap:10px; align-items:center; margin-top:8px; }
+  .grp .lbl { font-size:11.5px; color:var(--muted); min-width:64px; }
+  .keys { display:flex; gap:5px; flex-wrap:wrap; }
+  .key { padding:3px 9px; border:1px solid var(--line); border-radius:7px; cursor:pointer;
+         background:#fff; font-size:13px; user-select:none; }
+  .key:hover { border-color:#bbb; }
+  .key.picked { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .key.picked kbd { background:transparent; color:#fff; border-color:#ffffff88; }
+  .key.picked.warn { background:var(--warn); border-color:var(--warn); }
+  .emo { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:6px 8px;
+         border:1px solid var(--line); border-radius:8px; margin-top:6px; }
+  .emo.focus { border-color:var(--accent); box-shadow:0 0 0 2px #e6f2ea; }
+  .emo .name { font-weight:600; min-width:64px; }
+  .emo .miss { color:var(--warn); font-size:12px; }
+  input[type=text] { flex:1; min-width:180px; padding:4px 7px; border:1px solid var(--line);
+                     border-radius:5px; font:inherit; }
+  textarea { width:100%; height:44px; font:inherit; border:1px solid var(--line);
+             border-radius:6px; padding:5px 8px; }
+  .todo { margin-top:10px; font-size:12.5px; color:var(--warn); }
+  .todo.ok { color:var(--accent); }
+  .help { font-size:12px; color:var(--muted); line-height:1.9; }
+  .help b { color:#3a3a36; }
+  .empty { padding:50px 16px; text-align:center; color:var(--muted); }
+  .done { padding:36px 16px; text-align:center; }
+  .nostore { background:#fdf1ed; border-bottom:2px solid var(--warn); color:#7d3521;
+             padding:10px 16px; font-size:13px; line-height:1.7; }
+  .nostore pre { background:#fff; border:1px solid #f0d4cb; border-radius:6px;
+                 padding:7px 10px; margin:6px 0; font:12px/1.5 ui-monospace,Menlo,monospace; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>빠른 라벨링</h1>
+  <span class="status">라벨러</span>
+  <span class="seg" id="who"></span>
+  <span class="seg" id="sets"></span>
+  <button id="prev">◀</button>
+  <span id="progress" class="status">—</span>
+  <button id="next">▶</button>
+  <button id="jump" title="첫 미완료 항목으로">미완료로</button>
+  <span id="nag"></span>
+  <span class="grow"></span>
+  <span id="saved" class="status"></span>
+  <label class="status"><input type="checkbox" id="hint"> 감지기 힌트 <kbd>V</kbd></label>
+  <button id="load">파일 불러오기</button>
+  <button id="export" class="primary">골드 내보내기</button>
+  <input id="file" type="file" multiple hidden>
+</header>
+<div class="bar"><div id="bar" style="width:0"></div></div>
+
+<div id="nostore" class="nostore" hidden>
+  <b>⚠ 자동저장이 꺼져 있습니다 — 새로고침하면 판정이 모두 사라집니다.</b>
+  <div>브라우저가 <code>file://</code> 로 연 페이지의 저장소를 막습니다. 터미널에서 아래를 실행하고
+    <b><a href="http://localhost:8765/quick-labeler.html">http://localhost:8765/quick-labeler.html</a></b>
+    로 여세요.</div>
+  <pre>cd /Users/geun/dev/projects/momentory/momentory-be/eval &amp;&amp; python3 -m http.server 8765</pre>
+</div>
+
+<div class="anchors">
+  <b>강도</b> 1 약함(“조금 아쉬웠어”) · 2 보통(“결과가 아쉬웠어”) · 3 강함(매우 강하다고 명시하거나
+  행동·집중에 큰 영향) · <b>?</b> 판단 어려움
+  &nbsp;|&nbsp; <b>2 vs ?</b> 감정 단어는 분명한데 강도 단서가 없으면 <b>2</b>,
+  사건만 보고 조심스럽게 추정했으면 <b>?</b>
+  &nbsp;|&nbsp; 기본은 <b>사건 당시</b>의 감정
+</div>
+
+<details class="guide">
+  <summary>대표 감정 11종 구분 기준 — 헷갈릴 때 펼쳐 보세요</summary>
+  <table>
+    <tr><th>대표 감정</th><th>선택하는 경우</th><th>주요 구분 기준</th></tr>
+    <tr><td>기쁨</td><td>좋은 일·경험으로 기쁘고 즐거운 마음</td><td>자신이 해낸 일의 만족·보람이 중심이면 <b>뿌듯함</b></td></tr>
+    <tr><td>평온</td><td>편안하거나 긴장·부담이 풀린 상태</td><td>성취에 따른 만족이 중심이면 <b>뿌듯함</b></td></tr>
+    <tr><td>뿌듯함</td><td>자신의 행동·노력·결과에 만족하거나 보람</td><td>단순히 일이 즐거웠다면 <b>기쁨</b></td></tr>
+    <tr><td>애정</td><td>특정 대상을 향한 호감·친밀감·그리움</td><td>그 사람과의 좋은 일이 즐거웠다는 내용만이면 <b>기쁨</b></td></tr>
+    <tr><td>슬픔</td><td>상실, 외로움, 마음의 아픔·가라앉음</td><td>기대한 결과·반응을 못 얻은 게 중심이면 <b>실망</b></td></tr>
+    <tr><td>불안</td><td>앞으로 일어날 일·불확실한 상황을 걱정·두려워함</td><td>이해나 다음 행동 결정이 어려운 게 중심이면 <b>혼란</b></td></tr>
+    <tr><td>분노</td><td>부당함·침해·갈등으로 화·짜증·원망</td><td>기대에 못 미쳐 서운·허탈한 게 중심이면 <b>실망</b></td></tr>
+    <tr><td>실망</td><td>기대한 결과·관심·반응을 못 얻어 마음이 가라앉음</td><td>상실 자체로 아픈 게 중심이면 <b>슬픔</b> · 자기 선택을 탓하는 게 중심이면 <b>미안함</b></td></tr>
+    <tr><td>부끄러움</td><td>드러남·타인의 시선이 의식되어 창피·민망</td><td>갑작스러운 상황을 이해 못해 당황한 것이면 <b>혼란</b> · 내가 잘못했다·피해를 줬다는 게 중심이면 <b>미안함</b></td></tr>
+    <tr><td>혼란</td><td>예상 밖 상황의 이해·결정이 어려워 당황·심란·막막</td><td>앞으로의 결과가 걱정되는 게 중심이면 <b>불안</b></td></tr>
+    <tr><td>미안함</td><td>자신의 행동·선택이 잘못됐다고 느끼거나 남에게 피해를 줬다고 느낌</td><td>남에게 어떻게 보일지가 중심이면 <b>부끄러움</b> · 바깥에서 기대한 결과를 못 얻은 게 중심이면 <b>실망</b></td></tr>
+  </table>
+  <table>
+    <tr><th>규칙</th><th>예시</th></tr>
+    <tr><td>두 감정의 근거가 각각 있으면 둘 다 선택</td><td>“발표를 마쳐서 뿌듯했는데 결과는 걱정돼” → 뿌듯함 + 불안</td></tr>
+    <tr><td>부정한 감정은 선택하지 않는다</td><td>“화난 건 아니고 서운했어” → 실망만</td></tr>
+    <tr><td>타인의 감정을 사용자 감정으로 옮기지 않는다</td><td>“친구가 화가 났대” → 타인 감정 표시</td></tr>
+    <tr><td>추측해서 추가하지 않는다</td><td>각 감정에 뒷받침하는 사용자 발화가 있어야 한다</td></tr>
+  </table>
+  <table>
+    <tr><th>판단 보류</th><th>기준</th><th>예시</th></tr>
+    <tr><td>감정 정보 부족</td><td>사건은 있지만 감정 근거가 없음 — <b>정답은 빈 목록</b>(채점 포함)</td><td>“오늘 발표했어.”</td></tr>
+    <tr><td>대표 감정 판단 어려움</td><td>감정은 있으나 어느 범주인지 불분명 — 채점 제외</td><td>“기분이 복잡했어.”</td></tr>
+    <tr><td>분류 체계 밖</td><td>감정은 분명하나 11종 어디에도 안 맞음 — 채점 제외, 원문 기록</td><td>“친구가 잘되는 게 질투가 났어.”</td></tr>
+  </table>
+</details>
+
+<main id="app"><div class="card empty">
+  <p>localhost 로 열면 <code>eval/data/sample-r1/</code> 의 표본을 자동으로 불러옵니다.</p>
+  <p class="status">아니면 <code>pilot.jsonl</code> 같은 표본 파일을 이 창에 <b>끌어다 놓으세요</b>(여러 개 함께 가능).</p>
+  <p class="status">이어서 하려면 표본을 불러온 뒤 내보낸 <code>gold-*.json</code> 을 같은 방법으로 불러오세요.</p>
+</div></main>
+
+<script>
+/* AI Hub 층화 표본(sample.py 산출) 전용 빠른 라벨링 — 인수인계 문서 §4-1.
+   AI Hub 대화는 한 상황을 2~3턴으로 말하는 짧은 형식이라 **사건 1개에 사용자 발화 전부를 자동
+   배정**한다. 사람은 감정 · 강도 · 근거 발화 · 판단 보류 · 명시 판단만 키보드로 찍는다.
+   내보내기는 labeler.html 과 같은 v2 골드라 merge.py 에 그대로 넣는다.
+   키는 e.code(물리 키)로 받는다 — 한글 입력 상태에서도 Q 가 Q 로 들어오게. */
+const TAXONOMY = "v2";
+const SETS = ["pilot", "eval", "safety", "train"];
+const SET_KO = { pilot: "파일럿", eval: "평가", safety: "안전판", train: "학습" };
+const SAMPLE_DIR = "data/" + (new URLSearchParams(location.search).get("sample") || "sample-r1");
+
+// harvest.html 과 같은 자리(q~i, p)를 지킨다. 숫자는 강도에 쓰므로 애정·뿌듯함은 A·S 로 옮겼다.
+const EMOTIONS = [
+  ["joy", "기쁨", "KeyQ"], ["calm", "평온", "KeyW"], ["sad", "슬픔", "KeyE"],
+  ["anxious", "불안", "KeyR"], ["angry", "분노", "KeyT"], ["disappointed", "실망", "KeyY"],
+  ["ashamed", "부끄러움", "KeyU"], ["confused", "혼란", "KeyI"], ["sorry", "미안함", "KeyP"],
+  ["affection", "애정", "KeyA"], ["proud", "뿌듯함", "KeyS"],
+];
+const UNDECIDABLE = [["no_emotion_info", "감정 정보 부족", "KeyZ"],
+  ["emotion_unclear", "대표 감정 판단 어려움", "KeyX"], ["out_of_scope", "분류 체계 밖", "KeyC"]];
+const EXPLICIT = [["yes", "있음", "KeyF"], ["no", "없음", "KeyG"], ["unsure", "판단 어려움", "KeyH"]];
+const INTENSITY = [[1, "1", "Digit1"], [2, "2", "Digit2"], [3, "3", "Digit3"], [null, "?", "Slash"]];
+const EVIDENCE_KEYS = ["KeyJ", "KeyK", "KeyL"];
+const KO = Object.fromEntries(EMOTIONS.map(([k, ko]) => [k, ko]));
+const CAP = c => c.replace(/^Key|^Digit/, "").replace("Slash", "?");
+
+const KEY = "momentory-quick-v1";
+const CAN_STORE = (() => {
+  try { localStorage.setItem(KEY + ":probe", "1"); localStorage.removeItem(KEY + ":probe"); return true; }
+  catch (e) { return false; }
+})();
+
+/* 표본(all)은 저장하지 않는다 — 파일에서 다시 만들 수 있다. 저장하는 것은 라벨러별 판정과 순서뿐이다.
+   항목은 id 로 맞추고, 표본이 같은 것인지는 세트별 지문(개수 + 첫·끝 id)으로 본다. */
+let all = {};                         // set → 표본 항목 전체 (assign 거르기 전)
+let ui = { labeler: "A", set: "pilot", hint: true };
+let st = blankState();                // 라벨러 한 명의 작업
+let focus = 0;                        // 지금 항목에서 강도·근거가 들어갈 감정
+
+function blankState() { return { v: 1, sets: {}, labels: {}, exportedAt: {} }; }
+function storeKey() { return `${KEY}:${ui.labeler}`; }
+function save() {
+  try {
+    localStorage.setItem(storeKey(), JSON.stringify(st));
+    localStorage.setItem(KEY + ":ui", JSON.stringify(ui));
+    document.getElementById("saved").textContent = "저장됨 " + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById("saved").textContent = "⚠ 자동저장 불가";
+  }
+}
+function loadState() {
+  try { st = JSON.parse(localStorage.getItem(storeKey()) || "null") || blankState(); }
+  catch (e) { st = blankState(); }
+}
+function loadUi() {
+  try { Object.assign(ui, JSON.parse(localStorage.getItem(KEY + ":ui") || "{}")); } catch (e) { /* 기본값 */ }
+}
+
+/* ── 세트와 순서 ─────────────────────────────────────── */
+function mine(set) {
+  return (all[set] || []).filter(it => (it.assign || "AB").includes(ui.labeler));
+}
+function sig(list) { return list.length ? `${list.length}:${list[0].id}:${list[list.length - 1].id}` : ""; }
+
+/* 순서 랜덤화(계획 §8.8). 같은 표본이면 저장된 순서를 쓰고, 바뀌었으면 새로 섞되 판정은 id 로 살린다. */
+function ensureOrder(set) {
+  const list = mine(set);
+  if (!list.length) return;
+  const s = st.sets[set];
+  if (s && s.sig === sig(list)) return;
+  const ids = list.map(it => it.id);
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  st.sets[set] = { sig: sig(list), order: ids, cur: 0 };
+  st.sets[set].cur = firstOpen(set);
+}
+function byId() {
+  const m = {};
+  for (const set of SETS) for (const it of all[set] || []) m[it.id] = it;
+  return m;
+}
+function order() { return (st.sets[ui.set] || { order: [] }).order; }
+function curIndex() { return (st.sets[ui.set] || { cur: 0 }).cur; }
+function setCur(i) { if (st.sets[ui.set]) st.sets[ui.set].cur = i; focus = 0; }
+function current() { return byId()[order()[curIndex()]]; }
+function firstOpen(set) {
+  const s = st.sets[set], m = byId();
+  const at = s.order.findIndex(id => !complete(m[id], st.labels[id]));
+  return at < 0 ? s.order.length : at;
+}
+
+/* ── 판정 ────────────────────────────────────────────── */
+/* L = { emotions:[{k, i, ev:[], other}], und, oos, explicit, boundary, discuss, note }
+   i 가 undefined 면 아직 안 찍은 것, null 이면 '판단 어려움'이다. 기본값을 두지 않는다 —
+   깜빡한 강도가 조용히 2로 들어가면 IAA 가 부풀려진다. */
+function labelOf(it) {
+  if (!st.labels[it.id]) {
+    st.labels[it.id] = { emotions: [], und: null, oos: "", explicit: null,
+                         boundary: false, discuss: false, note: "" };
+    // 안전판의 애정·뿌듯함은 표적 수집에서 이미 판정했다. 감정만 채우고 강도·근거는 사람이 찍는다.
+    if (it.prefill && it.prefill.emotions)
+      st.labels[it.id].emotions = it.prefill.emotions.map(k => ({ k, ev: [], other: false }));
+  }
+  return st.labels[it.id];
+}
+function userTurns(it) { return it.turns.filter(t => t.speaker === "user"); }
+function missing(it, L) {
+  if (!L) return ["판정"];
+  const w = [];
+  if (L.und) {
+    if (L.und === "out_of_scope" && !L.oos.trim()) w.push("체계 밖 원문");
+  } else if (!L.emotions.length) {
+    w.push("감정(또는 판단 보류)");
+  } else {
+    L.emotions.forEach(m => {
+      if (m.i === undefined) w.push(`${KO[m.k]} 강도`);
+      if (!m.ev.length) w.push(`${KO[m.k]} 근거`);
+    });
+  }
+  if (!L.explicit) w.push("명시 판단");
+  return w;
+}
+function complete(it, L) { return !!it && !!L && !missing(it, L).length; }
+function touched(L) {
+  return !!L && (L.emotions.length || L.und || L.explicit || L.note || L.boundary || L.discuss);
+}
+
+/* ── 렌더 ────────────────────────────────────────────── */
+function esc(t) { return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+/* 감지기가 걸린 표현(lexHits 의 '→' 앞 어간)을 표시한다. 감정 키로 걸린 것은 노랑, 평가어 류는 회색. */
+function highlight(text, hits) {
+  if (!ui.hint || !hits || !hits.length) return esc(text);
+  const spans = [];
+  for (const h of hits) {
+    const [stem, cat] = h.split("→");
+    if (!stem) continue;
+    for (let at = text.indexOf(stem); at >= 0; at = text.indexOf(stem, at + stem.length))
+      spans.push([at, at + stem.length, cat]);
+  }
+  spans.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  let out = "", pos = 0;
+  for (const [s, e, cat] of spans) {
+    if (s < pos) continue;
+    const emo = cat.split("/").every(c => KO[c]);
+    out += esc(text.slice(pos, s)) +
+      `<mark class="${emo ? "" : "weak"}" title="${esc(cat.split("/").map(c => KO[c] || c).join("/"))}">` +
+      esc(text.slice(s, e)) + "</mark>";
+    pos = e;
+  }
+  return out + esc(text.slice(pos));
+}
+function hitLabel(h) {
+  const [stem, cat] = h.split("→");
+  return `${stem}→${(cat || "").split("/").map(c => KO[c] || c).join("/")}`;
+}
+function chip(on, html, data, cls = "") {
+  return `<span class="key ${on ? "picked" : ""} ${cls}" ${data}>${html}</span>`;
+}
+
+function renderHeader() {
+  if (!all[ui.set]) ui.set = SETS.find(s => all[s]) || ui.set;   // 기억해 둔 세트가 아직 없으면
+  document.getElementById("who").innerHTML = ["A", "B"].map(w =>
+    `<button data-who="${w}" class="${ui.labeler === w ? "on" : ""}">${w}</button>`).join("");
+  const m = byId();
+  document.getElementById("sets").innerHTML = SETS.filter(s => all[s]).map(s => {
+    const list = mine(s);
+    const done = list.filter(it => complete(it, st.labels[it.id])).length;
+    return `<button data-set="${s}" class="${ui.set === s ? "on" : ""}">${SET_KO[s]}
+      <small>${done}/${list.length}</small></button>`;
+  }).join("");
+  document.getElementById("hint").checked = ui.hint;
+
+  const ord = order(), cur = curIndex();
+  const done = ord.filter(id => complete(m[id], st.labels[id])).length;
+  document.getElementById("bar").style.width = ord.length ? (done / ord.length * 100) + "%" : "0";
+  document.getElementById("progress").textContent =
+    ord.length ? `${Math.min(cur + 1, ord.length)} / ${ord.length} · 완료 ${done}` : "—";
+  document.getElementById("prev").disabled = cur <= 0;
+  document.getElementById("next").disabled = cur >= ord.length;
+  const unsaved = done - (st.exportedAt[ui.set] || 0);
+  document.getElementById("nag").innerHTML = unsaved >= (CAN_STORE ? 40 : 10)
+    ? `<span class="nag">⚠ ${unsaved}건 미저장 — 내보내세요</span>` : "";
+}
+
+function render() {
+  renderHeader();
+  const app = document.getElementById("app");
+  if (!Object.keys(all).length) return;
+  const ord = order();
+  if (!ord.length) {
+    app.innerHTML = `<div class="card empty">라벨러 ${ui.labeler} 에게 배정된
+      ${SET_KO[ui.set]} 항목이 없습니다.</div>`;
+    return;
+  }
+  if (curIndex() >= ord.length) {
+    const m = byId(), open = ord.filter(id => !complete(m[id], st.labels[id])).length;
+    app.innerHTML = `<div class="card done"><h2>${SET_KO[ui.set]} 끝까지 봤습니다</h2>
+      <p class="status">미완료 ${open}건 ${open ? "— 「미완료로」를 누르세요" : ""}</p>
+      <p>「골드 내보내기」를 누르세요.</p></div>`;
+    return;
+  }
+
+  const it = current(), L = labelOf(it);
+  if (focus >= L.emotions.length) focus = Math.max(0, L.emotions.length - 1);
+  const f = L.emotions[focus];
+  let u = 0;
+  const conv = it.turns.map(t => {
+    if (t.speaker !== "user") return `<div class="turn ai">↳ ${esc(t.text)}</div>`;
+    const no = ++u;
+    const on = f && f.ev.includes(no);
+    return `<div class="turn user${on ? " ev" : ""}" data-no="${no}">
+      <span class="uno">U${no}<kbd>${CAP(EVIDENCE_KEYS[no - 1] || "")}</kbd></span>
+      ${highlight(t.text, it.lexHits)}</div>`;
+  }).join("");
+
+  const hint = ui.hint
+    ? `<span class="badge explicit" title="sample.py 의 감지기 판정. 정답이 아니다">감지기: ${esc(it.stratum)} · ${esc(it.lex)}</span>
+       ${(it.lexHits || []).map(h => `<span class="badge">${esc(hitLabel(h))}</span>`).join("")}`
+    : "";
+  const pre = it.prefill ? `<span class="badge pre">표적 수집에서 미리 채움 — 확인하세요</span>` : "";
+
+  const emos = L.emotions.map((m, j) => `
+    <div class="emo ${j === focus ? "focus" : ""}" data-focus="${j}">
+      <span class="name">${KO[m.k]}</span>
+      <span class="keys">${INTENSITY.map(([v, ko, code]) =>
+        chip(m.i === v, `<kbd>${CAP(code)}</kbd> ${v === null ? "판단 어려움" : ko}`,
+             `data-int="${j}" data-v="${v}"`, v === null ? "warn" : "")).join("")}</span>
+      <span class="status">근거 ${m.ev.length ? m.ev.map(n => "U" + n).join(" ") : `<span class="miss">없음</span>`}</span>
+      ${chip(m.other, `<kbd>O</kbd> 타인 감정`, `data-other="${j}"`, "warn")}
+    </div>`).join("");
+
+  const todo = missing(it, L);
+  app.innerHTML = `
+    <div class="card">
+      <div class="meta">${esc(it.aihub.topic || "—")} · ${esc(it.aihub.age || "—")} ${hint} ${pre}</div>
+      ${conv}
+    </div>
+    <div class="card">
+      <div class="grp"><span class="lbl">감정</span><span class="keys">${EMOTIONS.map(([k, ko, code]) =>
+        chip(L.emotions.some(m => m.k === k), `<kbd>${CAP(code)}</kbd> ${ko}`, `data-emo="${k}"`)).join("")}</span></div>
+      ${emos}
+      <div class="grp"><span class="lbl">판단 보류</span><span class="keys">${UNDECIDABLE.map(([k, ko, code]) =>
+        chip(L.und === k, `<kbd>${CAP(code)}</kbd> ${ko}`, `data-und="${k}"`, "warn")).join("")}</span></div>
+      ${L.und === "out_of_scope" ? `<div class="grp"><span class="lbl">체계 밖 원문</span>
+        <input type="text" id="oos" value="${esc(L.oos)}" placeholder="사용자가 쓴 표현 그대로 (예: 질투가 났어) — Enter 로 확정"></div>` : ""}
+      <div class="grp"><span class="lbl">명시 판단</span><span class="keys">${EXPLICIT.map(([k, ko, code]) =>
+        chip(L.explicit === k, `<kbd>${CAP(code)}</kbd> ${ko}`, `data-expl="${k}"`)).join("")}</span>
+        <span class="status">감정 단어가 겉으로 드러났나 — 감지기와 따로 사람이 본다</span></div>
+      <div class="grp"><span class="lbl">표시</span><span class="keys">
+        ${chip(L.boundary, `<kbd>D</kbd> 경계 사례`, `data-flag="boundary"`)}
+        ${chip(L.discuss, `<kbd>M</kbd> 의견 조정 필요`, `data-flag="discuss"`, "warn")}</span>
+        <span class="status">복합(감정 2개 이상)은 자동으로 표시됩니다</span></div>
+      <div class="grp"><span class="lbl">메모 <kbd>N</kbd></span>
+        <textarea id="note" placeholder="조정 때 볼 메모. 왜 이렇게 판단했는지 한 줄. Esc 로 나가기">${esc(L.note)}</textarea></div>
+      <div class="todo ${todo.length ? "" : "ok"}">${todo.length ? "남은 것: " + todo.join(", ") : "✓ 완료 — Enter 로 다음"}</div>
+    </div>
+    <div class="card help">
+      <b>감정</b> 키를 누르면 추가되고 그 감정에 초점이 갑니다. 이미 있는 감정 키는 초점만 옮깁니다 ·
+      <kbd>Tab</kbd> 초점 이동 · <kbd>⌫</kbd> 초점 감정 빼기<br>
+      <b>강도</b> <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>?</kbd>(<kbd>/</kbd>) ·
+      <b>근거 발화</b> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> = U1 U2 U3 켜고 끄기(발화를 눌러도 됨) — 초점 감정에 들어갑니다<br>
+      <b>판단 보류</b> <kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> — 감정을 비웁니다. 감정 정보 부족은 <b>빈 목록이 정답</b>(채점 포함),
+      나머지 둘은 채점 제외<br>
+      <kbd>Enter</kbd> 다음 · <kbd>←</kbd> <kbd>→</kbd> 이동 · 사건은 1개로 고정, 사용자 발화 전부가 그 사건입니다 ·
+      AI Hub 원래 라벨은 보여주지 않습니다
+    </div>`;
+  bind(it, L);
+}
+
+/* ── 조작 ────────────────────────────────────────────── */
+function change(fn) {
+  const it = current();
+  if (!it) return;
+  fn(labelOf(it));
+  save(); render();
+}
+function addEmotion(k) {
+  change(L => {
+    L.und = null;                                   // 감정과 판단 보류는 함께 갈 수 없다
+    const at = L.emotions.findIndex(m => m.k === k);
+    if (at >= 0) { focus = at; return; }
+    L.emotions.push({ k, ev: [], other: false });
+    focus = L.emotions.length - 1;
+  });
+}
+function setUnd(k) {
+  change(L => {
+    L.und = L.und === k ? null : k;
+    if (L.und) L.emotions = [];
+    // 감정 정보가 없으면 드러난 감정 표현도 없다
+    if (L.und === "no_emotion_info" && !L.explicit) L.explicit = "no";
+  });
+  if (current() && labelOf(current()).und === "out_of_scope") document.getElementById("oos").focus();
+}
+function toggleEvidence(no) {
+  const it = current();
+  if (!it || no > userTurns(it).length) return;
+  change(L => {
+    const m = L.emotions[focus];
+    if (!m) return;
+    const at = m.ev.indexOf(no);
+    if (at < 0) m.ev.push(no); else m.ev.splice(at, 1);
+    m.ev.sort((a, b) => a - b);
+  });
+}
+function go(i) {
+  const n = order().length;
+  setCur(Math.max(0, Math.min(n, i)));
+  save(); render();
+  window.scrollTo(0, 0);
+}
+
+function bind(it, L) {
+  const app = document.getElementById("app");
+  app.querySelectorAll("[data-emo]").forEach(el => el.onclick = () => addEmotion(el.dataset.emo));
+  app.querySelectorAll("[data-und]").forEach(el => el.onclick = () => setUnd(el.dataset.und));
+  app.querySelectorAll("[data-expl]").forEach(el => el.onclick = () =>
+    change(L => L.explicit = L.explicit === el.dataset.expl ? null : el.dataset.expl));
+  app.querySelectorAll("[data-flag]").forEach(el => el.onclick = () =>
+    change(L => L[el.dataset.flag] = !L[el.dataset.flag]));
+  app.querySelectorAll("[data-focus]").forEach(el => el.onclick = ev => {
+    if (ev.target.closest(".key")) return;
+    focus = +el.dataset.focus; render();
+  });
+  app.querySelectorAll("[data-int]").forEach(el => el.onclick = () => {
+    focus = +el.dataset.int;
+    change(L => L.emotions[focus].i = el.dataset.v === "null" ? null : +el.dataset.v);
+  });
+  app.querySelectorAll("[data-other]").forEach(el => el.onclick = () => {
+    focus = +el.dataset.other;
+    change(L => L.emotions[focus].other = !L.emotions[focus].other);
+  });
+  app.querySelectorAll(".turn.user").forEach(el => el.onclick = () => toggleEvidence(+el.dataset.no));
+  const note = document.getElementById("note");
+  note.oninput = () => { L.note = note.value; save(); };
+  const oos = document.getElementById("oos");
+  if (oos) oos.oninput = () => { L.oos = oos.value; save(); };
+}
+
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const tag = e.target.tagName;
+  if (tag === "INPUT" && e.target.type === "text" || tag === "TEXTAREA") {
+    // 글을 쓰는 중에는 단축키를 끈다. Esc(또는 원문 칸의 Enter)로 빠져나온다.
+    if (e.key === "Escape" || (tag === "INPUT" && e.key === "Enter" && !e.isComposing)) {
+      e.preventDefault(); e.target.blur(); render();
+    }
+    return;
+  }
+  if (!Object.keys(all).length) return;
+  const c = e.code;
+  const it = current();
+  if (c === "Enter") { e.preventDefault(); go(curIndex() + 1); return; }
+  if (c === "ArrowRight") { e.preventDefault(); go(curIndex() + 1); return; }
+  if (c === "ArrowLeft") { e.preventDefault(); go(curIndex() - 1); return; }
+  if (c === "KeyV") { ui.hint = !ui.hint; save(); render(); return; }
+  if (!it) return;
+
+  const emo = EMOTIONS.find(x => x[2] === c);
+  if (emo) { e.preventDefault(); addEmotion(emo[0]); return; }
+  const und = UNDECIDABLE.find(x => x[2] === c);
+  if (und) { e.preventDefault(); setUnd(und[0]); return; }
+  const expl = EXPLICIT.find(x => x[2] === c);
+  if (expl) { e.preventDefault(); change(L => L.explicit = L.explicit === expl[0] ? null : expl[0]); return; }
+  const int = INTENSITY.find(x => x[2] === c);
+  if (int) { e.preventDefault(); change(L => { if (L.emotions[focus]) L.emotions[focus].i = int[0]; }); return; }
+  const ev = EVIDENCE_KEYS.indexOf(c);
+  if (ev >= 0) { e.preventDefault(); toggleEvidence(ev + 1); return; }
+
+  const L = labelOf(it);
+  if (c === "Tab") {
+    e.preventDefault();
+    if (L.emotions.length) { focus = (focus + (e.shiftKey ? -1 : 1) + L.emotions.length) % L.emotions.length; render(); }
+  } else if (c === "Backspace" || c === "Delete") {
+    e.preventDefault();
+    change(L => { L.emotions.splice(focus, 1); focus = Math.max(0, focus - 1); });
+  } else if (c === "KeyO") {
+    change(L => { if (L.emotions[focus]) L.emotions[focus].other = !L.emotions[focus].other; });
+  } else if (c === "KeyD") {
+    change(L => L.boundary = !L.boundary);
+  } else if (c === "KeyM") {
+    change(L => L.discuss = !L.discuss);
+  } else if (c === "KeyN") {
+    e.preventDefault(); document.getElementById("note").focus();
+  }
+});
+
+/* ── 내보내기 — merge.py 와 같은 v2 골드 ───────────────── */
+/* stratum·lex 를 남긴다: 나중에 감지기 기준 명시(stratum)와 사람 기준 명시(events[].explicit)로
+   각각 잘라 점수를 낸다. 복합은 자기 감정이 2종 이상이면 mixed 로 붙인다. */
+function toGold(it, L) {
+  const evidence = userTurns(it).map((_, i) => i + 1);
+  const self = new Set(L.emotions.filter(m => !m.other).map(m => m.k));
+  const traits = [];
+  if (self.size >= 2) traits.push("mixed");
+  if (L.emotions.some(m => m.other)) traits.push("other");
+  if (L.boundary) traits.push("boundary");
+  return {
+    sessionId: it.id,
+    taxonomy: TAXONOMY,
+    labeler: ui.labeler,
+    source: "aihub",
+    set: "stratified",
+    role: it.role,
+    stratum: it.stratum,
+    lex: it.lex,
+    note: L.note.trim() || undefined,
+    events: [{
+      id: 1, label: "단일 사건", summary: "", evidence,
+      explicit: L.explicit, status: L.discuss ? "discuss" : "final",
+      traits, undecidable: L.und,
+      outOfScopeRaw: L.und === "out_of_scope" ? L.oos.trim() : undefined,
+    }],
+    emotions: L.und ? [] : L.emotions.map(m => ({
+      eventId: 1, normalized: m.k, intensity: m.i,
+      evidenceIds: m.ev.slice(), intensityEvidenceIds: m.ev.slice(),
+      experiencer: m.other ? "other" : undefined,
+    })),
+  };
+}
+/* 완료한 항목만 담는다. 강도를 안 찍은 감정이 골드에 들어가면 merge.py 가 엉뚱한 칸에 센다. */
+function exportSet() {
+  const m = byId(), ord = order();
+  if (!ord.length) return;
+  const done = ord.filter(id => complete(m[id], st.labels[id]));
+  const open = ord.filter(id => touched(st.labels[id]) && !complete(m[id], st.labels[id]));
+  if (open.length && !confirm(`작업하다 만 ${open.length}건은 빠집니다:\n\n` +
+      open.slice(0, 12).map(id => `${id}: ${missing(m[id], st.labels[id]).join(", ")}`).join("\n") +
+      `${open.length > 12 ? "\n…" : ""}\n\n그래도 내보낼까요?`)) return;
+  const rows = done.map(id => toGold(m[id], st.labels[id]));
+  const blob = new Blob([JSON.stringify(rows, null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `gold-${ui.set}-${ui.labeler}.json`;
+  a.click();
+  st.exportedAt[ui.set] = done.length;
+  save(); renderHeader();
+}
+
+/* 내보낸 골드로 이어 하기. 골드에는 판정이 전부 들어 있어 거꾸로 되살릴 수 있다. */
+function applyGold(rows) {
+  const m = byId();
+  if (!Object.keys(m).length) { alert("표본(.jsonl)을 먼저 불러온 뒤 골드 파일을 불러오세요."); return; }
+  const who = new Set(rows.map(r => r.labeler));
+  if (!who.has(ui.labeler) &&
+      !confirm(`이 파일은 라벨러 ${[...who].join(",")} 의 것입니다. 지금 라벨러 ${ui.labeler} 로 불러올까요?`)) return;
+  let n = 0, unknown = 0;
+  for (const r of rows) {
+    if (!m[r.sessionId]) { unknown++; continue; }
+    const e = (r.events || [])[0] || {};
+    st.labels[r.sessionId] = {
+      emotions: (r.emotions || []).map(x => ({ k: x.normalized, i: x.intensity,
+        ev: (x.evidenceIds || []).slice(), other: x.experiencer === "other" })),
+      und: e.undecidable || null, oos: e.outOfScopeRaw || "", explicit: e.explicit || null,
+      boundary: (e.traits || []).includes("boundary"), discuss: e.status === "discuss",
+      note: r.note || "",
+    };
+    n++;
+  }
+  for (const set of SETS) if (st.sets[set]) {
+    st.sets[set].cur = firstOpen(set);
+    st.exportedAt[set] = st.sets[set].order.filter(id => complete(m[id], st.labels[id])).length;
+  }
+  save(); render();
+  alert(`판정 ${n}건을 복원했습니다.` + (unknown ? `\n⚠ 표본에 없는 ${unknown}건은 건너뛰었습니다.` : ""));
+}
+
+/* ── 불러오기 ────────────────────────────────────────── */
+function addSample(items, name) {
+  const role = items[0] && items[0].role;
+  if (!SETS.includes(role)) { alert(`${name}: role 이 없거나 모르는 값입니다 (${role}).`); return; }
+  all[role] = items;
+  ensureOrder(role);
+}
+function loadText(txt, name) {
+  txt = (txt || "").trim();
+  if (!txt) { alert(`${name}: 파일이 비어 있습니다.`); return; }
+  // 형식 판별: 첫 글자로 가르면 안 된다 — JSONL 도 줄마다 "{" 로 시작한다.
+  // 전체를 한 덩어리 JSON 으로 읽어 성공하면 골드(배열), 실패하면 표본 JSONL 이다.
+  let whole = null;
+  try { whole = JSON.parse(txt); } catch (_) { /* JSONL 이다 */ }
+  if (whole !== null) {
+    if (Array.isArray(whole) && (!whole.length || whole[0].sessionId)) { applyGold(whole); return; }
+    if (Array.isArray(whole) && whole[0].turns) { addSample(whole, name); save(); render(); return; }
+    if (whole.turns) { addSample([whole], name); save(); render(); return; }
+    alert(`${name}: 표본도 골드도 아닙니다.`); return;
+  }
+  const items = txt.split("\n").filter(Boolean).map(l => JSON.parse(l));
+  if (!items[0].turns) { alert(`${name}: 표본 형식이 아닙니다 (turns 필드가 없습니다).`); return; }
+  addSample(items, name);
+  save(); render();
+}
+function readFile(f) {
+  const r = new FileReader();
+  r.onload = () => {
+    try { loadText(r.result, f.name); }
+    catch (err) { alert(`${f.name} 을 읽지 못했습니다:\n${err.message}`); }
+  };
+  r.onerror = () => alert(`${f.name} 을 읽지 못했습니다: ${r.error && r.error.name}`);
+  r.readAsText(f, "utf-8");
+}
+/* 표본을 골드보다 먼저 읽는다 — 여러 파일을 한 번에 놓아도 순서가 꼬이지 않게. */
+function readFiles(files) {
+  [...files].sort((a, b) => /\.jsonl$/.test(b.name) - /\.jsonl$/.test(a.name)).forEach(readFile);
+}
+document.getElementById("load").onclick = () => document.getElementById("file").click();
+document.getElementById("file").onchange = e => { readFiles(e.target.files); e.target.value = ""; };
+["dragover", "drop"].forEach(t => document.addEventListener(t, ev => {
+  ev.preventDefault();
+  document.body.style.outline = t === "dragover" ? "3px dashed var(--accent)" : "";
+  if (t === "drop") readFiles(ev.dataTransfer.files);
+}));
+document.addEventListener("dragleave", () => document.body.style.outline = "");
+
+async function loadFromServer() {
+  const got = [];
+  for (const set of SETS) {
+    const res = await fetch(`${SAMPLE_DIR}/${set}.jsonl`, { cache: "no-store" });
+    if (!res.ok) continue;
+    const items = (await res.text()).trim().split("\n").filter(Boolean).map(l => JSON.parse(l));
+    if (items.length) { addSample(items, set); got.push(set); }
+  }
+  if (!got.length) throw new Error(`${SAMPLE_DIR}/ 에 표본이 없습니다`);
+  save(); render();
+}
+
+/* ── 헤더 ────────────────────────────────────────────── */
+document.getElementById("who").onclick = e => {
+  const b = e.target.closest("[data-who]");
+  if (!b || b.dataset.who === ui.labeler) return;
+  save();                                       // 지금 라벨러 것을 먼저 쓴다
+  ui.labeler = b.dataset.who;
+  loadState();
+  for (const set of SETS) if (all[set]) ensureOrder(set);
+  focus = 0; save(); render();
+};
+document.getElementById("sets").onclick = e => {
+  const b = e.target.closest("[data-set]");
+  if (!b) return;
+  ui.set = b.dataset.set; focus = 0; save(); render();
+};
+document.getElementById("hint").onchange = e => { ui.hint = e.target.checked; save(); render(); };
+document.getElementById("prev").onclick = () => go(curIndex() - 1);
+document.getElementById("next").onclick = () => go(curIndex() + 1);
+document.getElementById("jump").onclick = () => { if (st.sets[ui.set]) go(firstOpen(ui.set)); };
+document.getElementById("export").onclick = exportSet;
+
+if (!CAN_STORE) document.getElementById("nostore").hidden = false;
+loadUi();
+loadState();
+renderHeader();
+if (location.protocol.startsWith("http")) {
+  loadFromServer().catch(err => {
+    document.querySelector("#app .empty").insertAdjacentHTML("afterbegin",
+      `<p><b>서버에서 표본을 받지 못했습니다: ${esc(err.message)}</b></p>`);
+  });
+}
+</script>
+</body>
+</html>

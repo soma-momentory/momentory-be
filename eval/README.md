@@ -132,6 +132,48 @@ temperature 0 과 RPM 스로틀(4.5초)이 내장돼 있다.
 - 내보낼 때 **빠진 칸을 알려 준다**
 - 작업은 localStorage 에 자동저장되지만 **수시로 「JSON 내보내기」** 를 눌러 파일로 남길 것
 
+### `quick-labeler.html` — AI Hub 표본을 키보드로 빠르게
+
+`aihub/sample.py` 가 뽑은 `data/sample-r1/*.jsonl` 전용이다. AI Hub 대화는 한 상황을 2~3턴으로 말하는
+짧은 형식이라 **사건을 1개로 고정하고 사용자 발화 전부를 그 사건에 배정**한다. 사람은 감정·강도·근거
+발화·판단 보류·명시 판단만 찍는다. 내보내는 골드는 `labeler.html` 과 같은 v2 라 `merge.py` 에 그대로 넣는다.
+
+```bash
+cd momentory-be/eval && python3 -m http.server 8765
+# http://localhost:8765/quick-labeler.html  (다른 표본: ?sample=sample-r2)
+```
+
+- localhost 로 열면 `pilot`·`eval`·`safety`·`train` 네 세트를 자동으로 불러온다. 헤더에서 **라벨러 A/B** 와
+  세트를 고르고, `assign` 에 그 라벨러가 들어 있는 항목만 보인다(파일럿·평가는 둘 다, 안전판·학습은 반씩)
+- 순서는 라벨러·세트별로 랜덤이고, 판정은 라벨러별로 따로 저장된다
+- 안전판의 애정·뿌듯함 10건은 표적 수집 판정(`prefill`)으로 **감정만** 미리 채운다. 강도·근거는 사람이 찍는다
+- 감지기 힌트(`V`)는 `stratum`·`lex` 와 걸린 표현을 표시한다. AI Hub 원래 라벨(`proxy`·`aihub.minor`)은 보여주지 않는다
+- **강도에 기본값이 없다.** 깜빡한 강도가 조용히 2로 들어가면 IAA 가 부풀려진다
+
+| 키 | 하는 일 |
+|---|---|
+| `Q` `W` `E` `R` `T` `Y` `U` `I` `P` | 기쁨 평온 슬픔 불안 분노 실망 부끄러움 혼란 미안함 (`harvest.html` 과 같은 자리) |
+| `A` `S` | 애정 · 뿌듯함 (숫자를 강도에 써서 옮겼다) |
+| `1` `2` `3` `?`(`/`) | 초점 감정의 강도. `?` 는 판단 어려움 |
+| `J` `K` `L` | 초점 감정의 근거 발화 U1 U2 U3 켜고 끄기. 발화를 눌러도 된다 |
+| `Tab` · `⌫` · `O` | 초점 이동 · 초점 감정 빼기 · 타인 감정 |
+| `Z` `X` `C` | 판단 보류: 감정 정보 부족 / 대표 감정 판단 어려움 / 분류 체계 밖(원문 칸이 열린다) |
+| `F` `G` `H` | 명시 판단: 있음 / 없음 / 판단 어려움 — 감지기와 따로 사람이 본다 |
+| `D` · `M` · `N` | 경계 사례 · 의견 조정 필요 · 메모 |
+| `Enter` · `←` `→` | 다음 · 이동 |
+
+키는 물리 키(`e.code`)로 받아서 **한글 입력 상태여도 그대로 동작한다.**
+
+harvest.html 의 교훈을 따랐다: 표본은 저장하지 않고 **판정만** localStorage 에 둔다(세트 지문이 바뀌어도
+판정은 id 로 살린다). 「골드 내보내기」는 **지금 세트의 완료 항목만** `gold-<세트>-<라벨러>.json` 으로 낸다 —
+강도를 안 찍은 감정이 들어가면 `merge.py` 가 엉뚱한 칸에 센다. 이어 하기는 그 골드 파일을 다시 불러오면
+된다(형식은 전체 `JSON.parse` 로 판별, 끌어다 놓기 가능). 40건 넘게 안 내보내면 상단에 경고가 뜬다.
+
+```bash
+python3 merge.py --a data/gold-pilot-A.json --b data/gold-pilot-B.json \
+  --report data/disagreements-pilot.md --merge data/gold-pilot-agreed.json
+```
+
 ### `aihub/` — AI Hub 018.감성대화 활용
 
 계획 §6.1. **이 코퍼스의 라벨은 쓰지 않는다.** 페르소나와 감정 코드를 주고 작성하게 만든
@@ -153,8 +195,9 @@ temperature 0 과 RPM 스로틀(4.5초)이 내장돼 있다.
 > 겹친다(실측 9건 — `Pro_05153_00002` 가 양쪽에 다른 내용으로 있다). split 을 안 붙이면 판정
 > 화면에서 두 항목이 한 판정을 공유해 **하나가 검토되지 않은 채 값이 들어간다.**
 
-⚠ **AI Hub 이용 약관을 확인한 뒤 쓴다.** 변환·수집 결과는 `eval/data/`(gitignore)에 두고
-**매핑표와 스크립트만 커밋한다.**
+⚠ **AI Hub 이용 조건은 [계획 §6.1.1](../docs/model-comparison-plan.md)에 정리했다** — 학습용으로만 쓴다,
+출처를 표기한다, 제3자 제공과 국외 반출은 금지된다(해외 API·GPU 해석은 문의 중). 변환·수집 결과는
+`eval/data/`(gitignore)에 두고 **매핑표와 스크립트만 커밋한다.**
 
 #### 표적 수집 — 왜 전수 확정이 아닌가
 
@@ -319,11 +362,12 @@ python3 merge.py --a data/gold-A.json --b data/gold-B.json \
 | 필드 | 뜻 |
 |---|---|
 | `taxonomy` | `v2` = 정본 11종. 도구가 이 값으로 섞임을 막는다 |
-| `source` | `real`(실참여) / `synthetic`(가상). 섞어서 집계하지 않는다 |
+| `source` | `real`(실참여) / `synthetic`(가상) / `aihub`(AI Hub 표본, `quick-labeler.html`). 섞어서 집계하지 않는다 |
+| `role` · `stratum` · `lex` | AI Hub 표본만. 세트(pilot/eval/safety/train)와 감지기 판정 — 감지기 기준 명시(`stratum`)와 사람 기준 명시(`events[].explicit`)로 따로 잘라 채점한다 |
 | `events[].evidence` | 그 사건에 속하는 **사용자 발화 번호 전체**. 사건 정렬의 기준 |
 | `events[].explicit` | `yes` / `no` / `unsure` — 명시적 감정 표현 여부(계획 §5.2) |
 | `events[].status` | `final` / `discuss` / `insufficient` — 라벨링 상태 |
-| `events[].traits` | `negation` `correction` `quote` `other` `phase` `mixed` |
+| `events[].traits` | `negation` `correction` `quote` `other` `phase` `mixed` `boundary`(경계 사례 — 복합·경계 층 채점용) |
 | `events[].undecidable` | `no_emotion_info`(빈 목록이 정답) / `emotion_unclear` / `out_of_scope` — 뒤 둘은 채점 제외 |
 | `emotions[].normalized` | 정본 11종: `joy` `calm` `proud` `affection` `sad` `anxious` `angry` `disappointed` `ashamed` `confused` `sorry` |
 | `emotions[].intensity` | `1` `2` `3`, 또는 판단 어려움이면 **`null`** |
