@@ -71,7 +71,8 @@ class UserWithdrawalControllerIntegrationTest {
             "daily_memos",
             "retrospects",
             "action_cards",
-            "diaries"
+            "diaries",
+            "inquiries"
     );
 
     @Container
@@ -255,6 +256,10 @@ class UserWithdrawalControllerIntegrationTest {
                     user_id, retrospect_id, original, primary_emotion
                 ) VALUES (?, ?, ?, 'CALM')
                 """, userId, retrospectId, key + " original");
+        jdbcTemplate.update("""
+                INSERT INTO inquiries (user_id, category, content)
+                VALUES (?, 'ETC', ?)
+                """, userId, key + " inquiry");
 
         return new UserFixture(user, refreshToken, uniqueKey);
     }

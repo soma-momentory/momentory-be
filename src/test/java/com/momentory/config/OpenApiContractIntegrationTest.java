@@ -214,6 +214,15 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/treasures", "get", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/treasures", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
+        assertResponseSchema(apiDocs, "/api/v1/inquiries", "post", "201", "InquiryResponse");
+        assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "400", "ApiErrorResponse", "categoryRequired", "INVALID_REQUEST", "문의 종류를 골라주세요.");
+        assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "400", "ApiErrorResponse", "contentRequiredOrBlank", "INVALID_REQUEST", "문의 내용을 입력해주세요.");
+        assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "400", "ApiErrorResponse", "contentTooLong", "INVALID_REQUEST", "문의 내용은 최대 2000자입니다.");
+        assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "400", "ApiErrorResponse", "invalidReplyEmail", "INVALID_REQUEST", "이메일 형식이 올바르지 않습니다.");
+        assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "400", "ApiErrorResponse", "deviceInfoTooLong", "INVALID_REQUEST", "기기 정보는 최대 30자입니다.");
+        assertErrorExample(apiDocs, "/api/v1/inquiries", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
         assertResponseSchema(apiDocs, "/api/v1/rest-records", "post", "201", "RestRecordResponse");
         assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/rest-records", "post", "400", "ApiErrorResponse", "contentRequired", "INVALID_REQUEST", "쉼터를 입력해주세요.");
