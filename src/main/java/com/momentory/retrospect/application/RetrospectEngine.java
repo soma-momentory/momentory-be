@@ -573,17 +573,18 @@ public class RetrospectEngine {
     }
 
     /**
-     * 「사건 이름」 + 을/를 — 조사는 <b>괄호가 아니라 이름의 마지막 글자</b>로 고른다.
-     * 괄호째 넘기면 받침 판정이 「」 에 걸려 "개발를"이 된다.
+     * 사건 이름 + 을/를 — 조사는 이름의 마지막 글자로 고른다("개발을", "팀 발표를").
+     * 이름을 괄호로 감싸지 않는다: 「」 는 채팅 말투에 비해 딱딱한 인용 기호라 시스템이 끼워 넣은
+     * 티가 났다(2026-10-13).
      */
     private static String emotionConfirmQuestion(String label) {
-        return "「" + label + "」" + Josa.pick(label, "을", "를")
+        return label + Josa.pick(label, "을", "를")
                 + " 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?";
     }
 
-    /** 「사건 이름」 + 을/를 — 조사 규칙은 {@link #emotionConfirmQuestion} 과 같다. */
+    /** 사건 이름 + 을/를 — 표기·조사 규칙은 {@link #emotionConfirmQuestion} 과 같다. */
     private static String smallActionQuestion(String label) {
-        return "「" + label + "」" + Josa.pick(label, "을", "를")
+        return label + Josa.pick(label, "을", "를")
                 + " 떠올리며, 이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?";
     }
 

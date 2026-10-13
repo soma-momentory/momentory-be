@@ -289,7 +289,7 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("감정 확인 질문이 어떤 사건인지 이름을 밝힌다 — 조사는 괄호가 아니라 이름으로 고른다")
+    @DisplayName("감정 확인 질문이 어떤 사건인지 이름을 괄호 없이 밝힌다 — 조사는 이름의 마지막 글자로 고른다")
     void emotionConfirmNamesTheEvent() {
         // 근거가 더 많은 '개발'이 대표 사건이 된다 — 마지막에 언급된 '친구와 다툼'이 아니라.
         fake.events.add(new ExtractedEvent(1, "개발", "카페에서 개발함", List.of(1, 2, 3)));
@@ -300,8 +300,8 @@ class RetrospectEngineTest {
 
         ReplyDto confirm = engine.handle(state, TurnCommand.option("1"));
 
-        assertThat(confirm.text()).contains("「개발」을 떠올렸을 때");
-        assertThat(confirm.text()).doesNotContain("「개발」를");
+        assertThat(confirm.text()).startsWith("개발을 떠올렸을 때");
+        assertThat(confirm.text()).doesNotContain("개발를").doesNotContain("「");
         assertThat(confirm.text()).doesNotContain("친구와 다툼");
     }
 
@@ -321,7 +321,7 @@ class RetrospectEngineTest {
     void smallActionQuestionNamesTheEvent() {
         ReplyDto actionTurn = toSmallActionTurn();
 
-        assertThat(actionTurn.text()).startsWith("「개발」을 떠올리며,");
+        assertThat(actionTurn.text()).startsWith("개발을 떠올리며,");
 
         ReplyDto done = engine.handle(state, TurnCommand.option("1"));
         assertThat(done.wishCard().situation()).isEqualTo("카페에서 개발함");
