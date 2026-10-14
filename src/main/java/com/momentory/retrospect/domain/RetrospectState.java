@@ -299,6 +299,20 @@ public class RetrospectState {
         return events.stream().max(Comparator.comparingInt(e -> e.evidence().size()));
     }
 
+    /**
+     * 바람 카드의 상황이자 감정 탐색 프롬프트(바람·작은 행동)에 넣는 사건 — 대표 사건 요약.
+     *
+     * <p>카드와 프롬프트가 같은 값을 써야 한다. 프롬프트가 {@link #event()} 슬롯을 쓰던 때는 카드
+     * 상황은 점심 약속인데 행동은 다른 일을 겨냥하거나, 사건 대신 "~하겠다는 다짐" 같은 마음 상태가
+     * 재료로 들어가 행동이 물 한 잔·심호흡 같은 일반론으로 흘렀다(2026-10 바람카드 점검).
+     */
+    public String cardSituation() {
+        return mainEvent().map(e -> e.summary() != null ? e.summary() : e.topicLabel())
+                .orElseGet(() -> event != null ? event
+                        : hasSchedule() ? schedule() + "에서 있었던 일"
+                        : "오늘 하루 있었던 일");
+    }
+
     public List<ExtractedEmotion> emotions() {
         return List.copyOf(emotions);
     }

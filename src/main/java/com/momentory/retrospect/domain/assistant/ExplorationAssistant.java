@@ -17,6 +17,6 @@ public interface ExplorationAssistant {
     /** 2턴 — 고정 욕구 목록에서 대화 맥락에 맞는 3~4개를 고른다(목록 밖 단어는 어댑터가 버린다). */
     List<Need> suggestNeeds(RetrospectState state);
 
-    /** 3턴 — 부담 없이 해볼 수 있는 구체적이고 작은 행동 2~3개를 제안한다. */
+    /** 3턴 — 대표 사건에 묶인, 부담 없이 해볼 수 있는 작은 행동 3개를 제안한다. */
     List<String> suggestActions(RetrospectState state);
 }

@@ -11,6 +11,9 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.momentory.retrospect.domain.Emotion;
+import com.momentory.retrospect.domain.ExtractedEvent;
+import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.RetrospectState;
 
 /**
@@ -218,6 +221,48 @@ class PromptFactoryTest {
                     .as("%s 프롬프트에 실제 수행 조건이 없다", v)
                     .contains("실제로 했다고 말한 경우에만");
         }
+    }
+
+    /** 사건 슬롯(마지막 턴의 다짐)과 대표 사건(팀 발표)이 어긋난 상태 — 2026-10 바람카드 점검에서 본 모양. */
+    private static RetrospectState stateForExploration() {
+        RetrospectState state = new RetrospectState("sess-x");
+        state.event("다음엔 혼자 끌어안지 않겠다고 다짐한 것");
+        state.events(List.of(new ExtractedEvent(1, "팀 발표", "팀 발표 자료를 혼자 만듦", List.of(1, 2))));
+        state.confirmEmotions(List.of(Emotion.FRUSTRATED));
+        state.chooseNeeds(List.of(Needs.byWord("인정").orElseThrow()));
+        return state;
+    }
+
+    @Test
+    @DisplayName("작은 행동 프롬프트는 카드 상황과 같은 대표 사건 · 한국어 감정 · 뜻을 붙인 바람을 싣는다")
+    void actionsPromptUsesCardSituation() {
+        String prompt = prompts.actionsPrompt(stateForExploration());
+
+        assertThat(prompt).contains("[사건] 팀 발표 자료를 혼자 만듦")
+                .contains("[감정] 답답함")
+                .contains("[바람] 인정(내 노력과 존재를 알아봐 주길 바라는 마음)");
+        assertThat(prompt).doesNotContain("다짐한 것").doesNotContain("frustrated");
+    }
+
+    @Test
+    @DisplayName("바람 프롬프트도 같은 대표 사건과 한국어 감정을 싣는다")
+    void needsPromptUsesCardSituation() {
+        String prompt = prompts.needsPrompt(stateForExploration());
+
+        assertThat(prompt).contains("사건: 팀 발표 자료를 혼자 만듦").contains("확인된 감정: 답답함");
+        assertThat(prompt).doesNotContain("다짐한 것").doesNotContain("frustrated");
+    }
+
+    @Test
+    @DisplayName("감정·바람을 고르지 않았으면 '없음'으로 싣는다")
+    void actionsPromptWithoutEmotionOrNeed() {
+        RetrospectState state = new RetrospectState("sess-y");
+        state.events(List.of(new ExtractedEvent(1, "호수공원", "가족과 호수공원을 걸음", List.of(1))));
+
+        assertThat(prompts.actionsPrompt(state))
+                .contains("[사건] 가족과 호수공원을 걸음")
+                .contains("[감정] 없음")
+                .contains("[바람] 없음");
     }
 
     @Test
