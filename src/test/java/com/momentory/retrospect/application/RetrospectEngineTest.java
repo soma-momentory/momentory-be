@@ -202,8 +202,8 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("더 물어볼 게 없다고 알리면 최소 턴을 채운 뒤 마무리한다 — 다른 소재로 넓히지 않는다")
-    void finishesWhenNoMoreToAsk() {
+    @DisplayName("모델이 더 물어볼 게 없다고 해도 6턴 전에 자동 종료하지 않는다")
+    void noMoreToAskDoesNotEndEarly() {
         RetrospectState state = new RetrospectState("s-1");
         engine.start(state, StartCommand.single("팀 발표", null, "정민"));
         fake.turnEvent = "발표에서 말이 막혔다";
@@ -217,10 +217,10 @@ class RetrospectEngineTest {
             assertThat(mid.phase()).as("%d턴", i + 1).isEqualTo(Phase.DIARY_CHAT.key());
         }
 
-        // 최소 턴을 채우면 6턴을 기다리지 않고 마무리로 넘어간다.
+        // 모델의 종료 신호만으로 조기 종료하지 않는다.
         ReplyDto done = engine.handle(state, new TurnCommand("네 그랬어요", null));
 
-        assertThat(done.phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
+        assertThat(done.phase()).isEqualTo(Phase.DIARY_CHAT.key());
         assertThat(state.diaryTurn()).isEqualTo(RetrospectState.DIARY_MIN_TURNS);
         assertThat(state.diaryTurn()).isLessThan(RetrospectState.DIARY_MAX_TURNS);
     }
@@ -285,7 +285,7 @@ class RetrospectEngineTest {
         }
         ReplyDto resumed = engine.handle(state, new TurnCommand(null, java.util.List.of("2")));
 
-        assertThat(resumed.text()).contains("조금 더 이야기해 주고 싶은 게 있을까요");
+        assertThat(resumed.text()).contains("다른 기억에 남는 일");
     }
 
     @Test
@@ -385,4 +385,37 @@ class RetrospectEngineTest {
         // 이어가기는 답변 턴이 아니다 — 일기 턴을 소모하지 않고 질문만 다시 보여준다.
         assertThat(state.diaryTurn()).isEqualTo(diaryTurnAtHold);
     }
+    @Test
+    void routineSchedulesAreHintsAndFallbackDoesNotInventThem() {
+        var schedules = List.of(
+                new com.momentory.retrospect.domain.ScheduleItem(10L, "운동", Emotion.HAPPY, true),
+                new com.momentory.retrospect.domain.ScheduleItem(11L, "가스비 점검", null, true),
+                new com.momentory.retrospect.domain.ScheduleItem(12L, "공부", null, true),
+                new com.momentory.retrospect.domain.ScheduleItem(13L, "청소", null, true));
+        ReplyDto opening = engine.start(state, new StartCommand(schedules, null, "건강"));
+        assertThat(opening.text()).contains("운동", "가스비 점검", "공부", "가장 기억에 남는 일")
+                .doesNotContain("청소");
+        assertThat(state.scheduleId()).isEqualTo(10L);
+        assertThat(state.schedule()).isEqualTo("운동");
+        assertThat(state.scheduleHint()).isTrue();
+        assertThat(fake.diaryTurnCalls).isZero();
+        fake.failDiary = true;
+        engine.handle(state, TurnCommand.text("그만할래"));
+        assertThat(state.diaryDraft()).isEqualTo("오늘 하루를 돌아봤다.");
+    }
+
+    @Test
+    void interestsRankOnlyEventfulCandidatesWithoutHomeEmotion() {
+        var schedules = List.of(
+                new com.momentory.retrospect.domain.ScheduleItem(1L, "운동", Emotion.HAPPY, true),
+                new com.momentory.retrospect.domain.ScheduleItem(2L, "친구 약속", Emotion.ANGRY, true),
+                new com.momentory.retrospect.domain.ScheduleItem(3L, "인턴 면접", null, false));
+        assertThat(engine.start(state, new StartCommand(schedules, null, "취업")).text())
+                .isEqualTo("오늘 인턴 면접, 어땠어요?");
+        assertThat(state.scheduleId()).isEqualTo(3L);
+        var another = new RetrospectState("another");
+        assertThat(engine.start(another, new StartCommand(schedules, null, "건강")).text())
+                .isEqualTo("오늘 친구 약속, 어땠어요?");
+    }
+
 }

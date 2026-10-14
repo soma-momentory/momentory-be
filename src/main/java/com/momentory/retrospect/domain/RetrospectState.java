@@ -44,6 +44,11 @@ public class RetrospectState {
     /** 그 일정에 사용자가 홈에서 단 감정 — 대화 소재로만 쓴다(없으면 null). */
     private Emotion scheduleEmotion;
     private String interest;
+    /** 구버전은 직접 질문으로 복원한다. */
+    private boolean scheduleHint;
+    private int topicTurn;
+    private boolean topicEmotionSeen;
+    private boolean topicMeaningSeen;
     /** 온보딩 '평소 쉬는 방법' 라벨 — 작은 행동 제안에 선호를 반영한다(없으면 빈 목록). */
     private List<String> restMethods = List.of();
 
@@ -232,6 +237,7 @@ public class RetrospectState {
 
     public void bumpDiaryTurn() {
         diaryTurn++;
+        topicTurn++;
     }
 
     public String event() {
@@ -240,8 +246,42 @@ public class RetrospectState {
 
     public void event(String event) {
         if (event != null && !event.isBlank()) {
-            this.event = event.strip();
+            String next = event.strip();
+            if (!next.equals(this.event)) {
+                if (this.event != null && !secondaryEvents.contains(this.event)) {
+                    secondaryEvents.add(this.event);
+                }
+                secondaryEvents.remove(next);
+                this.topicTurn = 0;
+                this.topicEmotionSeen = false;
+                this.topicMeaningSeen = false;
+            }
+            this.event = next;
         }
+    }
+
+    public boolean scheduleHint() {
+        return scheduleHint;
+    }
+
+    public void scheduleHint(boolean hint) {
+        this.scheduleHint = hint;
+    }
+
+    public int topicTurn() {
+        return topicTurn;
+    }
+
+    public boolean topicEmotionSeen() {
+        return topicEmotionSeen;
+    }
+
+    public boolean topicMeaningSeen() {
+        return topicMeaningSeen;
+    }
+
+    public boolean shouldSwitchTopic() {
+        return (topicEmotionSeen && topicMeaningSeen) || (topicTurn >= 2 && !topicEmotionSeen);
     }
 
     public List<String> secondaryEvents() {
@@ -348,6 +388,7 @@ public class RetrospectState {
 
     public void markEmotionSeen() {
         this.emotionSeen = true;
+        this.topicEmotionSeen = true;
     }
 
     public String meaning() {
@@ -357,6 +398,7 @@ public class RetrospectState {
     public void meaning(String meaning) {
         if (meaning != null && !meaning.isBlank()) {
             this.meaning = meaning.strip();
+            this.topicMeaningSeen = true;
         }
     }
 
@@ -520,7 +562,8 @@ public class RetrospectState {
                 new ArrayList<>(messages),
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
-                List.copyOf(lastOptions), messageSeq);
+                List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
+                topicMeaningSeen);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -570,6 +613,10 @@ public class RetrospectState {
         }
         state.lastOptions = s.lastOptions() == null ? List.of() : List.copyOf(s.lastOptions());
         state.messageSeq = s.messageSeq();
+        state.scheduleHint = Boolean.TRUE.equals(s.scheduleHint());
+        state.topicTurn = s.topicTurn() == null ? 0 : s.topicTurn();
+        state.topicEmotionSeen = Boolean.TRUE.equals(s.topicEmotionSeen());
+        state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
         return state;
     }
 }
