@@ -389,15 +389,50 @@ public class RetrospectEngine {
     // ── 분기점 ───────────────────────────────────────────────────────────
 
     private ReplyDto handleBranch(RetrospectState state, TurnCommand command) {
+        if (state.awaitingEventSelection()) {
+            return handleEventSelection(state, command);
+        }
         Optional<Choice> chosen = resolveSingle(state, command);
         if (chosen.isPresent() && BRANCH_EXPLORE.equals(chosen.get().label())) {
             state.addUserMessage(BRANCH_EXPLORE);
-            state.enterExploration();
-            return presentEmotionConfirm(state);
+            if (state.events().isEmpty()) {
+                return finishComplete(state);
+            }
+            state.awaitEventSelection();
+            return presentEventSelection(state);
         }
         // 그 외(일기 확인·미선택) → 감정 탐색 미진행이 기본값. 바람 카드 없이 마무리.
         state.addUserMessage(chosen.map(Choice::label).orElse(BRANCH_VIEW));
         return finishComplete(state);
+    }
+
+    private ReplyDto presentEventSelection(RetrospectState state) {
+        List<Choice> options = new ArrayList<>();
+        for (var event : state.events()) {
+            options.add(Choice.of(event.summary()));
+        }
+        options.add(Choice.of(GO_DIARY));
+        state.lastOptions(options);
+        String text = "어떤 이야기를 조금 더 나눠볼까요?";
+        state.addAssistantMessage(text + "\n" + optionLines(options));
+        return ReplyDto.choices(text, Phase.AWAIT_BRANCH, toOptionDtos(options), state.safety().level());
+    }
+
+    private ReplyDto handleEventSelection(RetrospectState state, TurnCommand command) {
+        if (picked(state, command, GO_DIARY)) {
+            state.addUserMessage(GO_DIARY);
+            return finishComplete(state);
+        }
+        // 선지 위치를 사건 ID로 연결한다. 요약이 같아도 사건을 혼동하지 않는다.
+        if (command.optionIds().size() == 1 && resolveSingle(state, command).isPresent()) {
+            int index = Integer.parseInt(command.firstOption().strip()) - 1;
+            if (index < state.events().size() && state.selectEvent(state.events().get(index).id())) {
+                state.addUserMessage(state.selectedEvent().orElseThrow().summary());
+                state.enterExploration();
+                return presentEmotionConfirm(state);
+            }
+        }
+        return presentEventSelection(state);
     }
 
     // ── 감정 탐색 (고정 3턴) ─────────────────────────────────────────────
@@ -413,22 +448,17 @@ public class RetrospectEngine {
     /**
      * 1턴 — 감정 확인 질문 + 후보 제시.
      *
-     * <p>후보는 추출한 감정이다. 대화에 감정 표현이 아예 없어 비면 모델이 고른 추론 감정
-     * ({@link RetrospectState#inferredEmotion()})을 대신 보여준다 — 빈 선택지를 내밀지 않기 위해서다.
-     * 추론값은 사용자가 고르기 전까지 어디에도 기록되지 않는다(고르면 확인 감정이 된다).
+     * <p>선택한 사건에 연결된 추출 감정만 후보로 쓴다. 후보가 없으면 기존 입력창으로 직접 받는다.
      */
     private ReplyDto presentEmotionConfirm(RetrospectState state) {
         List<Choice> options = new ArrayList<>();
-        for (Emotion e : distinctNormalized(state.emotions())) {
+        for (Emotion e : distinctNormalized(state.selectedEventEmotions())) {
             options.add(Choice.of(e.label()));
-        }
-        if (options.isEmpty() && state.inferredEmotion() != null) {
-            options.add(Choice.of(state.inferredEmotion().label()));
         }
         state.lastOptions(options);
         // 무엇에 대한 질문인지 이름을 밝힌다 — "그 일"만 두면 사용자는 직전 대화를 떠올릴 수밖에 없다.
-        String text = state.mainEvent()
-                .map(e -> emotionConfirmQuestion(e.topicLabel()))
+        String text = state.selectedEvent()
+                .map(e -> emotionConfirmQuestion(e.summary()))
                 .orElse("오늘 하루를 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?");
         state.addAssistantMessage(text + "\n" + optionLines(options));
         return ReplyDto.choices(text, Phase.EMOTION_EXPLORATION, toOptionDtos(options),
@@ -510,8 +540,8 @@ public class RetrospectEngine {
         }
         state.lastOptions(options);
         // 감정 확인 질문처럼 사건 이름을 밝힌다 — 후보도 그 사건을 가리키므로 질문과 후보가 맞물린다.
-        String text = state.mainEvent()
-                .map(e -> smallActionQuestion(e.topicLabel()))
+        String text = state.selectedEvent()
+                .map(e -> smallActionQuestion(e.summary()))
                 .orElse("이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?");
         state.addAssistantMessage(text + "\n" + optionLines(options));
         return ReplyDto.choices(text, Phase.EMOTION_EXPLORATION, toOptionDtos(options),
