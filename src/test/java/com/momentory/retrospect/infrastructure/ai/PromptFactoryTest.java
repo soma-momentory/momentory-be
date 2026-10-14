@@ -273,6 +273,14 @@ class PromptFactoryTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("TWO_STAGE");
     }
+
+    @Test
+    void diaryPromptUsesSixSentencesWithoutPaddingMinorEvents() {
+        assertThat(prompts.diaryPrompt(new RetrospectState("diary")))
+                .contains("전체 6문장 내외", "가볍게 언급한 잡일", "대화에 없는 사실·감정")
+                .doesNotContain("최소 5문장", "넉넉하게");
+    }
+
     @Test
     void serverSwitchInstructionUsesOnlyCurrentTopicProgress() {
         var state = new RetrospectState("progress");
