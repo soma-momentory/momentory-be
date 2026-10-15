@@ -83,6 +83,24 @@ class OpenApiContractIntegrationTest {
     }
 
     @Test
+    void documentsCurrentWeather() throws Exception {
+        JsonNode docs = getApiDocs();
+        String path = "/api/v1/weather/current";
+        assertResponseSchema(docs, path, "post", "200", "CurrentWeatherResponse");
+        assertErrorExample(docs, path, "post", "400", "ApiErrorResponse", "INVALID_COORDINATE", "INVALID_COORDINATE", "좌표가 올바르지 않습니다.");
+        assertErrorExample(docs, path, "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(docs, path, "post", "429", "ApiErrorResponse", "TOO_MANY_REQUESTS", "TOO_MANY_REQUESTS", "요청이 너무 많습니다.");
+        assertErrorExample(docs, path, "post", "502", "ApiErrorResponse", "WEATHER_UPSTREAM_FAILED", "WEATHER_UPSTREAM_FAILED", "날씨를 가져오지 못했어요.");
+        assertErrorExample(docs, path, "post", "503", "ApiErrorResponse", "WEATHER_UNAVAILABLE", "WEATHER_UNAVAILABLE", "날씨 기능을 사용할 수 없습니다.");
+        assertErrorExample(docs, path, "post", "504", "ApiErrorResponse", "WEATHER_UPSTREAM_TIMEOUT", "WEATHER_UPSTREAM_TIMEOUT", "날씨를 가져오지 못했어요.");
+        JsonNode request = docs.at("/components/schemas/CurrentWeatherRequest/properties");
+        assertThat(request.size()).isEqualTo(2);
+        assertThat(request.has("latitude")).isTrue();
+        assertThat(request.has("longitude")).isTrue();
+        assertThat(docs.at("/components/schemas/CurrentWeatherResponse/properties").has("latitude")).isFalse();
+    }
+
+    @Test
     void documentsResponseSchemasAndErrorExamplesForPublicApis() throws Exception {
         JsonNode apiDocs = getApiDocs();
 
