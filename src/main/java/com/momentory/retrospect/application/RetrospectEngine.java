@@ -129,45 +129,51 @@ public class RetrospectEngine {
         } else {
             state.begin(null, null, null, command.nickname(), command.interest());
         }
-        String text = openingQuestion(state);
+        state.scheduleHint(topic != null && !directTopic(topic));
+        String text = openingQuestion(state, command.schedules());
         state.addAssistantMessage(text);
         usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
     }
 
-    /**
-     * 대화로 이어갈 개인화 소재 하나 — 우선순위는 <b>관심분야 → 끝난 일 → 첫 번째</b>다.
-     *
-     * <p>관심분야가 이름에 담긴 일정을 먼저 본다(온보딩에서 고른 축이라 할 말이 많다). 없으면 오늘
-     * <b>마친</b> 일정을 고른다 — 아직 안 한 일은 돌아볼 거리가 없어 첫 질문이 헛돈다. 둘 다 없으면
-     * 목록의 첫 번째다.
-     */
-    private static ScheduleItem pickTopic(List<ScheduleItem> schedules, String interest) {
-        if (schedules.isEmpty()) {
-            return null;
+    private static final List<String> DIRECT_TOPIC_KEYWORDS =
+            List.of("약속", "회의", "면접", "발표", "시험", "모임");
+
+    /** 관심분야는 사건성이 있는 후보 사이에서만 우선순위를 정한다. */
+    private static List<String> interestKeywords(String interest) {
+        if (interest == null) {
+            return List.of();
         }
-        if (interest != null && !interest.isBlank()) {
-            String key = interest.strip();
-            for (ScheduleItem s : schedules) {
-                if (s.name() != null && s.name().contains(key)) {
-                    return s;
-                }
-            }
-        }
-        for (ScheduleItem s : schedules) {
-            if (s.completed()) {
-                return s;
-            }
-        }
-        return schedules.get(0);
+        List<String> keys = new ArrayList<>();
+        if (interest.contains("학업")) keys.addAll(List.of("시험", "과제", "수업", "발표", "공부"));
+        if (interest.contains("취업")) keys.addAll(List.of("면접", "지원서", "자소서", "채용", "인턴"));
+        if (interest.contains("인간관계")) keys.addAll(List.of("약속", "모임", "친구", "데이트"));
+        if (interest.contains("건강")) keys.addAll(List.of("운동", "헬스", "러닝", "병원", "검진"));
+        return keys;
     }
 
-    private static String openingQuestion(RetrospectState state) {
+    private static boolean directTopic(ScheduleItem item) {
+        return item.name() != null && DIRECT_TOPIC_KEYWORDS.stream().anyMatch(item.name()::contains);
+    }
+
+    private static ScheduleItem pickTopic(List<ScheduleItem> schedules, String interest) {
+        List<ScheduleItem> candidates = schedules.stream().filter(RetrospectEngine::directTopic).toList();
+        List<String> keys = interestKeywords(interest);
+        return candidates.stream().filter(s -> keys.stream().anyMatch(s.name()::contains)).findFirst()
+                .orElseGet(() -> candidates.stream().findFirst().orElseGet(() -> schedules.stream()
+                        .filter(s -> s.name() != null && !s.name().isBlank()).findFirst().orElse(null)));
+    }
+
+    private static String openingQuestion(RetrospectState state, List<ScheduleItem> schedules) {
         String who = blankName(state) ? "" : state.nickname().strip() + "님, ";
-        if (state.hasSchedule()) {
-            // 예/아니오("진행됐어요?")는 "아니"라는 비답변을 부르고 분기가 없어 막힌다 — 열린 질문으로.
-            // 그 일정이 실제로 없었으면 사용자가 풀어 말하고, AI 가 다른 소재로 자연스럽게 옮긴다.
+        if (state.hasSchedule() && !state.scheduleHint()) {
             return who + "오늘 " + state.schedule() + ", 어땠어요?";
+        }
+        String hints = schedules.stream().map(ScheduleItem::name)
+                .filter(n -> n != null && !n.isBlank()).distinct().limit(3)
+                .collect(Collectors.joining(", "));
+        if (!hints.isEmpty()) {
+            return who + "오늘 " + hints + " 일정도 있었네요. 하루 중 가장 기억에 남는 일은 뭐였어요?";
         }
         return who + "오늘 하루 중에서 가장 기억에 남는 일은 뭐였어요?";
     }
@@ -234,7 +240,6 @@ public class RetrospectEngine {
 
         String question = null;
         String empathy = null;
-        boolean noMoreToAsk = false;
         Optional<DiaryTurn> ai = diaryChatAssistant.turn(state, command.content());
         if (ai.isPresent()) {
             DiaryTurn t = ai.get();
@@ -253,7 +258,6 @@ public class RetrospectEngine {
             }
             question = t.question();
             empathy = t.empathy();
-            noMoreToAsk = t.noMoreToAsk();
         } else {
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(),
                     Phase.DIARY_CHAT.key());
@@ -266,10 +270,7 @@ public class RetrospectEngine {
                 && state.diaryTurn() >= DIARY_CHECKIN_AFTER_TURN) {
             return presentDiaryCheckin(state);
         }
-        // 다루는 사건(≤2)에서 더 물어볼 게 없다고 모델이 알리면 마무리한다 — 다른 소재로 넓히지
-        // 않는다. 최소 턴은 지킨다(1~2턴 만에 끝나면 일기로 쓸 재료가 모자란다).
-        if (state.diaryTurnsExhausted()
-                || (noMoreToAsk && state.diaryTurn() >= RetrospectState.DIARY_MIN_TURNS)) {
+        if (state.diaryTurnsExhausted()) {
             return finishDiaryChat(state, empathy);
         }
         String text = (question != null && !question.isBlank())
@@ -279,22 +280,20 @@ public class RetrospectEngine {
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
     }
 
-    /**
-     * 다음 빈 슬롯을 겨눈 폴백 질문 — AI 실패 시와 체크인 재개("조금 더")에서 쓴다.
-     *
-     * <p>⚠ <b>이 자리는 AI 를 거치지 않는다</b> — 프롬프트의 "소재를 넓히지 마세요" 규칙이 닿지
-     * 않는다. 슬롯이 다 찼을 때 "조금 더 이야기해 주고 싶은 게 있을까요?" 처럼 대상을 열어 두면
-     * 사용자가 새 소재를 꺼내고, 사건이 상한을 넘어 추출에서 버려진다(실기기에서 관측). 그래서
-     * 사건이 이미 상한만큼 나왔으면 <b>지금 다루는 것 안</b>으로 질문을 좁힌다.
-     */
+    /** AI 실패와 체크인 재개 시에도 현재 소재의 진행 상태와 사건 상한을 따른다. */
     private static String fallbackDiaryQuestion(RetrospectState state) {
         if (state.event() == null) {
             return "그때 무슨 일이 있었는지 조금만 더 들려줄래요?";
         }
-        if (!state.emotionSeen()) {
+        if (state.shouldSwitchTopic()) {
+            return state.knownEventCount() >= RetrospectState.MAX_EVENTS
+                    ? "지금까지 이야기한 것 중에, 다른 이야기를 나눠볼까요?"
+                    : "오늘 하루 중 다른 기억에 남는 일은 뭐였어요?";
+        }
+        if (!state.topicEmotionSeen()) {
             return "그 순간에는 어떤 기분이 들었어요?";
         }
-        if (state.meaning() == null) {
+        if (!state.topicMeaningSeen()) {
             return "지금 돌아보면 어떤 점이 가장 마음에 남아요?";
         }
         return state.knownEventCount() >= RetrospectState.MAX_EVENTS
@@ -381,7 +380,7 @@ public class RetrospectEngine {
             sb.append(state.meaning());
         }
         if (sb.length() == 0) {
-            sb.append(state.hasSchedule() ? "오늘 " + state.schedule() + "이 있었다."
+            sb.append(state.hasSchedule() && !state.scheduleHint() ? "오늘 " + state.schedule() + "이 있었다."
                     : "오늘 하루를 돌아봤다.");
         }
         return new DiaryOutput(sb.toString().strip(), null);
@@ -390,15 +389,50 @@ public class RetrospectEngine {
     // ── 분기점 ───────────────────────────────────────────────────────────
 
     private ReplyDto handleBranch(RetrospectState state, TurnCommand command) {
+        if (state.awaitingEventSelection()) {
+            return handleEventSelection(state, command);
+        }
         Optional<Choice> chosen = resolveSingle(state, command);
         if (chosen.isPresent() && BRANCH_EXPLORE.equals(chosen.get().label())) {
             state.addUserMessage(BRANCH_EXPLORE);
-            state.enterExploration();
-            return presentEmotionConfirm(state);
+            if (state.events().isEmpty()) {
+                return finishComplete(state);
+            }
+            state.awaitEventSelection();
+            return presentEventSelection(state);
         }
         // 그 외(일기 확인·미선택) → 감정 탐색 미진행이 기본값. 바람 카드 없이 마무리.
         state.addUserMessage(chosen.map(Choice::label).orElse(BRANCH_VIEW));
         return finishComplete(state);
+    }
+
+    private ReplyDto presentEventSelection(RetrospectState state) {
+        List<Choice> options = new ArrayList<>();
+        for (var event : state.events()) {
+            options.add(Choice.of(event.summary()));
+        }
+        options.add(Choice.of(GO_DIARY));
+        state.lastOptions(options);
+        String text = "어떤 이야기를 조금 더 나눠볼까요?";
+        state.addAssistantMessage(text + "\n" + optionLines(options));
+        return ReplyDto.choices(text, Phase.AWAIT_BRANCH, toOptionDtos(options), state.safety().level());
+    }
+
+    private ReplyDto handleEventSelection(RetrospectState state, TurnCommand command) {
+        if (picked(state, command, GO_DIARY)) {
+            state.addUserMessage(GO_DIARY);
+            return finishComplete(state);
+        }
+        // 선지 위치를 사건 ID로 연결한다. 요약이 같아도 사건을 혼동하지 않는다.
+        if (command.optionIds().size() == 1 && resolveSingle(state, command).isPresent()) {
+            int index = Integer.parseInt(command.firstOption().strip()) - 1;
+            if (index < state.events().size() && state.selectEvent(state.events().get(index).id())) {
+                state.addUserMessage(state.selectedEvent().orElseThrow().summary());
+                state.enterExploration();
+                return presentEmotionConfirm(state);
+            }
+        }
+        return presentEventSelection(state);
     }
 
     // ── 감정 탐색 (고정 3턴) ─────────────────────────────────────────────
@@ -414,22 +448,17 @@ public class RetrospectEngine {
     /**
      * 1턴 — 감정 확인 질문 + 후보 제시.
      *
-     * <p>후보는 추출한 감정이다. 대화에 감정 표현이 아예 없어 비면 모델이 고른 추론 감정
-     * ({@link RetrospectState#inferredEmotion()})을 대신 보여준다 — 빈 선택지를 내밀지 않기 위해서다.
-     * 추론값은 사용자가 고르기 전까지 어디에도 기록되지 않는다(고르면 확인 감정이 된다).
+     * <p>선택한 사건에 연결된 추출 감정만 후보로 쓴다. 후보가 없으면 기존 입력창으로 직접 받는다.
      */
     private ReplyDto presentEmotionConfirm(RetrospectState state) {
         List<Choice> options = new ArrayList<>();
-        for (Emotion e : distinctNormalized(state.emotions())) {
+        for (Emotion e : distinctNormalized(state.selectedEventEmotions())) {
             options.add(Choice.of(e.label()));
-        }
-        if (options.isEmpty() && state.inferredEmotion() != null) {
-            options.add(Choice.of(state.inferredEmotion().label()));
         }
         state.lastOptions(options);
         // 무엇에 대한 질문인지 이름을 밝힌다 — "그 일"만 두면 사용자는 직전 대화를 떠올릴 수밖에 없다.
-        String text = state.mainEvent()
-                .map(e -> emotionConfirmQuestion(e.topicLabel()))
+        String text = state.selectedEvent()
+                .map(e -> emotionConfirmQuestion(e.summary()))
                 .orElse("오늘 하루를 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?");
         state.addAssistantMessage(text + "\n" + optionLines(options));
         return ReplyDto.choices(text, Phase.EMOTION_EXPLORATION, toOptionDtos(options),
@@ -511,8 +540,8 @@ public class RetrospectEngine {
         }
         state.lastOptions(options);
         // 감정 확인 질문처럼 사건 이름을 밝힌다 — 후보도 그 사건을 가리키므로 질문과 후보가 맞물린다.
-        String text = state.mainEvent()
-                .map(e -> smallActionQuestion(e.topicLabel()))
+        String text = state.selectedEvent()
+                .map(e -> smallActionQuestion(e.summary()))
                 .orElse("이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?");
         state.addAssistantMessage(text + "\n" + optionLines(options));
         return ReplyDto.choices(text, Phase.EMOTION_EXPLORATION, toOptionDtos(options),

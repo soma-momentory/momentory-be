@@ -59,46 +59,43 @@ public class PromptFactory {
     /** 일기 작성 턴(G2) — 슬롯 추출 + 다음 질문. */
     public String diaryTurnPrompt(RetrospectState state, String userText) {
         return """
-                [진행] 지금까지 %d턴 나눴습니다. 일기 작성 채팅은 최소 %d턴 · 최대 %d턴입니다.
-
-                [지금까지 파악한 것]
+                [진행] 지금까지 %d턴 나눴습니다. 일기 작성 채팅은 %d턴 고정이며 종료는 서버가 결정합니다.
+                [현재 소재]
                 - 사건(event): %s
-                - 감정 표현됨: %s
-                - 의미(meaning): %s
+                - 이 소재에서 진행한 턴: %d
+                - 이 소재의 감정 수집: %s
+                - 이 소재의 의미 수집: %s
+                - 서버 진행 지시: %s
 
                 [대화]
                 %s
-
                 [방금 사용자 답변]
                 %s
 
-                이 답변에서 새로 파악된 것만 뽑고, 다음 질문을 사용자의 표현을 이어받아 자연스럽게 이어가세요.
-                - <b>소재를 넓히지 마세요.</b> 지금까지 나온 사건 <b>최대 2개</b> 안에서만 더 깊이 묻습니다.
-                  "그 밖에 기억에 남는 일은?" 처럼 새로운 일상 소재로 넘어가지 않습니다.
-                - 아직 사건이 하나도 안 나왔으면 오늘 무슨 일이 있었는지부터 묻고, 사건이 2개가 되면
-                  그 둘 안에서만 이어갑니다.
-                - 사용자가 그 일정이 없었다거나 취소·안 했다고 하면(예: "아니요", "안 했어요", "취소됐어요"),
-                  이것은 얼버무림이 아닙니다. vague/offTopic 을 false 로 두고, 그 일정은 접어둔 채
-                  "그럼 오늘 하루 중 기억에 남는 일은 무엇이었는지"로 옮겨 물어보세요 — 이 경우는
-                  아직 다룰 사건이 없는 것이라 소재를 넓히는 것이 아닙니다.
-                - event: 이 답변에서 파악한 핵심(중심) 사건. 새로 없으면 null.
-                - secondaryEvents: 곁가지로 언급된 다른 사건들(없으면 빈 목록).
-                - meaning: 무엇이 마음에 남았는지. 없으면 null.
-                - emotionPresent: 이 답변에 감정 표현이 담겼으면 true.
-                - question: 다음 질문(공감 1문장 + 질문 1문장). 다루는 사건을 더 깊이 들어가는 질문입니다
-                  (그때의 상황·마음·남은 생각). noMoreToAsk 가 true 면 마무리 톤으로 부드럽게 정리합니다.
-                - noMoreToAsk: 다루는 사건(들)에 대해 <b>더 물어볼 것이 없으면</b> true. 상황·마음·의미를
-                  충분히 들었고 새로 팔 것이 없을 때입니다. 억지로 대화를 늘리지 마세요. 이 값이 true 면
-                  서버가 대화를 마무리합니다(최소 %d턴은 채웁니다).
-                - empathy: 방금 답변에 대한 짧은 공감 한 문장(질문·물음표 없이). 대화를 마무리로 넘길 때
-                  이 문장을 먼저 보여줍니다. 매 턴 반드시 채우세요.
-                - safetyLevel: none|caution|risk|imminent. offTopic/vague: 질문과 무관하거나 얼버무렸으면 true.
-                """
-                .formatted(state.diaryTurn(), RetrospectState.DIARY_MIN_TURNS,
-                        RetrospectState.DIARY_MAX_TURNS, orNone(state.event()),
-                        state.emotionSeen() ? "예" : "아니요", orNone(state.meaning()),
-                        recentHistory(state), userText.strip(),
-                        RetrospectState.DIARY_MIN_TURNS);
+                이 답변에서 새로 파악된 것만 뽑고, 다음 질문을 사용자의 표현을 이어받아 만드세요.
+                - 짧고 사실 위주이며 감정이 없는 답이면 첫 답변부터 바로 다른 소재로 전환하세요.
+                - 감정이 드러나거나 자세히 이야기하면 한 번 더 탐색하세요. 감정과 의미를 모두 모았거나
+                  같은 소재에서 2턴 동안 감정이 나오지 않으면 다른 소재로 전환하세요.
+                - 사건은 최대 2개입니다. 이미 두 사건이 있으면 새 사건을 추가하지 말고 다른 기존 사건으로
+                  전환하세요. 가볍게 언급한 잡일을 억지로 깊이 탐색하지 마세요.
+                - 사용자가 일정이 없었다거나 취소·안 했다고 하면 vague/offTopic은 false로 두고,
+                  그 일정은 접어둔 채 오늘 하루 중 기억에 남는 다른 일로 옮겨 물어보세요.
+                - event: 방금 답변이 속한 사건. 같은 소재면 위 event 문자열을 정확히 재사용하고,
+                  실제 다른 소재로 바뀐 답변에서만 새로운 사건 문자열을 씁니다. 새 정보가 없으면 null.
+                  다음 질문으로 제안한 사건을 이번 답변의 event에 넣지 마세요.
+                - secondaryEvents: 이 답변에 언급된 다른 사건들(없으면 빈 목록).
+                - meaning: 방금 답변이 속한 사건의 의미만. 다른 사건에서 수집한 의미를 재사용하지 마세요.
+                - emotionPresent: 방금 답변이 속한 사건에 대한 감정 표현이 있을 때만 true.
+                - question: 짧은 공감 1문장 + 다음 질문 1문장.
+                - noMoreToAsk: 더 물어볼 것이 없으면 true. 종료 판단은 서버가 합니다.
+                - empathy: 방금 답변에 대한 짧은 공감 한 문장(질문 없이).
+                - safetyLevel: none|caution|risk|imminent. offTopic/vague: 무관하거나 얼버무렸으면 true.
+                """.formatted(state.diaryTurn(), RetrospectState.DIARY_MAX_TURNS,
+                orNone(state.event()), state.topicTurn(), state.topicEmotionSeen() ? "예" : "아니요",
+                state.topicMeaningSeen() ? "예" : "아니요",
+                state.shouldSwitchTopic() ? "현재 소재를 더 탐색하지 말고 다른 소재로 전환하세요"
+                        : "이번 답변까지 반영해 소재 전환 여부를 판단하세요",
+                recentHistory(state), userText.strip());
     }
 
     /**
@@ -357,16 +354,16 @@ public class PromptFactory {
                 """.formatted(state.cardSituation(), emotionLabels(state), needsWithMeaning(state));
     }
 
-    /** 일기 생성(G4) — 사용자가 말한 사실·감정을 살 붙여 1인칭으로, 최소 5문장 이상. */
+    /** 일기 생성(G4) — 대화에서 비중 있게 다룬 사건·감정 중심, 전체 6문장 내외. */
     public String diaryPrompt(RetrospectState state) {
         return """
                 아래 대화를 바탕으로, 사용자가 오늘 직접 쓴 것처럼 자연스러운 1인칭 일기를 써 주세요.
-                - 분량: <b>최소 5문장 이상</b>. 짧게 요약하지 말고 넉넉하게 풀어 씁니다.
-                - 대화에서 나온 장면·행동·생각·감정에 <b>살을 덧붙여</b> 구체적으로 묘사합니다(그때의 상황,
-                  마음의 결, 사소한 감각까지). 딱딱한 요약이 아니라 실제 일기처럼 흐르게 씁니다.
-                - 다만 <b>대화에 없던 새로운 사실(사건·인물·장소)은 지어내지 마세요.</b> 있는 재료를 풍부하게
-                  풀어내는 것이지, 없던 일을 만들지 않습니다. 지나친 교훈·평가·진단도 붙이지 않습니다.
-                - 여러 사건이 나오면 핵심 사건과 핵심 감정을 중심으로 하되, 곁가지도 자연스럽게 녹입니다.
+                - 분량: 전체 6문장 내외.
+                - 비중 있게 다룬 사건과 감정을 중심으로 자연스럽게 작성합니다.
+                - 가볍게 언급한 잡일·곁가지를 분량 채우기 위해 포함하지 마세요.
+                - 6문장을 맞추려고 대화에 없는 사실·감정·감각을 덧붙이지 마세요.
+                  재료가 부족하면 있는 내용만 작성합니다. 지나친 교훈·평가·진단도 붙이지 않습니다.
+                - AI가 힌트로 제시한 일정은 사용자가 실제 경험했다고 말한 경우에만 포함하세요.
                 - diary: 일기 본문
                 - reframedDiary: 비워도 됩니다(null).
 

@@ -273,4 +273,30 @@ class PromptFactoryTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("TWO_STAGE");
     }
+
+    @Test
+    void diaryPromptUsesSixSentencesWithoutPaddingMinorEvents() {
+        assertThat(prompts.diaryPrompt(new RetrospectState("diary")))
+                .contains("전체 6문장 내외", "가볍게 언급한 잡일", "대화에 없는 사실·감정")
+                .doesNotContain("최소 5문장", "넉넉하게");
+    }
+
+    @Test
+    void serverSwitchInstructionUsesOnlyCurrentTopicProgress() {
+        var state = new RetrospectState("progress");
+        state.event("면접");
+        state.bumpDiaryTurn();
+        state.bumpDiaryTurn();
+        assertThat(prompts.diaryTurnPrompt(state, "끝났어요"))
+                .contains("현재 소재를 더 탐색하지 말고 다른 소재로 전환하세요", "첫 답변부터 바로 다른 소재");
+        state.markEmotionSeen();
+        state.meaning("마음에 남았다");
+        assertThat(prompts.diaryTurnPrompt(state, "생각이 나요"))
+                .contains("현재 소재를 더 탐색하지 말고 다른 소재로 전환하세요");
+        state.event("저녁");
+        assertThat(prompts.diaryTurnPrompt(state, "밥 먹었어요"))
+                .contains("이 소재의 감정 수집: 아니요", "이 소재의 의미 수집: 아니요")
+                .doesNotContain("서버 진행 지시: 현재 소재를 더 탐색하지 말고");
+    }
+
 }

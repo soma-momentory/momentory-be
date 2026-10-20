@@ -190,6 +190,10 @@ class RetrospectActionCardPersistenceIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         phase = JsonPath.read(last.getResponse().getContentAsString(), "$.phase");
+        assertThat(phase).isEqualTo("await_branch"); // 추출 사건 선택
+        last = mockMvc.perform(message(user, sessionId, "{\"optionIds\":[\"1\"]}"))
+                .andExpect(status().isOk()).andReturn();
+        phase = JsonPath.read(last.getResponse().getContentAsString(), "$.phase");
         for (int i = 0; i < 5 && "emotion_exploration".equals(phase); i++) {
             last = mockMvc.perform(message(user, sessionId, "{\"optionIds\":[\"1\"]}"))
                     .andExpect(status().isOk())

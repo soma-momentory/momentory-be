@@ -44,6 +44,13 @@ public class RetrospectState {
     /** 그 일정에 사용자가 홈에서 단 감정 — 대화 소재로만 쓴다(없으면 null). */
     private Emotion scheduleEmotion;
     private String interest;
+    /** 구버전은 직접 질문으로 복원한다. */
+    private boolean scheduleHint;
+    private int topicTurn;
+    private boolean topicEmotionSeen;
+    private boolean topicMeaningSeen;
+    private Integer selectedEventId;
+    private boolean awaitingEventSelection;
     /** 온보딩 '평소 쉬는 방법' 라벨 — 작은 행동 제안에 선호를 반영한다(없으면 빈 목록). */
     private List<String> restMethods = List.of();
 
@@ -232,6 +239,7 @@ public class RetrospectState {
 
     public void bumpDiaryTurn() {
         diaryTurn++;
+        topicTurn++;
     }
 
     public String event() {
@@ -240,8 +248,72 @@ public class RetrospectState {
 
     public void event(String event) {
         if (event != null && !event.isBlank()) {
-            this.event = event.strip();
+            String next = event.strip();
+            if (!next.equals(this.event)) {
+                if (this.event != null && !secondaryEvents.contains(this.event)) {
+                    secondaryEvents.add(this.event);
+                }
+                secondaryEvents.remove(next);
+                this.topicTurn = 0;
+                this.topicEmotionSeen = false;
+                this.topicMeaningSeen = false;
+            }
+            this.event = next;
         }
+    }
+
+    public boolean scheduleHint() {
+        return scheduleHint;
+    }
+
+    public void scheduleHint(boolean hint) {
+        this.scheduleHint = hint;
+    }
+
+    public int topicTurn() {
+        return topicTurn;
+    }
+
+    public boolean topicEmotionSeen() {
+        return topicEmotionSeen;
+    }
+
+    public boolean topicMeaningSeen() {
+        return topicMeaningSeen;
+    }
+
+    public boolean shouldSwitchTopic() {
+        return (topicEmotionSeen && topicMeaningSeen) || (topicTurn >= 2 && !topicEmotionSeen);
+    }
+
+    public boolean awaitingEventSelection() {
+        return awaitingEventSelection;
+    }
+
+    public void awaitEventSelection() {
+        this.awaitingEventSelection = true;
+    }
+
+    public Integer selectedEventId() {
+        return selectedEventId;
+    }
+
+    public Optional<ExtractedEvent> selectedEvent() {
+        return events.stream().filter(e -> Integer.valueOf(e.id()).equals(selectedEventId)).findFirst();
+    }
+
+    public boolean selectEvent(int id) {
+        if (events.stream().noneMatch(e -> e.id() == id)) {
+            return false;
+        }
+        this.selectedEventId = id;
+        this.awaitingEventSelection = false;
+        return true;
+    }
+
+    public List<ExtractedEmotion> selectedEventEmotions() {
+        return emotions.stream().filter(e -> selectedEventId != null
+                && selectedEventId.equals(e.eventId())).toList();
     }
 
     public List<String> secondaryEvents() {
@@ -307,7 +379,7 @@ public class RetrospectState {
      * 재료로 들어가 행동이 물 한 잔·심호흡 같은 일반론으로 흘렀다(2026-10 바람카드 점검).
      */
     public String cardSituation() {
-        return mainEvent().map(e -> e.summary() != null ? e.summary() : e.topicLabel())
+        return selectedEvent().or(this::mainEvent).map(e -> e.summary() != null ? e.summary() : e.topicLabel())
                 .orElseGet(() -> event != null ? event
                         : hasSchedule() ? schedule() + "에서 있었던 일"
                         : "오늘 하루 있었던 일");
@@ -348,6 +420,7 @@ public class RetrospectState {
 
     public void markEmotionSeen() {
         this.emotionSeen = true;
+        this.topicEmotionSeen = true;
     }
 
     public String meaning() {
@@ -357,6 +430,7 @@ public class RetrospectState {
     public void meaning(String meaning) {
         if (meaning != null && !meaning.isBlank()) {
             this.meaning = meaning.strip();
+            this.topicMeaningSeen = true;
         }
     }
 
@@ -520,7 +594,8 @@ public class RetrospectState {
                 new ArrayList<>(messages),
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
-                List.copyOf(lastOptions), messageSeq);
+                List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
+                topicMeaningSeen, selectedEventId, awaitingEventSelection);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -570,6 +645,16 @@ public class RetrospectState {
         }
         state.lastOptions = s.lastOptions() == null ? List.of() : List.copyOf(s.lastOptions());
         state.messageSeq = s.messageSeq();
+        state.scheduleHint = Boolean.TRUE.equals(s.scheduleHint());
+        state.topicTurn = s.topicTurn() == null ? 0 : s.topicTurn();
+        state.topicEmotionSeen = Boolean.TRUE.equals(s.topicEmotionSeen());
+        state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
+        state.selectedEventId = s.selectedEventId();
+        state.awaitingEventSelection = Boolean.TRUE.equals(s.awaitingEventSelection());
+        // 이미 감정 탐색 중이던 구버전 세션은 기존 대표 사건을 유지한다.
+        if (state.explorationEntered && state.selectedEventId == null) {
+            state.mainEvent().ifPresent(e -> state.selectedEventId = e.id());
+        }
         return state;
     }
 }

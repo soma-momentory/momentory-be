@@ -145,4 +145,27 @@ class RetrospectStateTest {
 
         assertThat(new RetrospectState("s3").cardSituation()).isEqualTo("오늘 하루 있었던 일");
     }
+
+    @Test
+    void topicProgressResetsWithoutBorrowingEarlierEmotionOrMeaning() {
+        var state = new RetrospectState("topic");
+        state.event("면접");
+        state.markEmotionSeen();
+        state.meaning("인정받고 싶었다");
+        state.bumpDiaryTurn();
+        assertThat(state.shouldSwitchTopic()).isTrue();
+        state.event("친구와 저녁");
+        assertThat(state.topicTurn()).isZero();
+        assertThat(state.topicEmotionSeen()).isFalse();
+        assertThat(state.topicMeaningSeen()).isFalse();
+        assertThat(state.shouldSwitchTopic()).isFalse();
+        state.bumpDiaryTurn();
+        state.event("친구와 저녁");
+        assertThat(state.topicTurn()).isEqualTo(1);
+        state.bumpDiaryTurn();
+        assertThat(state.shouldSwitchTopic()).isTrue();
+        assertThat(state.diaryTurn()).isEqualTo(3);
+        assertThat(state.knownEventCount()).isEqualTo(2);
+    }
+
 }

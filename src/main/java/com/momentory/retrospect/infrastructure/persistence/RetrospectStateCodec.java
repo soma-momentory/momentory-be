@@ -26,6 +26,7 @@ public class RetrospectStateCodec {
 
     public RetrospectState deserialize(String json) {
         RetrospectStateSnapshot snapshot = objectMapper.readValue(json, RetrospectStateSnapshot.class);
+        // 추가된 nullable 진행 필드의 구버전 기본값과 탐색 사건 복원은 도메인이 처리한다.
         return RetrospectState.fromSnapshot(snapshot);
     }
 }
