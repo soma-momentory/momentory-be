@@ -27,7 +27,14 @@ public class UserMeService {
         UserMeResult.Profile profile = userProfileRepository.findById(userId)
                 .map(UserMeService::toProfile)
                 .orElse(null);
-        return new UserMeResult(user.getId(), user.getRole(), user.requiresOnboarding(), profile);
+        return new UserMeResult(
+                user.getId(),
+                user.getRole(),
+                user.requiresOnboarding(),
+                user.getOnboardingVersion(),
+                User.LATEST_ONBOARDING_VERSION,
+                profile
+        );
     }
 
     private static UserMeResult.Profile toProfile(UserProfile profile) {

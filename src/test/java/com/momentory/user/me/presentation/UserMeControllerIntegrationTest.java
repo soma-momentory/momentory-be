@@ -101,7 +101,9 @@ class UserMeControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(user.getId()))
                 .andExpect(jsonPath("$.role").value("USER"))
-                .andExpect(jsonPath("$.onboardingRequired").value(true));
+                .andExpect(jsonPath("$.onboardingRequired").value(true))
+                .andExpect(jsonPath("$.onboardingVersion").value(0))
+                .andExpect(jsonPath("$.latestOnboardingVersion").value(2));
     }
 
     @Test
@@ -112,7 +114,9 @@ class UserMeControllerIntegrationTest {
 
         mockMvc.perform(me(accessTokenIssuer.issueAccessToken(user.getId(), user.getRole())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.onboardingRequired").value(false));
+                .andExpect(jsonPath("$.onboardingRequired").value(false))
+                .andExpect(jsonPath("$.onboardingVersion").value(1))
+                .andExpect(jsonPath("$.latestOnboardingVersion").value(2));
     }
 
     @Test
