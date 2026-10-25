@@ -166,12 +166,27 @@ public class UserProfile extends BaseTimeEntity {
             boolean calendarIntegrationEnabled,
             Boolean notificationEnabled
     ) {
-        this.nickname = requireNickname(nickname);
-        this.age = requireValidAge(age);
-        this.gender = Objects.requireNonNull(gender);
+        updateBasicInfo(nickname, age, gender, reflectionTime, calendarIntegrationEnabled, notificationEnabled);
         replaceInterestAreas(interestAreas);
         this.otherInterestDetail = requireOtherDetail(interestAreas.contains(InterestArea.OTHER), otherInterestDetail, "interest area");
         updateRestMethods(restMethods, otherRestMethodDetail);
+    }
+
+    /**
+     * 새 온보딩이 묻는 항목만 고친다. 관심사 · 쉬는 방법은 새 온보딩이 묻지 않으므로
+     * 다시 온보딩하는 기존 사용자의 값을 그대로 둔다.
+     */
+    public void updateBasicInfo(
+            String nickname,
+            Integer age,
+            Gender gender,
+            LocalTime reflectionTime,
+            boolean calendarIntegrationEnabled,
+            Boolean notificationEnabled
+    ) {
+        this.nickname = requireNickname(nickname);
+        this.age = requireValidAge(age);
+        this.gender = Objects.requireNonNull(gender);
         this.reflectionTime = Objects.requireNonNull(reflectionTime);
         this.timeZone = DEFAULT_TIME_ZONE;
         this.calendarIntegrationEnabled = calendarIntegrationEnabled;
@@ -195,10 +210,9 @@ public class UserProfile extends BaseTimeEntity {
         return age;
     }
 
+    // 새 온보딩은 관심사를 묻지 않아 새 가입자는 비어 있다. 비어 있어도 마이페이지 저장이 되게 한다.
     private void replaceInterestAreas(Set<InterestArea> interestAreas) {
-        if (interestAreas == null || interestAreas.isEmpty()) {
-            throw new IllegalArgumentException("At least one interest area is required.");
-        }
+        Objects.requireNonNull(interestAreas);
         this.interestAreas.clear();
         this.interestAreas.addAll(interestAreas);
     }
