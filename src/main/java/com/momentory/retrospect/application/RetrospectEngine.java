@@ -61,6 +61,8 @@ public class RetrospectEngine {
     static final String WRITE_OWN = "직접 적기";
     static final String NOT_SURE = "아직 잘 모르겠어요";
     static final String HERE_END = "오늘은 여기까지 할래요";
+    static final String RETRY_ACTIONS = "다시 불러오기";
+    static final String RETRY_ACTIONS_ID = "retry_actions";
     /** 단답 체크인 선지 — 이대로 일기를 보러 갈지 / 조금 더 이야기할지. */
     static final String GO_DIARY = "일기 보러 갈래요";
     static final String KEEP_TALKING = "조금 더 이야기할래요";
@@ -531,22 +533,37 @@ public class RetrospectEngine {
 
     /** 3턴 — 작은 행동 질문 + 후보. */
     private ReplyDto presentSmallAction(RetrospectState state) {
-        List<String> actions = explorationAssistant.suggestActions(state);
+        var suggestions = explorationAssistant.suggestActions(state);
         List<Choice> options = new ArrayList<>();
-        for (String a : actions.stream().limit(3).toList()) {
+        for (String a : suggestions.actions().stream().limit(3).toList()) {
             options.add(Choice.of(a));
+        }
+        if (suggestions.failed()) {
+            options.add(Choice.of(RETRY_ACTIONS));
         }
         state.lastOptions(options);
         // 감정 확인 질문처럼 사건 이름을 밝힌다 — 후보도 그 사건을 가리키므로 질문과 후보가 맞물린다.
         String text = state.selectedEvent()
                 .map(e -> smallActionQuestion(e.summary()))
                 .orElse("이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?");
+        if (suggestions.failed()) {
+            text = "행동 추천을 불러오지 못했어요.\n다시 불러오거나, 직접 떠오르는 작은 행동을 적어볼까요?";
+        } else if (suggestions.actions().isEmpty()) {
+            text = state.selectedEvent().map(e -> e.summary() + Josa.pick(e.summary(), "을", "를")
+                    + " 떠올리며, 이 마음을 위해 직접 떠오르는 작은 행동을 적어볼까요?")
+                    .orElse("이 마음을 위해 직접 떠오르는 작은 행동을 적어볼까요?");
+        }
         state.addAssistantMessage(text + "\n" + optionLines(options));
         return ReplyDto.choices(text, Phase.EMOTION_EXPLORATION, toOptionDtos(options),
                 state.safety().level());
     }
 
     private ReplyDto handleSmallAction(RetrospectState state, TurnCommand command) {
+        // 응답 유실 뒤 같은 요청이 와도 현재 행동 1번을 고른 것으로 해석하지 않는다.
+        if (!command.hasContent() && command.optionIds().equals(List.of(RETRY_ACTIONS_ID))) {
+            state.addUserMessage(RETRY_ACTIONS);
+            return presentSmallAction(state);
+        }
         if (picked(state, command, HERE_END)) {
             return finishComplete(state); // 행동 미정 허용 — 실패로 처리하지 않는다.
         }
@@ -792,7 +809,8 @@ public class RetrospectEngine {
         List<ReplyDto.OptionDto> out = new ArrayList<>();
         for (int i = 0; i < options.size(); i++) {
             Choice c = options.get(i);
-            out.add(new ReplyDto.OptionDto(String.valueOf(i + 1), c.label(), c.description(), null,
+            String id = RETRY_ACTIONS.equals(c.label()) ? RETRY_ACTIONS_ID : String.valueOf(i + 1);
+            out.add(new ReplyDto.OptionDto(id, c.label(), c.description(), null,
                     c.input() ? Boolean.TRUE : null));
         }
         return out;

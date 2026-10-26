@@ -18,8 +18,9 @@
    화면에는 AI가 쓴 문구 대신 스냅샷의 승인된 제목을 그대로 보낸다.
 6. 사용자가 고른 제목 또는 직접 입력한 행동을 기존 바람 카드에 저장한다.
 
-모델이 아무것도 고르지 않거나 호출에 실패하면 추천 후보는 빈 목록이다. 일반적인 메모·휴식 행동으로
-대체하지 않는다. 기존 입력창에서 직접 적거나, 행동을 정하지 않고 회고를 마칠 수 있다.
+모델이 정상 응답으로 아무것도 고르지 않으면 추천 후보는 빈 목록이며, 직접 작은 행동을 적도록 묻는다.
+호출 실패와 잘못된 응답은 별도로 안내하고 수동으로 다시 불러올 수 있다. 일반적인 메모·휴식 행동으로
+대체하지 않는다. 두 경우 모두 기존 입력창에서 직접 적거나, 행동을 정하지 않고 회고를 마칠 수 있다.
 직접 입력한 **사용자 행동**은 추천 후보 목록으로 제한하지 않는다.
 
 욕구를 직접 입력할 때 고정 욕구 단어와 정확히 일치하면(앞뒤 공백 제외) 같은 연결표를 사용한다.
@@ -57,7 +58,7 @@
 승인 제목 유지, Gemini 응답 스키마, 실패 시 직접 입력·행동 미정 종료를 검증한다.
 실제 Gemini의 상황 적합성은 모의 응답 테스트와 별도로 확인해야 한다.
 
-## 이번 변경의 검증 기록 — 2026-10-26
+## 노션 목록 도입 검증 기록 — 2026-10-26
 
 - 결과: **PASS WITH WARNINGS**. 핵심 요구사항과 실행한 검사는 통과했다.
 - 위의 대상 테스트 명령: 78개 중 77개 통과, challenge 자료가 필요한 기존 1개 건너뜀.
@@ -71,7 +72,7 @@
   기존 계약·카드 저장 통합 테스트는 Docker 환경에서 실행되지 않아 런타임 검증을 완료했다고 주장하지 않는다.
 - 실제 Gemini의 새 응답 형식 수용과 상황별 선정 품질은 라이브 호출로 확인하지 않았다.
 - 기존 `eval/` 파일 39개의 해시가 작업 전과 같음을 확인했다.
-- 변경은 로컬 작업 트리에 있으며 커밋 검토 가능 상태다. 이번 구현을 커밋·푸시하거나 배포하지 않았다.
+- 목록 도입은 `40556c0`에 별도 커밋했다. 원격 푸시·배포는 수행하지 않았다.
 
 ### 추가 파일 7개
 
@@ -99,3 +100,47 @@
 - `src/test/java/com/momentory/retrospect/presentation/RetrospectApiIntegrationTest.java`
 
 삭제 파일 없음.
+
+## 추천 실패와 수동 재시도 — 2026-10-26
+
+- 정상 응답의 빈 `actionIds`: 재시도 선택지 없이 직접 입력으로 이어진다.
+- 호출 실패, 누락된 `actionIds`, 반환 ID가 전부 허용 목록 밖인 응답: `ActionSuggestions.failure()`로 구분한다.
+- 실패 안내: “행동 추천을 불러오지 못했어요. 다시 불러오거나, 직접 떠오르는 작은 행동을 적어볼까요?”
+- 외부 API 필드를 추가하지 않고 기존 `options`에 `다시 불러오기` 선택지를 보낸다.
+  클라이언트는 `emotion_exploration`에서 이 선택지가 유일할 때 직접 누르는 보조 버튼으로 표시한다.
+  요청은 기존 `optionIds`에 고정 ID `retry_actions`를 사용한다. 응답이 유실되어 서버의 선택지가
+  이미 실제 행동으로 바뀌어도, 같은 재시도 요청을 행동 1번 선택으로 오해하지 않는다.
+- 재시도는 사용자가 버튼을 누를 때만 한다. 같은 사건·감정·욕구로 다시 선정하고 탐색 턴을 소모하지 않는다.
+  `다시 불러오기`가 작은 행동으로 저장되거나, 그 선택만으로 회고가 끝나지 않는다.
+- 실패 선택지는 기존 세션 JSON에 보존되므로 다시 불러온 세션에서도 재시도할 수 있다.
+- 프론트엔드는 재시도 응답 후에도 작성 중인 입력을 유지한다. 반복 실패·통신 오류에서도 대화를 보존한다.
+  요청 중 버튼을 비활성화하고 즉시 적용되는 요청 잠금으로 중복 요청을 막는다.
+- 재시도 대신 직접 입력한 행동을 보내는 흐름과 행동 미정 종료도 유지한다.
+
+### 재시도 변경 파일
+
+- 추가: `src/main/java/com/momentory/retrospect/domain/assistant/ActionSuggestions.java`
+- 수정: `RetrospectEngine.java`, `ReplyDto.java`, `TurnCommand.java`, `ExplorationAssistant.java`, `GeminiExplorationAssistant.java`,
+  `FakeAssistant.java`, `RetrospectEngineTest.java`, `GeminiExplorationAssistantTest.java`,
+  `RetrospectApiIntegrationTest.java`, `RetrospectActionCardPersistenceIntegrationTest.java`, 이 문서.
+- 프론트엔드 수정: `momentory-fe/app/retro/talk.tsx`, `momentory-fe/app/retro/__tests__/talk.test.tsx`,
+  `momentory-fe/src/features/retro/data/retroApi.ts`, `momentory-fe/src/features/retro/__tests__/retroApi.test.ts`.
+- 삭제 파일 없음. 외부 API 경로·필드·DB 스키마·인증 정책 변경 없음.
+
+### 재시도 검증
+
+- `./gradlew test --tests '*GeminiExplorationAssistantTest' --tests '*RetrospectEngineTest' --tests '*RetrospectStateCodecTest' --no-daemon`: 통과.
+- `./gradlew clean check --no-daemon`: **BUILD SUCCESSFUL**, 총 576개, 통과 321개, 실패·오류 0개, 건너뜀 255개.
+- 최초 화면 대상 테스트 29개 통과 후, 응답 유실 회귀를 추가한 화면·API 대상 테스트 38개 통과.
+  명령: `npm test -- --runInBand app/retro/__tests__/talk.test.tsx src/features/retro/__tests__/retroApi.test.ts`.
+- 최종 `npm test -- --runInBand --json --outputFile /tmp/momentory-retry-final-tests.json`:
+  127개 스위트·1,634개 테스트 모두 통과.
+- 변경한 프론트엔드 네 파일에 대한 ESLint와 Prettier 검사 통과. 양쪽 저장소 `git diff --check` 통과.
+- `npm run typecheck`: 기존 경로 타입·누락된 `@playwright/test` 관련 오류 21개로 실패.
+  변경 전 HEAD 내용을 TypeScript 컴파일러의 가상 파일로 읽어 비교한 결과, 변경 전 21개·변경 후 21개이며
+  이번 변경이 추가한 타입 오류는 0개였다. 관련 없는 화면·의존성은 수정하지 않았다.
+- 실제 Gemini 호출, Docker 통합 검사, 실제 기기 화면 검증은 수행하지 않았다.
+- 독립 리뷰에서 통신 응답 유실 후 위치 기반 재시도가 보지 못한 행동을 저장할 수 있다는 Major 1건을
+  확인했다. 고정 `retry_actions` ID로 수정하고 서버 JSON 복원·반복 재시도 및 프론트엔드 전송 회귀를
+  추가했다. 2차 리뷰에서 해결을 확인했으며 추가 Critical/Major/Minor 지적과 반려한 지적은 없다.
+- 최종 결과는 **PASS WITH WARNINGS**다. 기존 타입 검사 오류와 환경 의존 검증 제한을 함께 남긴다.

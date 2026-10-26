@@ -114,7 +114,8 @@ class RetrospectActionCardPersistenceIntegrationTest {
                 null));
         // 바람 후보는 엔진 폴백(고정 앞자리)에 맡기고, 작은 행동만 정해 카드 내용을 확인한다.
         when(explorationAssistant.suggestNeeds(any())).thenReturn(List.of());
-        when(explorationAssistant.suggestActions(any())).thenReturn(List.of(SMALL_ACTION));
+        when(explorationAssistant.suggestActions(any())).thenReturn(
+                com.momentory.retrospect.domain.assistant.ActionSuggestions.success(List.of(SMALL_ACTION)));
         when(diaryWriter.write(any())).thenReturn(Optional.of(new DiaryOutput("그냥 일기.", null)));
     }
 

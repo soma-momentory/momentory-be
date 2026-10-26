@@ -389,6 +389,7 @@ class RetrospectEngineTest {
         assertThat(actionTurn.done()).isFalse();
         assertThat(actionTurn.phase()).isEqualTo("emotion_exploration");
         assertThat(actionTurn.text()).contains("작은 행동");
+        assertThat(actionTurn.text()).contains("직접").doesNotContain("불러오지 못했어요");
 
         ReplyDto done = engine.handle(state, TurnCommand.text("동기에게 사진 보내기"));
         assertThat(done.wishCard().smallAction()).isEqualTo("동기에게 사진 보내기");
@@ -418,6 +419,94 @@ class RetrospectEngineTest {
         assertThat(state.needs()).extracting(com.momentory.retrospect.domain.Need::word)
                 .containsExactly("휴식");
         assertThat(state.desiredState()).isEqualTo("휴식");
+    }
+
+    @Test
+    void actionFailureOffersRetryWithoutEndingOrAdvancingExploration() {
+        fake.failActions = true;
+        ReplyDto failed = toSmallActionTurn();
+
+        assertThat(failed.text()).contains("행동 추천을 불러오지 못했어요", "직접");
+        assertThat(failed.options()).extracting(ReplyDto.OptionDto::label).containsExactly("다시 불러오기");
+        assertThat(failed.options()).extracting(ReplyDto.OptionDto::id).containsExactly("retry_actions");
+        assertThat(failed.done()).isFalse();
+        assertThat(failed.wishCard()).isNull();
+        assertThat(state.explorationTurn()).isEqualTo(2);
+        assertThat(fake.actionCalls).isEqualTo(1);
+
+        // 실패한 턴은 기존 세션 JSON만으로 다시 불러와도 재시도할 수 있어야 한다.
+        var codec = new com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec(
+                tools.jackson.databind.json.JsonMapper.builder().build());
+        state = codec.deserialize(codec.serialize(state));
+        fake.failActions = false;
+        fake.actions.add("최근 고마웠던 일과 그 이유를 5분 동안 적기");
+        ReplyDto retried = engine.handle(state, TurnCommand.option("retry_actions"));
+
+        assertThat(retried.options()).extracting(ReplyDto.OptionDto::label)
+                .containsExactly("최근 고마웠던 일과 그 이유를 5분 동안 적기");
+        assertThat(retried.done()).isFalse();
+        assertThat(state.explorationTurn()).isEqualTo(2);
+        assertThat(fake.actionCalls).isEqualTo(2);
+
+        ReplyDto done = engine.handle(state, TurnCommand.option("1"));
+        assertThat(done.wishCard().smallAction()).isEqualTo("최근 고마웠던 일과 그 이유를 5분 동안 적기");
+        assertThat(done.wishCard().situation()).isEqualTo("카페에서 개발함");
+        assertThat(fake.actionCalls).isEqualTo(2);
+    }
+
+    @Test
+    void repeatedFailureRemainsRetryableWithoutSavingRetryAsAnAction() {
+        fake.failActions = true;
+        toSmallActionTurn();
+
+        ReplyDto failedAgain = engine.handle(state, TurnCommand.option("retry_actions"));
+
+        assertThat(failedAgain.options()).extracting(ReplyDto.OptionDto::label)
+                .containsExactly("다시 불러오기");
+        assertThat(failedAgain.done()).isFalse();
+        assertThat(state.smallAction()).isNull();
+        assertThat(state.explorationTurn()).isEqualTo(2);
+        assertThat(fake.actionCalls).isEqualTo(2);
+    }
+
+    @Test
+    void actionFailureStillAcceptsDirectInputWithoutAutomaticRetry() {
+        fake.failActions = true;
+        toSmallActionTurn();
+
+        ReplyDto done = engine.handle(state, TurnCommand.text("동기에게 사진 보내기"));
+
+        assertThat(done.done()).isTrue();
+        assertThat(done.wishCard().smallAction()).isEqualTo("동기에게 사진 보내기");
+        assertThat(fake.actionCalls).isEqualTo(1);
+    }
+
+    @Test
+    void lostSuccessfulRetryResponseCannotSelectAnUnseenActionOnRepeatedRetry() {
+        fake.failActions = true;
+        toSmallActionTurn();
+        fake.failActions = false;
+        fake.actions.add("지금 하고 싶은 활동 두 가지를 떠올리고 하나 골라 하기");
+
+        engine.handle(state, TurnCommand.option("retry_actions")); // 서버 성공, 응답은 클라이언트에 도달하지 않음
+        var codec = new com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec(
+                tools.jackson.databind.json.JsonMapper.builder().build());
+        state = codec.deserialize(codec.serialize(state));
+        ReplyDto repeated = engine.handle(state, TurnCommand.option("retry_actions"));
+
+        assertThat(repeated.done()).isFalse();
+        assertThat(repeated.wishCard()).isNull();
+        assertThat(state.smallAction()).isNull();
+        assertThat(state.explorationTurn()).isEqualTo(2);
+        assertThat(fake.actionCalls).isEqualTo(3);
+        assertThat(repeated.options()).extracting(ReplyDto.OptionDto::label)
+                .containsExactly("지금 하고 싶은 활동 두 가지를 떠올리고 하나 골라 하기");
+
+        fake.actions.clear(); // 다음 재시도가 정상 빈 결과여도 완료되거나 행동을 저장하면 안 됨
+        ReplyDto noMatch = engine.handle(state, TurnCommand.option("retry_actions"));
+        assertThat(noMatch.done()).isFalse();
+        assertThat(noMatch.options()).isEmpty();
+        assertThat(state.smallAction()).isNull();
     }
 
     // ── 위기 안내 → 이어서 얘기하기 ─────────────────────────────────────

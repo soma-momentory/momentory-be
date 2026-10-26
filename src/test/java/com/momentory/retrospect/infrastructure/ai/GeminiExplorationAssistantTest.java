@@ -33,7 +33,9 @@ class GeminiExplorationAssistantTest {
         when(llm.generate(any(), eq(GeminiActions.class)))
                 .thenReturn(Optional.of(new GeminiActions(List.of("A03", "A03", "A56", "A99", "A02"))));
 
-        assertThat(assistant.suggestActions(state)).containsExactly(
+        var suggestions = assistant.suggestActions(state);
+        assertThat(suggestions.failed()).isFalse();
+        assertThat(suggestions.actions()).containsExactly(
                 "20분 동안 마음이 편한 장소 구체적으로(풍경, 소리, 촉감) 상상하기",
                 "20분 동안 근육에 힘을 줬다가 천천히 풀기");
 
@@ -47,22 +49,24 @@ class GeminiExplorationAssistantTest {
     @Test
     void failureOrNoMatchingCandidateDoesNotReturnGenericActions() {
         when(llm.generate(any(), eq(GeminiActions.class))).thenReturn(Optional.empty());
-        assertThat(assistant.suggestActions(state("휴식"))).isEmpty();
+        assertThat(assistant.suggestActions(state("휴식")).failed()).isTrue();
 
         when(llm.generate(any(), eq(GeminiActions.class)))
                 .thenReturn(Optional.of(new GeminiActions(List.of("A33", "따뜻한 물 마시기"))));
-        assertThat(assistant.suggestActions(state("휴식"))).isEmpty();
+        assertThat(assistant.suggestActions(state("휴식")).failed()).isTrue();
     }
 
     @Test
     void modelMayReturnNoActionsInsteadOfFillingThreeSlots() {
         when(llm.generate(any(), eq(GeminiActions.class)))
                 .thenReturn(Optional.of(new GeminiActions(List.of())));
-        assertThat(assistant.suggestActions(state("정의"))).isEmpty();
+        var suggestions = assistant.suggestActions(state("정의"));
+        assertThat(suggestions.failed()).isFalse();
+        assertThat(suggestions.actions()).isEmpty();
 
         when(llm.generate(any(), eq(GeminiActions.class)))
                 .thenReturn(Optional.of(new GeminiActions(null)));
-        assertThat(assistant.suggestActions(state("정의"))).isEmpty();
+        assertThat(assistant.suggestActions(state("정의")).failed()).isTrue();
     }
 
     @Test
@@ -71,7 +75,8 @@ class GeminiExplorationAssistantTest {
         state.desiredState("눈치 보지 않고 지내고 싶어요");
         state.restMethods(List.of("음악 듣기"));
 
-        assertThat(assistant.suggestActions(state)).isEmpty();
+        assertThat(assistant.suggestActions(state).failed()).isFalse();
+        assertThat(assistant.suggestActions(state).actions()).isEmpty();
         verifyNoInteractions(llm);
     }
 
