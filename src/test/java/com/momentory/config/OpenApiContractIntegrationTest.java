@@ -161,6 +161,13 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/users/me/onboarding", "put", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/users/me/onboarding", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
+        assertResponseSchema(apiDocs, "/api/v2/users/me/onboarding", "put", "200", "CompleteOnboardingV2Response");
+        assertOnboardingV2Properties(apiDocs);
+        assertErrorExample(apiDocs, "/api/v2/users/me/onboarding", "put", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "nickname은 필수입니다.");
+        assertErrorExample(apiDocs, "/api/v2/users/me/onboarding", "put", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v2/users/me/onboarding", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertOperationTag(apiDocs, "/api/v2/users/me/onboarding", "put", "Users");
+
         assertResponseSchema(apiDocs, "/api/v1/onboarding/options", "get", "200", "OnboardingOptionsResponse");
         assertErrorExample(apiDocs, "/api/v1/onboarding/options", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
@@ -508,6 +515,21 @@ class OpenApiContractIntegrationTest {
         assertThat(properties.has("otherRestMethodDetailValid")).isFalse();
     }
 
+    private void assertOnboardingV2Properties(JsonNode apiDocs) {
+        JsonNode request = apiDocs.at("/components/schemas/CompleteOnboardingV2Request/properties");
+        assertThat(request.has("moodChange")).isTrue();
+        assertThat(request.has("knowWhy")).isTrue();
+        assertThat(request.has("dayEnd")).isTrue();
+        assertThat(request.has("diaryHistory")).isTrue();
+        assertThat(request.has("goals")).isTrue();
+        assertThat(request.has("interestAreas")).isFalse();
+        assertThat(request.has("restMethods")).isFalse();
+        assertThat(apiDocs.at("/components/schemas/CompleteOnboardingV2Response/properties").has("onboardingVersion")).isTrue();
+        JsonNode userMe = apiDocs.at("/components/schemas/UserMeResponse/properties");
+        assertThat(userMe.has("onboardingVersion")).isTrue();
+        assertThat(userMe.has("latestOnboardingVersion")).isTrue();
+    }
+
     private JsonNode response(JsonNode apiDocs, String path, String method, String responseCode) {
         JsonNode response = operationResponses(apiDocs, path, method).path(responseCode);
         assertThat(response.isObject()).isTrue();
@@ -532,6 +554,7 @@ class OpenApiContractIntegrationTest {
         USER_ME("/api/v1/users/me", "get"),
         USER_WITHDRAWAL("/api/v1/users/me", "delete"),
         ONBOARDING_COMPLETE("/api/v1/users/me/onboarding", "put"),
+        ONBOARDING_V2_COMPLETE("/api/v2/users/me/onboarding", "put"),
         ONBOARDING_OPTIONS("/api/v1/onboarding/options", "get"),
         SCHEDULES_GET("/api/v1/schedules", "get"),
         SCHEDULES_PERIOD("/api/v1/schedules/period", "get"),

@@ -136,6 +136,18 @@ class UserOnboardingControllerIntegrationTest {
     }
 
     @Test
+    void allowsEmptyInterestAreasForUsersFromNewOnboarding() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(onboarding(user, requestBody("모리", "25", "FEMALE", "[]", "21:30", true)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.onboardingRequired").value(false));
+
+        assertThat(findProfileWithInterestAreas(user.getId()).getInterestAreas()).isEmpty();
+        assertThat(userRepository.findById(user.getId()).orElseThrow().getOnboardingVersion()).isEqualTo(1);
+    }
+
+    @Test
     void savesOtherDetailsRestMethodsAndNotificationPreference() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
 
@@ -242,9 +254,6 @@ class UserOnboardingControllerIntegrationTest {
         mockMvc.perform(onboarding(user, """
                 {"nickname":"모리","age":25,"gender":null,"interestAreas":["CAREER"],"reflectionTime":"21:30","calendarIntegrationEnabled":true}
                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
-        mockMvc.perform(onboarding(user, requestBody("모리", "25", "FEMALE", "[]", "21:30", true)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
         mockMvc.perform(onboarding(user, """

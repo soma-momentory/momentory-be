@@ -15,7 +15,10 @@ import java.util.Set;
 public record UserMeResponse(
         @Schema(description = "사용자 ID", example = "1") Long userId,
         @Schema(description = "현재 사용자 역할", example = "USER") String role,
-        @Schema(description = "온보딩 필요 여부", example = "true") boolean onboardingRequired,
+        @Schema(description = "온보딩 필요 여부. 한 번도 안 했을 때만 true 다", example = "true") boolean onboardingRequired,
+        @Schema(description = "사용자가 마친 온보딩 판. 0 은 아직 안 함", example = "1") int onboardingVersion,
+        @Schema(description = "지금 앱이 보여 주는 온보딩 판. onboardingVersion 이 이보다 낮으면 새 앱이 온보딩을 다시 보여 준다", example = "2")
+        int latestOnboardingVersion,
         @Schema(description = "온보딩에서 받은 프로필. 온보딩 전에는 없다", nullable = true)
         Profile profile
 ) {
@@ -65,6 +68,8 @@ public record UserMeResponse(
                 result.userId(),
                 result.role().name(),
                 result.onboardingRequired(),
+                result.onboardingVersion(),
+                result.latestOnboardingVersion(),
                 result.profile() == null ? null : Profile.from(result.profile())
         );
     }
