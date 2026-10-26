@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import com.momentory.retrospect.NeedActionCatalogFixture;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
@@ -166,6 +167,7 @@ class RetrospectEngineTest {
     @Test
     @DisplayName("감정 탐색 3턴을 거치면 바람 카드(작은 행동)까지 만들어 완료한다.")
     void explorationProducesWishCard() {
+        fake.actions.add("편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기");
         // 감정을 미리 심어 두려면 extract 결과가 필요하다 — 탐색 진입 전에 세팅.
         fake.emotions.add(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
         toBranch();
@@ -191,7 +193,7 @@ class RetrospectEngineTest {
     @Test
     @DisplayName("작은 행동에는 '오늘은 여기까지'가 없다 — 후보를 고르면 그 행동으로 완료한다.")
     void explorationSmallActionHasNoHereEnd() {
-        fake.actions.add("따뜻한 물 한 잔 마시기");
+        fake.actions.add("편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기");
         fake.emotions.add(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
         toBranch();
         engine.handle(state, TurnCommand.option("1")); // 탐색 진입
@@ -204,7 +206,8 @@ class RetrospectEngineTest {
         ReplyDto done = engine.handle(state, TurnCommand.option("1")); // 첫 행동 후보 선택
         assertThat(done.phase()).isEqualTo("complete");
         assertThat(done.wishCard()).isNotNull();
-        assertThat(done.wishCard().smallAction()).isEqualTo("따뜻한 물 한 잔 마시기");
+        assertThat(done.wishCard().smallAction())
+                .isEqualTo("편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기");
     }
 
     @Test
@@ -373,6 +376,50 @@ class RetrospectEngineTest {
         assertThat(done.wishCard().smallAction()).isEqualTo(action);
     }
 
+    @Test
+    void emptyCatalogSelectionLeavesInputOpenWithoutGenericFallback() {
+        toBranch();
+        state.restMethods(List.of("음악 듣기"));
+        engine.handle(state, TurnCommand.option("1"));
+        engine.handle(state, TurnCommand.option("1"));
+        engine.handle(state, TurnCommand.option("1"));
+        ReplyDto actionTurn = engine.handle(state, TurnCommand.option("1"));
+
+        assertThat(actionTurn.options()).isEmpty();
+        assertThat(actionTurn.done()).isFalse();
+        assertThat(actionTurn.phase()).isEqualTo("emotion_exploration");
+        assertThat(actionTurn.text()).contains("작은 행동");
+
+        ReplyDto done = engine.handle(state, TurnCommand.text("동기에게 사진 보내기"));
+        assertThat(done.wishCard().smallAction()).isEqualTo("동기에게 사진 보내기");
+    }
+
+    @Test
+    void userCanFinishWithoutChoosingAnActionWhenNoCandidateFits() {
+        toSmallActionTurn();
+
+        ReplyDto done = engine.handle(state, TurnCommand.text("없어요"));
+
+        assertThat(done.done()).isTrue();
+        assertThat(done.wishCard()).isNotNull();
+        assertThat(done.wishCard().smallAction()).isNull();
+    }
+
+    @Test
+    void typedFixedNeedIsRecognizedForCatalogSelection() {
+        fake.emotions.add(new ExtractedEmotion(1, "피곤해", Emotion.TIRED, null, null, "피곤해요", List.of()));
+        toBranch();
+        engine.handle(state, TurnCommand.option("1"));
+        engine.handle(state, TurnCommand.option("1"));
+        engine.handle(state, TurnCommand.option("1"));
+
+        engine.handle(state, TurnCommand.text(" 휴식 "));
+
+        assertThat(state.needs()).extracting(com.momentory.retrospect.domain.Need::word)
+                .containsExactly("휴식");
+        assertThat(state.desiredState()).isEqualTo("휴식");
+    }
+
     // ── 위기 안내 → 이어서 얘기하기 ─────────────────────────────────────
 
     @Test
@@ -453,7 +500,8 @@ class RetrospectEngineTest {
         assertThat(prompts.needsPrompt(state)).contains("친구와 저녁을 먹었던 일", "평온함")
                 .doesNotContain("불안함", "행복함");
         engine.handle(state, TurnCommand.option("1"));
-        assertThat(prompts.actionsPrompt(state)).contains("친구와 저녁을 먹었던 일", "평온함");
+        assertThat(prompts.actionsPrompt(state, NeedActionCatalogFixture.load()))
+                .contains("친구와 저녁을 먹었던 일", "평온함");
         ReplyDto done = engine.handle(state, TurnCommand.option("1"));
         assertThat(done.wishCard().situation()).isEqualTo("친구와 저녁을 먹었던 일");
         assertThat(done.wishCard().emotions()).containsExactly("calm");

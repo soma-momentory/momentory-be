@@ -1,9 +1,15 @@
 package com.momentory.retrospect.infrastructure;
 
+import java.io.IOException;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
 
+import com.momentory.retrospect.domain.NeedActionCatalog;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
+
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 회고 도메인 객체의 빈 등록.
@@ -17,5 +23,12 @@ public class RetrospectDomainConfiguration {
     @Bean
     SafetyPolicy safetyPolicy() {
         return new SafetyPolicy();
+    }
+
+    @Bean
+    public NeedActionCatalog needActionCatalog(ObjectMapper objectMapper) throws IOException {
+        try (var input = new ClassPathResource("retrospect/need-actions.json").getInputStream()) {
+            return new NeedActionCatalog(objectMapper.readValue(input, NeedActionCatalog.Snapshot.class));
+        }
     }
 }

@@ -11,6 +11,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.momentory.retrospect.NeedActionCatalogFixture;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.Needs;
@@ -236,7 +237,7 @@ class PromptFactoryTest {
     @Test
     @DisplayName("작은 행동 프롬프트는 카드 상황과 같은 대표 사건 · 한국어 감정 · 뜻을 붙인 바람을 싣는다")
     void actionsPromptUsesCardSituation() {
-        String prompt = prompts.actionsPrompt(stateForExploration());
+        String prompt = prompts.actionsPrompt(stateForExploration(), NeedActionCatalogFixture.load());
 
         assertThat(prompt).contains("[사건] 팀 발표 자료를 혼자 만듦")
                 .contains("[감정] 답답함")
@@ -259,10 +260,26 @@ class PromptFactoryTest {
         RetrospectState state = new RetrospectState("sess-y");
         state.events(List.of(new ExtractedEvent(1, "호수공원", "가족과 호수공원을 걸음", List.of(1))));
 
-        assertThat(prompts.actionsPrompt(state))
+        assertThat(prompts.actionsPrompt(state, NeedActionCatalogFixture.load()))
                 .contains("[사건] 가족과 호수공원을 걸음")
                 .contains("[감정] 없음")
                 .contains("[바람] 없음");
+    }
+
+    @Test
+    void actionSelectionKeepsResearchDoseConditionsAndNeedSpecificLimitations() {
+        var state = new RetrospectState("justice");
+        state.chooseNeeds(List.of(Needs.byWord("정의").orElseThrow()));
+        String prompt = prompts.actionsPrompt(state, NeedActionCatalogFixture.load());
+
+        assertThat(prompt).contains("actionIds", "최대 3개", "빈 배열", "A35 ·", "A59 ·", "간접 참고")
+                .doesNotContain("A01 ·", "A33 ·", "40자 안쪽", "하나 이상 그대로");
+
+        state.chooseNeeds(List.of(Needs.byWord("사랑").orElseThrow()));
+        assertThat(prompts.actionsPrompt(state, NeedActionCatalogFixture.load()))
+                .contains("A32 · 가벼운 질문부터 서로 묻고 답하며 알아가기",
+                        "약 45분의 점진적 상호 공개 절차", "5분·질문 한 개는 별도 축약안",
+                        "상대·동의·돈·장소·도구");
     }
 
     @Test

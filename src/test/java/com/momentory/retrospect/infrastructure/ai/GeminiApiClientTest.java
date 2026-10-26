@@ -19,6 +19,7 @@ import com.momentory.retrospect.application.metering.CallLog;
 import com.momentory.retrospect.application.metering.LlmCallRecorded;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiActions;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -88,6 +89,23 @@ class GeminiApiClientTest {
         Optional<DiaryOutput> result = client().generate(request("q"), DiaryOutput.class);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void actionSelectionUsesIdArraySchemaAndParsesIds() throws Exception {
+        String inner = mapper.writeValueAsString(new GeminiActions(List.of("A03", "A02")));
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", inner)))))))));
+
+        Optional<GeminiActions> result = client().generate(request("후보에서 번호만 고르기"), GeminiActions.class);
+
+        assertThat(result).isPresent();
+        assertThat(result.orElseThrow().actionIds()).containsExactly("A03", "A02");
+        var body = mapper.readTree(server.takeRequest().getBody().readUtf8());
+        var schema = body.path("generationConfig").path("responseSchema");
+        assertThat(schema.path("properties").has("actionIds")).isTrue();
+        assertThat(schema.path("properties").has("actions")).isFalse();
+        assertThat(schema.path("required").toString()).isEqualTo("[\"actionIds\"]");
     }
 
     @Test

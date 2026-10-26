@@ -37,7 +37,7 @@ final class GeminiStructuredOutputs {
     record GeminiNeeds(List<String> words) {
     }
 
-    /** 작은 행동 후보 — 문자열들. */
-    record GeminiActions(List<String> actions) {
+    /** 욕구별 허용 후보에서 고른 내부 행동 ID. 화면 문구는 서버 정본으로 치환한다. */
+    record GeminiActions(List<String> actionIds) {
     }
 }

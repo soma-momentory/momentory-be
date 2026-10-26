@@ -70,7 +70,7 @@ import com.momentory.user.infrastructure.UserRepository;
 @Testcontainers(disabledWithoutDocker = true)
 class RetrospectActionCardPersistenceIntegrationTest {
 
-    private static final String SMALL_ACTION = "따뜻한 물 한 잔 마시기";
+    private static final String SMALL_ACTION = "편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES =

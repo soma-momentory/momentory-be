@@ -6,6 +6,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 import com.momentory.retrospect.domain.Need;
+import com.momentory.retrospect.domain.NeedActionCatalog;
 import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
@@ -13,18 +14,20 @@ import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.Gemini
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
 
 /**
- * 감정 탐색 후보 어댑터 — 바람(욕구)은 고정 목록에서 고르고(G2, 목록 밖 단어는 버림), 작은 행동은
- * 맥락에 맞게 만든다(G2). 실패하면 빈 목록(엔진이 폴백으로 내려간다).
+ * 바람은 고정 욕구 목록에서, 작은 행동은 해당 욕구에 연결된 노션 후보에서만 고른다.
+ * 행동 선정 실패 시 빈 목록을 반환한다. 목록 밖 행동으로 대체하지 않는다.
  */
 @Component
 public class GeminiExplorationAssistant implements ExplorationAssistant {
 
     private final GeminiApiClient llm;
     private final PromptFactory prompts;
+    private final NeedActionCatalog catalog;
 
-    public GeminiExplorationAssistant(GeminiApiClient llm, PromptFactory prompts) {
+    public GeminiExplorationAssistant(GeminiApiClient llm, PromptFactory prompts, NeedActionCatalog catalog) {
         this.llm = llm;
         this.prompts = prompts;
+        this.catalog = catalog;
     }
 
     @Override
@@ -43,11 +46,14 @@ public class GeminiExplorationAssistant implements ExplorationAssistant {
 
     @Override
     public List<String> suggestActions(RetrospectState state) {
+        if (catalog.candidatesFor(state.needs()).isEmpty()) {
+            return List.of();
+        }
         LlmRequest request = LlmRequest.of(state, LlmRole.G2, prompts.system(),
-                prompts.actionsPrompt(state));
-        List<String> actions = llm.generate(request, GeminiActions.class)
-                .map(GeminiActions::actions)
+                prompts.actionsPrompt(state, catalog));
+        List<String> ids = llm.generate(request, GeminiActions.class)
+                .map(GeminiActions::actionIds)
                 .orElse(List.of());
-        return actions == null ? List.of() : actions;
+        return catalog.selectedTitles(state.needs(), ids);
     }
 }

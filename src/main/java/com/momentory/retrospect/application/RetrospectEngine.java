@@ -516,11 +516,12 @@ public class RetrospectEngine {
                 Needs.byWord(c.label()).ifPresent(chosen::add);
             }
         }
-        state.chooseNeeds(limit1(chosen));
-        // 자유 입력 텍스트는 '바랐던 모습' 폴백으로 담는다(AI 생성이 우선).
+        // 직접 입력이 고정 욕구 단어면 연결표에 사용하고, 원문도 '바랐던 모습'으로 보존한다.
         if (command.hasContent()) {
+            Needs.byWord(command.content().strip()).ifPresent(chosen::add);
             state.desiredState(clamp(command.content()));
         }
+        state.chooseNeeds(limit1(chosen));
         state.addUserMessage(chosen.isEmpty()
                 ? (command.hasContent() ? clamp(command.content()) : NOT_SURE)
                 : needWordsOf(chosen));
@@ -531,9 +532,6 @@ public class RetrospectEngine {
     /** 3턴 — 작은 행동 질문 + 후보. */
     private ReplyDto presentSmallAction(RetrospectState state) {
         List<String> actions = explorationAssistant.suggestActions(state);
-        if (actions.isEmpty()) {
-            actions = fallbackActions(state);
-        }
         List<Choice> options = new ArrayList<>();
         for (String a : actions.stream().limit(3).toList()) {
             options.add(Choice.of(a));
@@ -572,14 +570,6 @@ public class RetrospectEngine {
 
     private static boolean isNoActionAnswer(String typed) {
         return NO_ACTION_ANSWERS.contains(NO_ACTION_NOISE.matcher(typed).replaceAll(""));
-    }
-
-    /** 쉬는 방법 선호가 있으면 반영한 폴백 행동. */
-    private static List<String> fallbackActions(RetrospectState state) {
-        if (!state.restMethods().isEmpty()) {
-            return List.of(state.restMethods().get(0) + " 10분 해보기", "오늘 느낀 점 한 줄 메모하기");
-        }
-        return List.of("오늘 느낀 점을 한 문장으로 적어보기", "잠들기 전 10분 알림 끄고 쉬기");
     }
 
     // ── 종료 ─────────────────────────────────────────────────────────────

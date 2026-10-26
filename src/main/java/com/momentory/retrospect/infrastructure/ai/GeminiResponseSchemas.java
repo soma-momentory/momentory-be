@@ -86,8 +86,8 @@ final class GeminiResponseSchemas {
 
     private static Map<String, Object> actionsSchema() {
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
-        props.put("actions", arrayOf(str()));
-        return object(props, List.of());
+        props.put("actionIds", arrayOf(str()));
+        return object(props, List.of("actionIds"));
     }
 
     private static Map<String, Object> diarySchema() {
