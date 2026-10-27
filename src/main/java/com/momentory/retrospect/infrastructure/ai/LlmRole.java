@@ -15,7 +15,13 @@ public enum LlmRole {
     /** AI 없이 템플릿으로 처리한 턴(고정 스크립트·측정·AI 실패 폴백). 호출 0회 — 계측에만 등장. */
     G2_FALLBACK("AI-G2-fallback"),
     /** 일기 생성(그냥+리프레이밍을 한 호출로). 세션당 1회. */
-    G4("AI-G4");
+    G4("AI-G4"),
+    /** 바바의 편지 본문(인용 · 관점 · 오늘 밤 질문). 일기 1건당 1회, 실패하면 1회 재시도. */
+    LETTER("AI-LETTER"),
+    /** 편지 작은 일에 쓸 욕구 고르기 — 바람카드 욕구가 없을 때만. */
+    LETTER_NEEDS("AI-LETTER-NEEDS"),
+    /** 편지 작은 일 번호 고르기 — 연결표 후보 중에서. */
+    LETTER_ACTIONS("AI-LETTER-ACTIONS");
 
     private final String key;
 

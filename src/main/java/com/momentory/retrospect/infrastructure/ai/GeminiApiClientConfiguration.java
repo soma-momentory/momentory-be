@@ -1,6 +1,7 @@
 package com.momentory.retrospect.infrastructure.ai;
 
 import java.net.http.HttpClient;
+import java.time.Duration;
 
 import io.micrometer.observation.ObservationRegistry;
 
@@ -16,16 +17,19 @@ public class GeminiApiClientConfiguration {
 
     @Bean
     RestClient geminiRestClient(GeminiApiProperties properties, ObservationRegistry observationRegistry) {
-        HttpClient httpClient = HttpClient.newBuilder()
-                .connectTimeout(properties.connectTimeout())
-                .build();
-        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(properties.readTimeout());
-
         return RestClient.builder()
                 .baseUrl(properties.baseUrl())
-                .requestFactory(requestFactory)
+                .requestFactory(requestFactory(properties.connectTimeout(), properties.readTimeout()))
                 .observationRegistry(observationRegistry)
                 .build();
+    }
+
+    static JdkClientHttpRequestFactory requestFactory(Duration connectTimeout, Duration readTimeout) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(readTimeout);
+        return requestFactory;
     }
 }
