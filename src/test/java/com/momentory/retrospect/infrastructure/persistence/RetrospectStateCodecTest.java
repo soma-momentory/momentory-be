@@ -150,4 +150,41 @@ class RetrospectStateCodecTest {
         assertThat(restored.emotions().get(0).phase()).isNull();
         assertThat(restored.emotions().get(0).evidenceIds()).isEmpty();
     }
+
+    @Test
+    void roundTripsHintTopicProgressAndPendingEventSelection() {
+        var state = new RetrospectState("new-fields");
+        state.begin("운동", null, 3L, null, "건강");
+        state.scheduleHint(true);
+        state.event("저녁");
+        state.markEmotionSeen();
+        state.meaning("고마웠다");
+        state.bumpDiaryTurn();
+        state.events(List.of(new ExtractedEvent(9, "저녁", "친구와 밥을 먹음", List.of(1))));
+        state.changePhase(Phase.AWAIT_BRANCH);
+        state.awaitEventSelection();
+        var pending = codec.deserialize(codec.serialize(state));
+        assertThat(pending.awaitingEventSelection()).isTrue();
+        assertThat(pending.scheduleHint()).isTrue();
+        assertThat(pending.topicTurn()).isEqualTo(1);
+        assertThat(pending.shouldSwitchTopic()).isTrue();
+        assertThat(pending.selectEvent(9)).isTrue();
+        pending.enterExploration();
+        var selected = codec.deserialize(codec.serialize(pending));
+        assertThat(selected.selectedEventId()).isEqualTo(9);
+        assertThat(selected.cardSituation()).isEqualTo("친구와 밥을 먹음");
+        assertThat(selected.awaitingEventSelection()).isFalse();
+    }
+
+    @Test
+    void legacyExplorationKeepsItsMainEvent() {
+        var old = new RetrospectState("legacy-exploration");
+        old.events(List.of(new ExtractedEvent(2, "면접", "답변이 막힘", List.of(1, 2))));
+        old.enterExploration();
+        String json = codec.serialize(old).replace("\"selectedEventId\":null,", "");
+        var restored = codec.deserialize(json);
+        assertThat(restored.selectedEventId()).isEqualTo(2);
+        assertThat(restored.explorationEntered()).isTrue();
+    }
+
 }

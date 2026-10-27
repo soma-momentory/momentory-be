@@ -23,8 +23,7 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * @param empathy        방금 답변에 대한 짧은 공감 한 문장(질문 없이). 대화를 마무리로 넘길 때 전환
  *                       멘트 앞에 붙인다 — 없으면 null.
  * @param safetyLevel    none|caution|risk|imminent
- * @param noMoreToAsk    다루는 사건(최대 2개)에 대해 더 물어볼 것이 없는가. 서버가 최소 턴을 채운
- *                       뒤 이 신호를 보면 대화를 마무리한다 — 다른 소재로 넓히지 않는다.
+ * @param noMoreToAsk    더 물어볼 것이 없는가. 참고 신호이며 서버의 6턴 고정 종료를 바꾸지 않는다.
  * @param offTopic       답이 질문과 무관하거나 답 대신 되물었는가(Layer 2 게이트). 기본 false.
  * @param vague          답하려 했으나 실질 내용 없이 얼버무렸는가. 기본 false.
  */

@@ -128,3 +128,28 @@ cd momentory-be
   옛 브랜치 무시 · 감정 10종 긍정→부정 재번호)는 `retro-chat-v2-plan.md` 참조.
 - 구현 착수 전 항상 `AGENTS.md` 확인(계약 변경 승인·Flyway 새 파일·EnumType.STRING·OpenAPI 계약 테스트·
   `momentory-backend-delivery` 흐름·`./gradlew clean check`).
+
+
+## 2026-10-14 회고 채팅 개선
+
+- 브랜치: `feat/retro-chat-topic-selection` (최신 origin/main 기준).
+- 직접 질문/힌트 분리, 분야별 후보 우선순위, 힌트 시작 기록과 폴백 일기 보호 구현.
+- 소재별 턴·감정·의미 추적과 리셋, G2 전환 지시, 6턴 고정 종료 구현.
+- 기존 분기 뒤 추출 사건 선택 추가(한 사건도 표시, 사건 없으면 일기 완료).
+- 사건 ID에 연결된 감정 후보, 선택 요약을 질문·바람·행동·카드가 공통 사용.
+- 스냅샷 신규 필드의 구버전 기본값 및 기존 탐색 세션 대표 사건 복원 구현.
+- 일기 프롬프트를 전체 6문장 내외로 변경하고 잡일·허구로 분량 채우기 금지.
+- 관련 엔진·도메인·프롬프트·코덱 회귀 테스트 통과.
+- 검증: `./gradlew test --tests '*RetrospectEngineTest' --tests '*RetrospectStateTest' --tests '*RetrospectStateCodecTest' --tests '*PromptFactoryTest' --no-daemon` 통과.
+- 전체 검증: `./gradlew clean check --no-daemon` 최종 통과. 이전 실행에서 기존 PickTopicTest 3개가
+  옛 정책을 기대해 실패했으며, 새 정책 단언과 네 분야·여섯 사건 키워드 회귀 사례로 갱신 후 재검증했다.
+- `git diff --check` 통과. API 요청/응답 필드·phase·엔드포인트 및 DB 스키마 변경 없음.
+- 변경 파일: 엔진, State/Snapshot/Codec, DiaryTurn 주석, PromptFactory, PickTopicTest,
+  Engine/State/Codec/PromptFactory 테스트, 카드 영속화 통합 테스트, 계획·진행 문서 (14개).
+  생성·삭제 파일 없음. 기존 untracked `eval/` 보존. 커밋·푸시하지 않음.
+- 검증 제한: Docker 없는 환경의 통합 테스트 스킵. 실제 Gemini 소재 문자열 재사용·일기 분량은
+  라이브 호출로 확인하지 않았다. 결과는 PASS WITH WARNINGS이며 커밋 검토 가능, 병합 전 통합 검증 필요.
+
+- 최종 검사 집계: 총 516개, 통과 279개, 실패 0개, 스킵 237개.
+
+- 별도 read-only 리뷰어 2회 검토 완료: 미해결 Critical/Major/Minor 없음. 오래된 주석을 정정했고 반려한 리뷰 지적 없음.

@@ -45,7 +45,13 @@ public record RetrospectStateSnapshot(
         List<Message> messages,
         SafetySnapshot safety,
         List<Choice> lastOptions,
-        int messageSeq) {
+        int messageSeq,
+        Boolean scheduleHint,
+        Integer topicTurn,
+        Boolean topicEmotionSeen,
+        Boolean topicMeaningSeen,
+        Integer selectedEventId,
+        Boolean awaitingEventSelection) {
 
     /** 안전 상태 스냅샷 — 누적 레벨·플래그·마지막 플래그 메시지 id. */
     public record SafetySnapshot(SafetyLevel level, List<String> flags, String lastFlaggedMsgId) {

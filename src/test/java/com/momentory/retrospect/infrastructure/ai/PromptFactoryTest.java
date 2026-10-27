@@ -11,6 +11,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.momentory.retrospect.NeedActionCatalogFixture;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.Needs;
@@ -236,7 +237,7 @@ class PromptFactoryTest {
     @Test
     @DisplayName("작은 행동 프롬프트는 카드 상황과 같은 대표 사건 · 한국어 감정 · 뜻을 붙인 바람을 싣는다")
     void actionsPromptUsesCardSituation() {
-        String prompt = prompts.actionsPrompt(stateForExploration());
+        String prompt = prompts.actionsPrompt(stateForExploration(), NeedActionCatalogFixture.load());
 
         assertThat(prompt).contains("[사건] 팀 발표 자료를 혼자 만듦")
                 .contains("[감정] 답답함")
@@ -259,10 +260,26 @@ class PromptFactoryTest {
         RetrospectState state = new RetrospectState("sess-y");
         state.events(List.of(new ExtractedEvent(1, "호수공원", "가족과 호수공원을 걸음", List.of(1))));
 
-        assertThat(prompts.actionsPrompt(state))
+        assertThat(prompts.actionsPrompt(state, NeedActionCatalogFixture.load()))
                 .contains("[사건] 가족과 호수공원을 걸음")
                 .contains("[감정] 없음")
                 .contains("[바람] 없음");
+    }
+
+    @Test
+    void actionSelectionKeepsResearchDoseConditionsAndNeedSpecificLimitations() {
+        var state = new RetrospectState("justice");
+        state.chooseNeeds(List.of(Needs.byWord("정의").orElseThrow()));
+        String prompt = prompts.actionsPrompt(state, NeedActionCatalogFixture.load());
+
+        assertThat(prompt).contains("actionIds", "최대 3개", "빈 배열", "A35 ·", "A59 ·", "간접 참고")
+                .doesNotContain("A01 ·", "A33 ·", "40자 안쪽", "하나 이상 그대로");
+
+        state.chooseNeeds(List.of(Needs.byWord("사랑").orElseThrow()));
+        assertThat(prompts.actionsPrompt(state, NeedActionCatalogFixture.load()))
+                .contains("A32 · 가벼운 질문부터 서로 묻고 답하며 알아가기",
+                        "약 45분의 점진적 상호 공개 절차", "5분·질문 한 개는 별도 축약안",
+                        "상대·동의·돈·장소·도구");
     }
 
     @Test
@@ -273,4 +290,30 @@ class PromptFactoryTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("TWO_STAGE");
     }
+
+    @Test
+    void diaryPromptUsesSixSentencesWithoutPaddingMinorEvents() {
+        assertThat(prompts.diaryPrompt(new RetrospectState("diary")))
+                .contains("전체 6문장 내외", "가볍게 언급한 잡일", "대화에 없는 사실·감정")
+                .doesNotContain("최소 5문장", "넉넉하게");
+    }
+
+    @Test
+    void serverSwitchInstructionUsesOnlyCurrentTopicProgress() {
+        var state = new RetrospectState("progress");
+        state.event("면접");
+        state.bumpDiaryTurn();
+        state.bumpDiaryTurn();
+        assertThat(prompts.diaryTurnPrompt(state, "끝났어요"))
+                .contains("현재 소재를 더 탐색하지 말고 다른 소재로 전환하세요", "첫 답변부터 바로 다른 소재");
+        state.markEmotionSeen();
+        state.meaning("마음에 남았다");
+        assertThat(prompts.diaryTurnPrompt(state, "생각이 나요"))
+                .contains("현재 소재를 더 탐색하지 말고 다른 소재로 전환하세요");
+        state.event("저녁");
+        assertThat(prompts.diaryTurnPrompt(state, "밥 먹었어요"))
+                .contains("이 소재의 감정 수집: 아니요", "이 소재의 의미 수집: 아니요")
+                .doesNotContain("서버 진행 지시: 현재 소재를 더 탐색하지 말고");
+    }
+
 }

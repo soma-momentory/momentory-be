@@ -119,7 +119,9 @@ class RetrospectApiIntegrationTest {
                 null));
         // 감정 탐색 후보(이 테스트에선 '감정 더 알아보기' 경로를 타지 않지만, 페이크를 안정적으로 둔다).
         when(explorationAssistant.suggestNeeds(any())).thenReturn(List.of());
-        when(explorationAssistant.suggestActions(any())).thenReturn(List.of("따뜻한 물 한 잔 마시기"));
+        when(explorationAssistant.suggestActions(any())).thenReturn(
+                com.momentory.retrospect.domain.assistant.ActionSuggestions.success(
+                        List.of("편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기")));
         // 짧은 기록형 일기 1종.
         when(diaryWriter.write(any())).thenReturn(Optional.of(new DiaryOutput("그냥 일기.", null)));
         // 토픽 추출은 이 테스트 범위 밖 — 빈 목록.
