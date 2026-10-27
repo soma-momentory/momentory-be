@@ -1,5 +1,7 @@
 # 욕구별 행동 추천
 
+> **2026-10-27 바뀜:** 회고에서 작은 행동을 고르는 단계(3턴 · `ActionSuggestions` · 「다시 불러오기」 `retry_actions`)를 지웠다. 작은 행동은 다음 날 바바의 편지에서 고른다(바바의 편지 PRD 14절). 이 문서의 연결표(`need-actions.json` · `NeedActionCatalog`) · 번호 검증 · 행동 고르기 규칙(`PromptFactory.ACTION_RULES` · `describeCandidates`)은 편지가 그대로 쓴다. 아래 회고 3턴 · 재시도 설명은 기록으로만 남긴다.
+
 감정 탐색의 마지막 턴은 AI의 자유 생성 대신, 사용자가 확인한 욕구에 연결된 행동 후보 중에서 고른다.
 
 - 연결표: [01. 욕구별 행동 연결 — 50개 욕구](https://app.notion.com/p/405b5a896e428198ab9adb01dafd2285)

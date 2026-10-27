@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import com.momentory.retrospect.NeedActionCatalogFixture;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
@@ -45,7 +44,10 @@ class RetrospectEngineTest {
         return engine.start(state, StartCommand.single("면접 스터디", Emotion.ANGRY, "정민"));
     }
 
-    /** 슬롯을 채운 채 6턴(최대)까지 이어가 분기점까지 몰아준다(조기 종료 금지 규칙). */
+    /**
+     * 슬롯을 채운 채 6턴(최대)까지 이어가 일기를 마친다(조기 종료 금지 규칙). 사건이 하나면 곧바로
+     * 감정 확인이, 둘이면 사건 고르기가 돌아온다(분기 없음 · 편지 PRD 14-1).
+     */
     private ReplyDto toBranch() {
         start();
         if (fake.events.isEmpty()) {
@@ -85,9 +87,10 @@ class RetrospectEngineTest {
     // ── 일기 작성 → 종료 ────────────────────────────────────────────────
 
     @Test
-    @DisplayName("슬롯이 1턴에 다 모여도 6턴까지 이어가고, 6턴에서 분기점을 낸다(조기 종료 금지).")
+    @DisplayName("슬롯이 1턴에 다 모여도 6턴까지 이어가고, 6턴에서 분기 없이 감정 확인으로 넘어간다(조기 종료 금지).")
     void diaryRunsToSixTurnsEvenWhenSlotsFillEarly() {
         start();
+        fake.events.add(new ExtractedEvent(1, "면접 스터디", "팀원이 말을 끊었던 일", List.of(1, 2)));
         fake.turnEvent = "면접 스터디에서 팀원이 말을 끊었다";
         fake.turnMeaning = "내 의견이 가볍게 다뤄진 게 계속 걸린다";
         fake.turnEmotionPresent = true; // 1턴에 사건·감정·의미가 다 찬다
@@ -98,11 +101,13 @@ class RetrospectEngineTest {
             assertThat(mid.phase()).as("%d턴", i).isEqualTo("diary_chat");
         }
 
-        // 6턴에 도달하면 분기점을 낸다.
+        // 6턴에 도달하면 일기를 정리하고 곧바로 감정 확인을 묻는다.
         ReplyDto reply = engine.handle(state, TurnCommand.text("계속 마음에 걸려요."));
-        assertThat(reply.phase()).isEqualTo("await_branch");
+        assertThat(reply.phase()).isEqualTo("emotion_exploration");
+        assertThat(reply.text()).startsWith(RetrospectEngine.EXPLORATION_TRANSITION)
+                .contains("팀원이 말을 끊었던 일을 떠올렸을 때");
         assertThat(reply.options()).extracting("label")
-                .containsExactly("감정을 더 알아볼래요", "일기 확인하러 갈래요");
+                .doesNotContain("감정을 더 알아볼래요", "일기 확인하러 갈래요");
         assertThat(fake.extractCalls).isEqualTo(1);
         assertThat(fake.diaryWriteCalls).isEqualTo(1);
     }
@@ -118,96 +123,168 @@ class RetrospectEngineTest {
             assertThat(mid.phase()).as("%d번째 턴", i).isEqualTo("diary_chat");
         }
         ReplyDto sixth = engine.handle(state, TurnCommand.text("마지막으로 이런 일도 있었어요."));
-        assertThat(sixth.phase()).isEqualTo("await_branch");
+        // 뽑힌 사건이 없으면 감정 탐색 없이 일기로 마무리한다.
+        assertThat(sixth.phase()).isEqualTo("complete");
+        assertThat(sixth.wishCard()).isNull();
     }
 
     @Test
-    @DisplayName("사용자가 그만하려 하면 즉시 일기로 정리한다.")
+    @DisplayName("사용자가 그만하려 하면 감정 탐색 없이 즉시 일기로 마무리한다(편지 PRD 14-1).")
     void stopRequestEndsDiaryChat() {
         start();
+        fake.events.add(new ExtractedEvent(1, "면접 스터디", "팀원이 말을 끊었던 일", List.of(1, 2)));
         ReplyDto reply = engine.handle(state, TurnCommand.text("이제 그만할래"));
 
-        assertThat(reply.phase()).isEqualTo("await_branch");
+        assertThat(reply.phase()).isEqualTo("complete");
+        assertThat(reply.wishCard()).isNull();
+        assertThat(state.explorationEntered()).isFalse();
         assertThat(fake.diaryWriteCalls).isEqualTo(1);
     }
 
-    // ── 분기점 ───────────────────────────────────────────────────────────
+    // ── 사건 고르기 · 옛 분기점 ─────────────────────────────────────────
 
     @Test
-    @DisplayName("'일기 확인하러 갈래요' → 바람 카드 없이 완료한다.")
-    void branchViewCompletesWithoutCard() {
-        toBranch();
+    @DisplayName("사건이 둘이면 어느 이야기를 더 나눌지 고른다 — 「일기 보러 갈래요」로 빠지는 선지는 없다")
+    void twoEventsAskWhichToExploreWithoutExit() {
+        fake.events.add(new ExtractedEvent(1, "면접", "면접에서 답변이 막혔던 일", List.of(1, 2)));
+        fake.events.add(new ExtractedEvent(2, "저녁", "친구와 저녁을 먹었던 일", List.of(3)));
+
+        ReplyDto reply = toBranch();
+
+        assertThat(reply.phase()).isEqualTo("await_branch");
+        assertThat(reply.text()).startsWith(RetrospectEngine.EXPLORATION_TRANSITION);
+        assertThat(reply.options()).extracting("label")
+                .containsExactly("면접에서 답변이 막혔던 일", "친구와 저녁을 먹었던 일");
+    }
+
+    @Test
+    @DisplayName("배포 전에 분기에서 멈춘 세션은 「일기 확인하러 갈래요」를 옛 방식대로 받아 카드 없이 마무리한다")
+    void legacyBranchViewStillCompletes() {
+        start();
+        state.diaryDraft("오늘의 일기.");
+        state.changePhase(Phase.AWAIT_BRANCH);
+        state.lastOptions(List.of(com.momentory.retrospect.domain.Choice.of(RetrospectEngine.BRANCH_EXPLORE),
+                com.momentory.retrospect.domain.Choice.of(RetrospectEngine.BRANCH_VIEW)));
+
         ReplyDto reply = engine.handle(state, TurnCommand.option("2"));
 
         assertThat(reply.phase()).isEqualTo("complete");
-        assertThat(reply.done()).isTrue();
-        assertThat(reply.diary()).isNotNull();
         assertThat(reply.wishCard()).isNull();
     }
 
     @Test
-    @DisplayName("'감정을 더 알아볼래요' → 추출 감정을 후보로 감정 탐색 1턴을 낸다.")
-    void branchExploreStartsExploration() {
-        toBranch();
-        fake.emotions.add(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, null, null, "말을 끊겼어요", List.of()));
-        // extract 는 toBranch 시점에 이미 불렸으므로 미리 넣어야 후보에 반영된다 → 다시 세팅해 재현.
-        // (toBranch 에서 emotions 가 비어 있었어도, 이 테스트는 탐색 진입만 확인한다.)
+    @DisplayName("배포 전에 분기에서 멈춘 세션의 「감정을 더 알아볼래요」는 사건 고르기로 이어진다")
+    void legacyBranchExploreStillOpensEventSelection() {
+        start();
+        fake.events.add(new ExtractedEvent(1, "면접 스터디", "팀원이 말을 끊었던 일", List.of(1, 2)));
+        state.events(List.copyOf(fake.events));
+        state.diaryDraft("오늘의 일기.");
+        state.changePhase(Phase.AWAIT_BRANCH);
+        state.lastOptions(List.of(com.momentory.retrospect.domain.Choice.of(RetrospectEngine.BRANCH_EXPLORE),
+                com.momentory.retrospect.domain.Choice.of(RetrospectEngine.BRANCH_VIEW)));
 
         ReplyDto reply = engine.handle(state, TurnCommand.option("1"));
 
         assertThat(reply.phase()).isEqualTo("await_branch");
-        assertThat(reply.options()).extracting("label").contains("팀원이 말을 끊었던 일", "일기 보러 갈래요");
-        // 후보에서 '직접 적기'·'아직 잘 모르겠어요' 는 뺐다(입력창은 화면이 늘 띄운다, 단일 선택).
-        assertThat(reply.options()).extracting("label")
-                .doesNotContain("직접 적기", "아직 잘 모르겠어요");
+        assertThat(reply.options()).extracting("label").containsExactly("팀원이 말을 끊었던 일");
     }
 
-    // ── 감정 탐색 3턴 → 바람 카드 ───────────────────────────────────────
+    @Test
+    @DisplayName("위기 안내가 나왔던 날은 「이어서 얘기하기」로 대화를 마쳐도 감정 탐색 없이 카드 없이 끝난다")
+    void crisisGuidanceDayEndsWithoutExplorationOrCard() {
+        start();
+        fake.events.add(new ExtractedEvent(1, "면접 스터디", "팀원이 말을 끊었던 일", List.of(1, 2)));
+        engine.handle(state, TurnCommand.text("발표 준비를 했어요."));
+        assertThat(engine.handle(state, TurnCommand.text("죽고 싶어요.")).phase()).isEqualTo("safety_hold");
+        engine.handle(state, TurnCommand.text("")); // 이어서 얘기하기
+
+        ReplyDto done = engine.handle(state, TurnCommand.text("이제 그만할래"));
+        assertThat(done.wishCard()).isNull();
+
+        // 6턴을 다 채워 마친 경우도 같다.
+        state = new RetrospectState("s-crisis");
+        start();
+        fake.turnEvent = "면접 스터디에서 팀원이 말을 끊었다";
+        engine.handle(state, TurnCommand.text("죽고 싶어요."));
+        engine.handle(state, TurnCommand.text(""));
+        ReplyDto last = null;
+        for (int i = 0; i < RetrospectState.DIARY_MAX_TURNS && "diary_chat".equals(state.phase().key()); i++) {
+            last = engine.handle(state, TurnCommand.text("팀원이 자꾸 말을 끊어서 속상했어요."));
+        }
+        assertThat(last.phase()).isEqualTo("complete");
+        assertThat(last.wishCard()).isNull();
+        assertThat(last.text()).doesNotContain("편지로 골라 올게요");
+        assertThat(state.explorationEntered()).isFalse();
+    }
 
     @Test
-    @DisplayName("감정 탐색 3턴을 거치면 바람 카드(작은 행동)까지 만들어 완료한다.")
-    void explorationProducesWishCard() {
-        fake.actions.add("편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기");
-        // 감정을 미리 심어 두려면 extract 결과가 필요하다 — 탐색 진입 전에 세팅.
-        fake.emotions.add(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
-        toBranch();
-        engine.handle(state, TurnCommand.option("1")); // 감정 더 알아보기
-        engine.handle(state, TurnCommand.option("1")); // 사건 선택
+    @DisplayName("배포 전 세션의 단답 체크인 「일기 보러 갈래요」는 옛 방식대로 카드 없이 마무리한다")
+    void legacyCheckinGoDiaryStillCompletes() {
+        start();
+        fake.events.add(new ExtractedEvent(1, "면접 스터디", "팀원이 말을 끊었던 일", List.of(1, 2)));
+        state.lastOptions(List.of(com.momentory.retrospect.domain.Choice.of(RetrospectEngine.GO_DIARY),
+                com.momentory.retrospect.domain.Choice.of(RetrospectEngine.KEEP_TALKING)));
 
-        // 1턴: 감정 확인 — 첫 후보(화남) 선택
-        ReplyDto afterEmotion = engine.handle(state, TurnCommand.option("1"));
-        assertThat(afterEmotion.phase()).isEqualTo("emotion_exploration");
-        // 2턴: 바람 확인 — 첫 후보 선택
-        ReplyDto afterNeed = engine.handle(state, TurnCommand.option("1"));
-        assertThat(afterNeed.phase()).isEqualTo("emotion_exploration");
-        // 3턴: 작은 행동 — 첫 후보 선택
         ReplyDto done = engine.handle(state, TurnCommand.option("1"));
 
         assertThat(done.phase()).isEqualTo("complete");
+        assertThat(done.wishCard()).isNull();
+    }
+
+    // ── 감정 탐색 2턴 → 바람 카드 ───────────────────────────────────────
+
+    @Test
+    @DisplayName("감정 · 바람을 고르면 바로 완료한다 — 작은 행동은 묻지 않고 카드의 그 칸은 비운다(편지에서 고른다)")
+    void explorationEndsAtNeedAndLeavesSmallActionEmpty() {
+        fake.emotions.add(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
+        ReplyDto emotionTurn = toBranch();
+        assertThat(emotionTurn.phase()).isEqualTo("emotion_exploration");
+
+        ReplyDto needTurn = engine.handle(state, TurnCommand.option("1"));
+        assertThat(needTurn.phase()).isEqualTo("emotion_exploration");
+        ReplyDto done = engine.handle(state, TurnCommand.option("1"));
+
+        assertThat(done.phase()).isEqualTo("complete");
+        assertThat(done.text()).contains("내일 아침엔 이 마음에 맞는 작은 일을 편지로 골라 올게요");
         assertThat(done.wishCard()).isNotNull();
-        assertThat(done.wishCard().smallAction()).isNotBlank();
-        assertThat(done.wishCard().situation()).isNotBlank();
+        assertThat(done.wishCard().smallAction()).isNull();
+        assertThat(done.wishCard().situation()).isEqualTo("팀원이 말을 끊었던 일");
         assertThat(done.wishCard().emotions()).containsExactly("angry");
+        assertThat(state.explorationTurn()).isEqualTo(2);
     }
 
     @Test
-    @DisplayName("작은 행동에는 '오늘은 여기까지'가 없다 — 후보를 고르면 그 행동으로 완료한다.")
-    void explorationSmallActionHasNoHereEnd() {
-        fake.actions.add("편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기");
-        fake.emotions.add(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
+    @DisplayName("배포 전에 작은 행동 답을 기다리던 세션은 무엇을 보내든 카드를 만들어 마무리한다")
+    void legacySessionWaitingForSmallActionCompletes() {
         toBranch();
-        engine.handle(state, TurnCommand.option("1")); // 탐색 진입
-        engine.handle(state, TurnCommand.option("1")); // 사건 선택
         engine.handle(state, TurnCommand.option("1")); // 감정
-        ReplyDto actionTurn = engine.handle(state, TurnCommand.option("1")); // 바람 → 행동 턴
+        state.bumpExplorationTurn(); // 옛 흐름의 3턴째(작은 행동)에 멈춰 있던 상태
 
-        assertThat(actionTurn.options()).extracting("label").doesNotContain("오늘은 여기까지 할래요");
+        ReplyDto done = engine.handle(state, TurnCommand.text("산책하기"));
 
-        ReplyDto done = engine.handle(state, TurnCommand.option("1")); // 첫 행동 후보 선택
         assertThat(done.phase()).isEqualTo("complete");
         assertThat(done.wishCard()).isNotNull();
-        assertThat(done.wishCard().smallAction())
-                .isEqualTo("편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기");
+        assertThat(done.wishCard().smallAction()).isNull();
+    }
+
+    @Test
+    @DisplayName("단답 체크인에서 「이제 정리할래요」를 고르면 끝나지 않고 감정 · 바람으로 넘어간다")
+    void checkinWrapUpMovesToExploration() {
+        start();
+        fake.events.add(new ExtractedEvent(1, "발표", "발표에서 말이 막혔던 일", List.of(1)));
+        fake.turnEvent = "발표에서 말이 막혔다";
+        fake.turnOffTopic = true;
+        for (int i = 0; i < 5 && state.lastOptions().isEmpty(); i++) {
+            engine.handle(state, TurnCommand.text("딱히"));
+        }
+        assertThat(state.lastOptions()).extracting("label")
+                .containsExactly("이제 정리할래요", "조금 더 이야기할래요");
+
+        ReplyDto reply = engine.handle(state, TurnCommand.option("1"));
+
+        assertThat(reply.phase()).isEqualTo("emotion_exploration");
+        assertThat(reply.text()).startsWith(RetrospectEngine.EXPLORATION_TRANSITION);
+        assertThat(fake.diaryWriteCalls).isEqualTo(1);
     }
 
     @Test
@@ -248,7 +325,8 @@ class RetrospectEngineTest {
         }
         ReplyDto done = engine.handle(state, new TurnCommand("조금 더 얘기할게요", null));
 
-        assertThat(done.phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
+        // 뽑힌 사건이 없어 감정 탐색 없이 마무리된다 — 여기서 보는 것은 6턴까지 이어갔다는 점이다.
+        assertThat(done.phase()).isEqualTo(Phase.COMPLETE.key());
         assertThat(state.diaryTurn()).isEqualTo(RetrospectState.DIARY_MAX_TURNS);
     }
 
@@ -307,7 +385,6 @@ class RetrospectEngineTest {
                 EmotionPhase.DURING, "재밌었어", List.of(1)));
         assertThat(toBranch().phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
 
-        engine.handle(state, TurnCommand.option("1"));
         ReplyDto confirm = engine.handle(state, TurnCommand.option("1"));
 
         assertThat(confirm.text()).startsWith("카페에서 개발함을 떠올렸을 때");
@@ -315,198 +392,31 @@ class RetrospectEngineTest {
         assertThat(confirm.text()).doesNotContain("친구와 다툼");
     }
 
-    /** 대표 사건('개발')을 심고 작은 행동 턴까지 몰아준다 — 사건 슬롯은 toBranch 의 '면접 스터디…'. */
-    private ReplyDto toSmallActionTurn() {
+    @Test
+    @DisplayName("카드 상황은 사건 슬롯이 아니라 감정을 물은 대표 사건이다")
+    void cardSituationIsTheSelectedEvent() {
         fake.events.add(new ExtractedEvent(1, "개발", "카페에서 개발함", List.of(1, 2, 3)));
         fake.emotions.add(new ExtractedEmotion(1, "재밌었어", Emotion.HAPPY, 2,
                 EmotionPhase.DURING, "재밌었어", List.of(1)));
         toBranch();
-        engine.handle(state, TurnCommand.option("1")); // 탐색 진입
-        engine.handle(state, TurnCommand.option("1")); // 사건 선택
         engine.handle(state, TurnCommand.option("1")); // 감정
-        return engine.handle(state, TurnCommand.option("1")); // 바람 → 행동 턴
-    }
 
-    @Test
-    @DisplayName("작은 행동 질문도 대표 사건 이름을 밝히고, 카드 상황은 사건 슬롯이 아니라 대표 사건이다")
-    void smallActionQuestionNamesTheEvent() {
-        ReplyDto actionTurn = toSmallActionTurn();
+        ReplyDto done = engine.handle(state, TurnCommand.option("1")); // 바람 → 완료
 
-        assertThat(actionTurn.text()).startsWith("카페에서 개발함을 떠올리며,");
-
-        ReplyDto done = engine.handle(state, TurnCommand.option("1"));
         assertThat(done.wishCard().situation()).isEqualTo("카페에서 개발함");
-    }
-
-    @Test
-    @DisplayName("사건 하나도 선택하면 작은 행동 질문이 선택 사건 요약을 사용한다")
-    void smallActionQuestionUsesSelectedSingleEvent() {
-        fake.emotions.add(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, null, null, "끊겼어요", List.of()));
-        toBranch();
-        engine.handle(state, TurnCommand.option("1")); // 탐색 진입
-        engine.handle(state, TurnCommand.option("1")); // 사건 선택
-        engine.handle(state, TurnCommand.option("1")); // 감정
-        ReplyDto actionTurn = engine.handle(state, TurnCommand.option("1")); // 바람 → 행동 턴
-
-        assertThat(actionTurn.text()).startsWith("팀원이 말을 끊었던 일을 떠올리며");
-    }
-
-    @ParameterizedTest(name = "[{index}] \"{0}\"")
-    @ValueSource(strings = {"없어", "없어.", "딱히..", "몰라ㅠ", "모르겠어", "딱히 없어요!", "없어～", "없어ㅋㅋ",
-            "딱히 😅", "없어 "})
-    @DisplayName("작은 행동에 거절 답을 적으면 문장부호가 붙어도 행동으로 남기지 않는다 — 카드는 빈칸으로 완료")
-    void refusalIsNotSavedAsSmallAction(String refusal) {
-        toSmallActionTurn();
-
-        ReplyDto done = engine.handle(state, TurnCommand.text(refusal));
-
-        assertThat(done.phase()).isEqualTo("complete");
-        assertThat(done.wishCard()).isNotNull();
-        assertThat(done.wishCard().smallAction()).isNull();
-    }
-
-    @ParameterizedTest(name = "[{index}] \"{0}\"")
-    @ValueSource(strings = {"동기에게 오늘 찍은 사진 보내기", "잠", "딱히 없지만 산책하기"})
-    @DisplayName("작은 행동을 직접 적으면 그 글이 행동으로 남는다 — 한 글자도, 거절어로 시작하는 진짜 행동도")
-    void typedSmallActionIsSaved(String action) {
-        toSmallActionTurn();
-
-        ReplyDto done = engine.handle(state, TurnCommand.text(action));
-
-        assertThat(done.wishCard().smallAction()).isEqualTo(action);
-    }
-
-    @Test
-    void emptyCatalogSelectionLeavesInputOpenWithoutGenericFallback() {
-        toBranch();
-        state.restMethods(List.of("음악 듣기"));
-        engine.handle(state, TurnCommand.option("1"));
-        engine.handle(state, TurnCommand.option("1"));
-        engine.handle(state, TurnCommand.option("1"));
-        ReplyDto actionTurn = engine.handle(state, TurnCommand.option("1"));
-
-        assertThat(actionTurn.options()).isEmpty();
-        assertThat(actionTurn.done()).isFalse();
-        assertThat(actionTurn.phase()).isEqualTo("emotion_exploration");
-        assertThat(actionTurn.text()).contains("작은 행동");
-        assertThat(actionTurn.text()).contains("직접").doesNotContain("불러오지 못했어요");
-
-        ReplyDto done = engine.handle(state, TurnCommand.text("동기에게 사진 보내기"));
-        assertThat(done.wishCard().smallAction()).isEqualTo("동기에게 사진 보내기");
-    }
-
-    @Test
-    void userCanFinishWithoutChoosingAnActionWhenNoCandidateFits() {
-        toSmallActionTurn();
-
-        ReplyDto done = engine.handle(state, TurnCommand.text("없어요"));
-
-        assertThat(done.done()).isTrue();
-        assertThat(done.wishCard()).isNotNull();
-        assertThat(done.wishCard().smallAction()).isNull();
     }
 
     @Test
     void typedFixedNeedIsRecognizedForCatalogSelection() {
         fake.emotions.add(new ExtractedEmotion(1, "피곤해", Emotion.TIRED, null, null, "피곤해요", List.of()));
         toBranch();
-        engine.handle(state, TurnCommand.option("1"));
-        engine.handle(state, TurnCommand.option("1"));
-        engine.handle(state, TurnCommand.option("1"));
+        engine.handle(state, TurnCommand.option("1")); // 감정
 
         engine.handle(state, TurnCommand.text(" 휴식 "));
 
         assertThat(state.needs()).extracting(com.momentory.retrospect.domain.Need::word)
                 .containsExactly("휴식");
         assertThat(state.desiredState()).isEqualTo("휴식");
-    }
-
-    @Test
-    void actionFailureOffersRetryWithoutEndingOrAdvancingExploration() {
-        fake.failActions = true;
-        ReplyDto failed = toSmallActionTurn();
-
-        assertThat(failed.text()).contains("행동 추천을 불러오지 못했어요", "직접");
-        assertThat(failed.options()).extracting(ReplyDto.OptionDto::label).containsExactly("다시 불러오기");
-        assertThat(failed.options()).extracting(ReplyDto.OptionDto::id).containsExactly("retry_actions");
-        assertThat(failed.done()).isFalse();
-        assertThat(failed.wishCard()).isNull();
-        assertThat(state.explorationTurn()).isEqualTo(2);
-        assertThat(fake.actionCalls).isEqualTo(1);
-
-        // 실패한 턴은 기존 세션 JSON만으로 다시 불러와도 재시도할 수 있어야 한다.
-        var codec = new com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec(
-                tools.jackson.databind.json.JsonMapper.builder().build());
-        state = codec.deserialize(codec.serialize(state));
-        fake.failActions = false;
-        fake.actions.add("최근 고마웠던 일과 그 이유를 5분 동안 적기");
-        ReplyDto retried = engine.handle(state, TurnCommand.option("retry_actions"));
-
-        assertThat(retried.options()).extracting(ReplyDto.OptionDto::label)
-                .containsExactly("최근 고마웠던 일과 그 이유를 5분 동안 적기");
-        assertThat(retried.done()).isFalse();
-        assertThat(state.explorationTurn()).isEqualTo(2);
-        assertThat(fake.actionCalls).isEqualTo(2);
-
-        ReplyDto done = engine.handle(state, TurnCommand.option("1"));
-        assertThat(done.wishCard().smallAction()).isEqualTo("최근 고마웠던 일과 그 이유를 5분 동안 적기");
-        assertThat(done.wishCard().situation()).isEqualTo("카페에서 개발함");
-        assertThat(fake.actionCalls).isEqualTo(2);
-    }
-
-    @Test
-    void repeatedFailureRemainsRetryableWithoutSavingRetryAsAnAction() {
-        fake.failActions = true;
-        toSmallActionTurn();
-
-        ReplyDto failedAgain = engine.handle(state, TurnCommand.option("retry_actions"));
-
-        assertThat(failedAgain.options()).extracting(ReplyDto.OptionDto::label)
-                .containsExactly("다시 불러오기");
-        assertThat(failedAgain.done()).isFalse();
-        assertThat(state.smallAction()).isNull();
-        assertThat(state.explorationTurn()).isEqualTo(2);
-        assertThat(fake.actionCalls).isEqualTo(2);
-    }
-
-    @Test
-    void actionFailureStillAcceptsDirectInputWithoutAutomaticRetry() {
-        fake.failActions = true;
-        toSmallActionTurn();
-
-        ReplyDto done = engine.handle(state, TurnCommand.text("동기에게 사진 보내기"));
-
-        assertThat(done.done()).isTrue();
-        assertThat(done.wishCard().smallAction()).isEqualTo("동기에게 사진 보내기");
-        assertThat(fake.actionCalls).isEqualTo(1);
-    }
-
-    @Test
-    void lostSuccessfulRetryResponseCannotSelectAnUnseenActionOnRepeatedRetry() {
-        fake.failActions = true;
-        toSmallActionTurn();
-        fake.failActions = false;
-        fake.actions.add("지금 하고 싶은 활동 두 가지를 떠올리고 하나 골라 하기");
-
-        engine.handle(state, TurnCommand.option("retry_actions")); // 서버 성공, 응답은 클라이언트에 도달하지 않음
-        var codec = new com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec(
-                tools.jackson.databind.json.JsonMapper.builder().build());
-        state = codec.deserialize(codec.serialize(state));
-        ReplyDto repeated = engine.handle(state, TurnCommand.option("retry_actions"));
-
-        assertThat(repeated.done()).isFalse();
-        assertThat(repeated.wishCard()).isNull();
-        assertThat(state.smallAction()).isNull();
-        assertThat(state.explorationTurn()).isEqualTo(2);
-        assertThat(fake.actionCalls).isEqualTo(3);
-        assertThat(repeated.options()).extracting(ReplyDto.OptionDto::label)
-                .containsExactly("지금 하고 싶은 활동 두 가지를 떠올리고 하나 골라 하기");
-
-        fake.actions.clear(); // 다음 재시도가 정상 빈 결과여도 완료되거나 행동을 저장하면 안 됨
-        ReplyDto noMatch = engine.handle(state, TurnCommand.option("retry_actions"));
-        assertThat(noMatch.done()).isFalse();
-        assertThat(noMatch.options()).isEmpty();
-        assertThat(state.smallAction()).isNull();
     }
 
     // ── 위기 안내 → 이어서 얘기하기 ─────────────────────────────────────
@@ -571,10 +481,9 @@ class RetrospectEngineTest {
         fake.emotions.add(new ExtractedEmotion(7, "불안", Emotion.ANXIOUS, 2, null, "불안", List.of(1)));
         fake.emotions.add(new ExtractedEmotion(9, "행복", Emotion.HAPPY, 2, null, "행복", List.of(4)));
         fake.emotions.add(new ExtractedEmotion(null, "화남", Emotion.ANGRY, 2, null, "화남", List.of(5)));
-        toBranch();
-        ReplyDto selection = engine.handle(state, TurnCommand.option("1"));
+        ReplyDto selection = toBranch();
         assertThat(selection.options()).extracting("label").containsExactly(
-                "면접에서 답변이 막혔던 일", "친구와 저녁을 먹었던 일", "일기 보러 갈래요");
+                "면접에서 답변이 막혔던 일", "친구와 저녁을 먹었던 일");
         assertThat(state.explorationEntered()).isFalse();
         assertThat(engine.handle(state, TurnCommand.option("99")).phase()).isEqualTo("await_branch");
         ReplyDto emotion = engine.handle(state, TurnCommand.option("2"));
@@ -588,9 +497,6 @@ class RetrospectEngineTest {
                 com.momentory.retrospect.infrastructure.ai.EmotionPromptVariant.ZERO_SHOT);
         assertThat(prompts.needsPrompt(state)).contains("친구와 저녁을 먹었던 일", "평온함")
                 .doesNotContain("불안함", "행복함");
-        engine.handle(state, TurnCommand.option("1"));
-        assertThat(prompts.actionsPrompt(state, NeedActionCatalogFixture.load()))
-                .contains("친구와 저녁을 먹었던 일", "평온함");
         ReplyDto done = engine.handle(state, TurnCommand.option("1"));
         assertThat(done.wishCard().situation()).isEqualTo("친구와 저녁을 먹었던 일");
         assertThat(done.wishCard().emotions()).containsExactly("calm");
@@ -599,18 +505,22 @@ class RetrospectEngineTest {
     @Test
     void noExtractedEventsCompletesWithoutCard() {
         start();
-        engine.handle(state, TurnCommand.text("그만할래"));
-        ReplyDto done = engine.handle(state, TurnCommand.option("1"));
+        ReplyDto done = engine.handle(state, TurnCommand.text("그만할래"));
         assertThat(done.phase()).isEqualTo("complete");
         assertThat(done.wishCard()).isNull();
         assertThat(state.explorationEntered()).isFalse();
     }
 
     @Test
-    void eventSelectionCanExitToDiaryWithoutCard() {
+    @DisplayName("배포 전 사건 고르기 목록에 남아 있던 「일기 보러 갈래요」는 옛 방식대로 카드 없이 마무리한다")
+    void legacyEventSelectionExitStillCompletes() {
+        fake.events.add(new ExtractedEvent(1, "면접", "면접에서 답변이 막혔던 일", List.of(1, 2)));
+        fake.events.add(new ExtractedEvent(2, "저녁", "친구와 저녁을 먹었던 일", List.of(3)));
         toBranch();
-        engine.handle(state, TurnCommand.option("1"));
-        ReplyDto done = engine.handle(state, TurnCommand.option("2"));
+        state.lastOptions(List.of(com.momentory.retrospect.domain.Choice.of("면접에서 답변이 막혔던 일"),
+                com.momentory.retrospect.domain.Choice.of("친구와 저녁을 먹었던 일"),
+                com.momentory.retrospect.domain.Choice.of(RetrospectEngine.GO_DIARY)));
+        ReplyDto done = engine.handle(state, TurnCommand.option("3"));
         assertThat(done.phase()).isEqualTo("complete");
         assertThat(done.wishCard()).isNull();
     }
@@ -618,9 +528,7 @@ class RetrospectEngineTest {
     @Test
     void selectedEventWithNoEmotionsDoesNotBorrowInferredEmotion() {
         fake.inferredEmotion = Emotion.ANXIOUS;
-        toBranch();
-        engine.handle(state, TurnCommand.option("1"));
-        ReplyDto emotion = engine.handle(state, TurnCommand.option("1"));
+        ReplyDto emotion = toBranch();
         assertThat(emotion.options()).isEmpty();
         assertThat(state.confirmedEmotions()).isEmpty();
     }

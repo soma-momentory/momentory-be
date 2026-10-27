@@ -24,7 +24,7 @@ public record ReplyDto(
 
     /**
      * 선택지 버튼 하나. {@code id} 를 턴 요청의 {@code optionIds} 로 그대로 돌려보낸다.
-     * 일반 선택은 1-base 번호, 행동 추천 재시도는 고정 ID {@code retry_actions}다.
+     * 선택지 번호(1-base)다.
      * {@code input} 이 true 면 "직접 적기" 선지라 프론트가 텍스트 필드를 연다.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)

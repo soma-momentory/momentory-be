@@ -6,7 +6,7 @@ import java.util.List;
  * 사용자가 한 턴에 보내는 것 (채팅흐름_v2) — 자유 텍스트이거나 선택지들이다.
  *
  * @param content    자유 텍스트 답변("직접 적기" 포함). 일기 작성 턴은 이걸로만 온다.
- * @param optionIds  응답이 준 선택지 ID들 — 일반 선택은 1-base 번호, 추천 재시도는 retry_actions.
+ * @param optionIds  응답이 준 선택지 ID들 — 일반 선택은 1-base 번호.
  */
 public record TurnCommand(String content, List<String> optionIds) {
 

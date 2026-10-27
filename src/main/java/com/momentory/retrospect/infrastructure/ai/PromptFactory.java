@@ -298,28 +298,7 @@ public class PromptFactory {
                 state.cardSituation(), emotionLabels(state));
     }
 
-    /** 작은 행동(G2) — 선택한 욕구의 노션 후보만 주고, 적합한 행동 ID를 고르게 한다. */
-    public String actionsPrompt(RetrospectState state, NeedActionCatalog catalog) {
-        return """
-                [후보]는 사용자가 고른 바람(욕구)에 연결된 행동 목록입니다.
-                [사건]과 [감정]에 맞고 사용자가 실행할 수 있는 후보를 최대 3개 고르세요.
-                행동 문구를 새로 만들지 말고, 후보의 ID만 actionIds 배열로 반환하세요.
-
-                %s
-                [사건] %s
-                [감정] %s
-                [바람] %s
-                [연결 근거의 한계]
-                %s
-
-                [후보]
-                %s
-                """.formatted(ACTION_RULES, state.cardSituation(), emotionLabels(state),
-                needsWithMeaning(state), catalog.notesFor(state.needs()),
-                describeCandidates(catalog.candidatesFor(state.needs())));
-    }
-
-    /** 작은 행동 고르기 규칙 — 회고(G2)와 편지가 같은 규칙으로 고른다. */
+    /** 작은 행동 고르기 규칙 — 바바의 편지가 쓴다(회고는 행동을 고르지 않는다). */
     public static final String ACTION_RULES = """
             [규칙]
             1. 후보 밖 행동·다른 욕구의 행동·중복 ID를 넣지 않습니다.
@@ -336,7 +315,7 @@ public class PromptFactory {
             7. 욕구별 연결은 제품의 분류이며, 해당 욕구 충족의 효능이 모두 검증됐다는 뜻이 아닙니다.
             """;
 
-    /** 후보 행동 서술 — 번호 · 제목 · 실행 · 연구 분량 · 한계. 회고(G2)와 편지가 함께 쓴다. */
+    /** 후보 행동 서술 — 번호 · 제목 · 실행 · 연구 분량 · 한계. 바바의 편지가 쓴다. */
     public static String describeCandidates(List<NeedActionCatalog.Action> actions) {
         return actions.stream()
                 .map(action -> """
@@ -443,12 +422,6 @@ public class PromptFactory {
     /** 확인 감정의 한국어 이름 — 영어 키("frustrated")보다 모델이 사용자 맥락으로 읽는다. */
     private static String emotionLabels(RetrospectState state) {
         return orNone(state.confirmedEmotions().stream().map(Emotion::label)
-                .collect(Collectors.joining(", ")));
-    }
-
-    /** 확인 바람을 "단어(뜻)"으로 — 단어만 주면 어떤 마음을 채우려는 행동인지 연결하지 못한다. */
-    private static String needsWithMeaning(RetrospectState state) {
-        return orNone(state.needs().stream().map(n -> n.word() + "(" + n.meaning() + ")")
                 .collect(Collectors.joining(", ")));
     }
 

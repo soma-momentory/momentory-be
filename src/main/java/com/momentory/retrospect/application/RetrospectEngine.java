@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -48,8 +47,9 @@ import com.momentory.retrospect.infrastructure.ai.LlmRole;
  * 회고 대화 엔진 — 슬롯 채우기 상태 머신 (채팅흐름_v2).
  *
  * <pre>
- * diary_chat(≤6턴: 사건·감정·의미 슬롯) → await_branch(감정 더 알아볼까)
- *        └(선택 시)→ emotion_exploration(고정 3턴: 감정→바람→작은 행동) → complete
+ * diary_chat(≤6턴: 사건·감정·의미 슬롯) → (사건이 둘이면 await_branch: 사건 고르기)
+ *        → emotion_exploration(2턴: 감정→바람) → complete   ※ 「그만할래요」는 바로 complete
+ *   작은 행동은 회고에서 고르지 않고 다음 날 바바의 편지에서 고른다(편지 PRD 14-1).
  *                                                          ↘ safety_hold ⇄ 이어가기 · ended(어뷰징)
  * </pre>
  *
@@ -60,14 +60,15 @@ import com.momentory.retrospect.infrastructure.ai.LlmRole;
 @Component
 public class RetrospectEngine {
 
+    /** 옛 분기점 선지 — 배포 전에 분기 답을 기다리던 세션만 받는다(새 세션은 분기 없이 감정 탐색으로 간다). */
     static final String BRANCH_EXPLORE = "감정을 더 알아볼래요";
     static final String BRANCH_VIEW = "일기 확인하러 갈래요";
     static final String WRITE_OWN = "직접 적기";
     static final String NOT_SURE = "아직 잘 모르겠어요";
     static final String HERE_END = "오늘은 여기까지 할래요";
-    static final String RETRY_ACTIONS = "다시 불러오기";
-    static final String RETRY_ACTIONS_ID = "retry_actions";
-    /** 단답 체크인 선지 — 이대로 일기를 보러 갈지 / 조금 더 이야기할지. */
+    /** 단답 체크인 선지 — 이제 정리할지(감정 · 바람으로 넘어감) / 조금 더 이야기할지. */
+    static final String WRAP_UP = "이제 정리할래요";
+    /** 옛 단답 체크인 · 사건 고르기 선지 — 배포 전 세션만 받는다. */
     static final String GO_DIARY = "일기 보러 갈래요";
     static final String KEEP_TALKING = "조금 더 이야기할래요";
 
@@ -77,22 +78,8 @@ public class RetrospectEngine {
      */
     private static final int DIARY_CHECKIN_AFTER_TURN = 3;
 
-    /** 직접 입력·작은 행동의 방어 상한(글자) — 한 줄로 받는다. */
+    /** 직접 입력의 방어 상한(글자) — 한 줄로 받는다. */
     private static final int CUSTOM_MAX_LENGTH = 200;
-
-    /**
-     * 작은 행동 칸에 남기지 않을 거절 답 — 공백·문장부호·ㅠㅜ 를 떼고 <b>정확히 일치</b>할 때만 거른다.
-     * 일기 대화의 {@link AnswerGate} 와 따로 두는 이유: 그 게이트를 넓히면 일기 대화의 단답 판정까지
-     * 바뀌고, 길이 기준(2자 미만)이 "잠" 같은 한 글자 행동도 버린다.
-     */
-    private static final Set<String> NO_ACTION_ANSWERS = Set.of(
-            "없어", "없어요", "없음", "없는데", "몰라", "몰라요", "모르겠어", "모르겠어요",
-            "잘모르겠어", "잘모르겠어요", "딱히", "딱히요", "딱히없어", "딱히없어요",
-            "글쎄", "글쎄요", "패스");
-
-    /** 거절 판정 전에 떼는 것 — 유니코드 공백·문장부호·기호(전각 ～！, 이모지 포함)와 ㅠㅜㅋㅎ. */
-    private static final Pattern NO_ACTION_NOISE =
-            Pattern.compile("[\\s\\p{P}\\p{S}ㅠㅜㅋㅎ]", Pattern.UNICODE_CHARACTER_CLASS);
 
     private final SafetyPolicy safetyPolicy;
     private final DiaryChatAssistant diaryChatAssistant;
@@ -311,7 +298,8 @@ public class RetrospectEngine {
         // 사용자가 그만하려 함 → 확인된 것만으로 일기 정리(즉시 종료).
         if (isStopRequest(command.content())) {
             state.markDiaryUserEnded();
-            return finishDiaryChat(state, null);
+            generateDiary(state);
+            return finishComplete(state); // 그만하려는 사람은 감정 탐색 없이 일기로 끝낸다(편지 PRD 14-1)
         }
 
         // 단답 여부는 규칙 게이트로 감지만 한다 — 고정 문구로 되묻지 않는다(같은 문구 반복이 어색했다).
@@ -382,22 +370,44 @@ public class RetrospectEngine {
     }
 
     /**
-     * 일기 작성 종료 → 감정 추출(대화 전체) + 일기 생성 후 분기점 제시. 넘어가기 전에 마지막 답변에
-     * 대한 AI 공감 한 문장이 있으면 전환 멘트 앞에 한 줄 붙인다(공감이 없으면 전환 멘트만).
+     * 일기 작성 종료 → 감정 추출(대화 전체) + 일기 생성 후 <b>분기 없이</b> 감정 탐색으로 넘어간다(편지 PRD
+     * 14-1). 넘어가기 전에 마지막 답변에 대한 AI 공감 한 문장이 있으면 전환 멘트 앞에 한 줄 붙인다.
      */
     private ReplyDto finishDiaryChat(RetrospectState state, String empathy) {
         generateDiary(state);
-        state.changePhase(Phase.AWAIT_BRANCH);
-        List<Choice> options = List.of(Choice.of(BRANCH_EXPLORE), Choice.of(BRANCH_VIEW));
-        state.lastOptions(options);
-        String transition = "오늘 이야기는 일기로 정리해뒀어요. 지금 느낀 감정을 조금 더 알아볼까요?";
         String lead = (empathy != null && !empathy.isBlank()) ? empathy.strip() + "\n" : "";
-        String text = lead + transition;
-        state.addAssistantMessage(text + "\n" + optionLines(options));
-        usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.AWAIT_BRANCH.key());
-        return ReplyDto.choices(text, Phase.AWAIT_BRANCH, toOptionDtos(options),
-                state.safety().level());
+        return startExploration(state, lead);
     }
+
+    /**
+     * 일기를 만든 뒤 감정 탐색을 시작한다. 사건이 둘이면 어느 이야기를 더 나눌지 고르고, 하나면 그 사건으로
+     * 바로 감정을 묻는다. 뽑힌 사건이 없으면(추출 실패) 카드 없이 마무리한다.
+     */
+    private ReplyDto startExploration(RetrospectState state, String lead) {
+        // 위기 안내가 나왔던 날은 「이어서 얘기하기」로 대화를 마쳤어도 카드 없이 끝낸다(편지 PRD 14-1) —
+        // 그날 편지는 작은 일이 없는 조용한 편지라, 카드의 작은 행동을 채울 수 없다.
+        if (state.events().isEmpty() || crisisGuidanceShown(state)) {
+            return finishComplete(state);
+        }
+        String text = lead + EXPLORATION_TRANSITION + "\n";
+        usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.EMOTION_EXPLORATION.key());
+        if (state.events().size() == 1) {
+            state.selectEvent(state.events().get(0).id());
+            state.enterExploration();
+            return presentEmotionConfirm(state, text);
+        }
+        state.changePhase(Phase.AWAIT_BRANCH);
+        state.awaitEventSelection();
+        return presentEventSelection(state, text);
+    }
+
+    /** 대화에 위기 안내 문구가 남아 있는가 — 「이어서 얘기하기」가 안전 상태를 지워도 안내는 남는다. */
+    private boolean crisisGuidanceShown(RetrospectState state) {
+        return state.messages().stream().filter(Message::isAssistant).map(Message::content)
+                .anyMatch(safetyPolicy::isGuidance);
+    }
+
+    static final String EXPLORATION_TRANSITION = "오늘 이야기는 일기로 정리해뒀어요. 그때 마음을 조금만 더 들여다볼게요.";
 
     /** 대화 전체에서 감정을 뽑고 일기 초안을 만들어 state 에 담는다 — 종료 직전 한 번. */
     private void generateDiary(RetrospectState state) {
@@ -412,29 +422,38 @@ public class RetrospectEngine {
     // ── 단답 체크인 (3턴 이후) ───────────────────────────────────────────
 
     /**
-     * 3턴을 넘긴 뒤 단답이 나오면 강제로 끌지 않고 공감 + 「일기 보러 갈래요 / 조금 더 이야기할래요」를
+     * 3턴을 넘긴 뒤 단답이 나오면 강제로 끌지 않고 공감 + 「이제 정리할래요 / 조금 더 이야기할래요」를
      * 물어 분기한다. 이 물음은 일기 턴을 소모하지 않는다({@code diaryTurn} 증가 없음).
      */
     private ReplyDto presentDiaryCheckin(RetrospectState state) {
-        List<Choice> options = List.of(Choice.of(GO_DIARY), Choice.of(KEEP_TALKING));
+        List<Choice> options = List.of(Choice.of(WRAP_UP), Choice.of(KEEP_TALKING));
         state.lastOptions(options);
-        String text = "지금까지 이야기해줘서 고마워요.\n이대로 일기를 보러 갈까요, 아니면 조금 더 이야기해볼까요?";
+        String text = "지금까지 이야기해줘서 고마워요.\n이제 정리해 볼까요, 아니면 조금 더 이야기해볼까요?";
         state.addAssistantMessage(text + "\n" + optionLines(options));
         usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
         return ReplyDto.choices(text, Phase.DIARY_CHAT, toOptionDtos(options), state.safety().level());
     }
 
     /**
-     * 단답 체크인에 대한 응답 처리. 「일기 보러 갈래요」면 지금까지의 이야기로 일기를 정리해 곧장 마무리하고,
+     * 단답 체크인에 대한 응답 처리. 「이제 정리할래요」면 지금까지의 이야기로 일기를 정리해 감정 탐색으로 넘어가고,
      * 그 외(「조금 더」·자유 입력)면 체크인을 접고 대화를 이어간다. 자유 입력이면 그 내용을 이번 답으로 삼는다.
      */
     private ReplyDto resolveDiaryCheckin(RetrospectState state, TurnCommand command) {
+        // 「이제 정리할래요」 → 일기를 만들고 감정 · 바람으로 넘어간다(편지 PRD 14-1).
+        if (picked(state, command, WRAP_UP)) {
+            state.addUserMessage(WRAP_UP);
+            state.lastOptions(List.of());
+            state.markDiaryUserEnded();
+            generateDiary(state);
+            return startExploration(state, "");
+        }
+        // 배포 전 세션의 「일기 보러 갈래요」는 옛 방식대로 감정 탐색 없이 일기로 마무리한다.
         if (picked(state, command, GO_DIARY)) {
             state.addUserMessage(GO_DIARY);
             state.lastOptions(List.of());
             state.markDiaryUserEnded();
             generateDiary(state);
-            return finishComplete(state); // 감정 탐색 없이 일기로 바로 — 사용자가 '일기 보러 가기'를 골랐다
+            return finishComplete(state);
         }
         state.lastOptions(List.of());
         // 자유 입력이면 그 답으로 대화를 이어간다(정상 일기 턴 처리로 넘긴다).
@@ -466,8 +485,12 @@ public class RetrospectEngine {
         return new DiaryOutput(sb.toString().strip(), null);
     }
 
-    // ── 분기점 ───────────────────────────────────────────────────────────
+    // ── 분기점 · 사건 고르기 ─────────────────────────────────────────────
 
+    /**
+     * {@code AWAIT_BRANCH} 단계 — 새 세션에서는 사건 고르기만 온다. 「감정을 더 알아볼래요 / 일기 확인하러
+     * 갈래요」 답은 배포 전에 분기에서 멈춘 세션만 보낸다(그때는 옛 방식대로 받는다).
+     */
     private ReplyDto handleBranch(RetrospectState state, TurnCommand command) {
         if (state.awaitingEventSelection()) {
             return handleEventSelection(state, command);
@@ -487,18 +510,23 @@ public class RetrospectEngine {
     }
 
     private ReplyDto presentEventSelection(RetrospectState state) {
+        return presentEventSelection(state, "");
+    }
+
+    /** 사건 고르기 — 모두 바람까지 가므로(편지 PRD 14-1) 「일기 보러 갈래요」로 빠지는 선지는 두지 않는다. */
+    private ReplyDto presentEventSelection(RetrospectState state, String lead) {
         List<Choice> options = new ArrayList<>();
         for (var event : state.events()) {
             options.add(Choice.of(event.summary()));
         }
-        options.add(Choice.of(GO_DIARY));
         state.lastOptions(options);
-        String text = "어떤 이야기를 조금 더 나눠볼까요?";
+        String text = lead + "어떤 이야기를 조금 더 나눠볼까요?";
         state.addAssistantMessage(text + "\n" + optionLines(options));
         return ReplyDto.choices(text, Phase.AWAIT_BRANCH, toOptionDtos(options), state.safety().level());
     }
 
     private ReplyDto handleEventSelection(RetrospectState state, TurnCommand command) {
+        // 옛 세션의 목록에만 「일기 보러 갈래요」가 있다.
         if (picked(state, command, GO_DIARY)) {
             state.addUserMessage(GO_DIARY);
             return finishComplete(state);
@@ -515,13 +543,14 @@ public class RetrospectEngine {
         return presentEventSelection(state);
     }
 
-    // ── 감정 탐색 (고정 3턴) ─────────────────────────────────────────────
+    // ── 감정 탐색 (감정 → 바람, 2턴) ──────────────────────────────────────
 
     private ReplyDto handleExploration(RetrospectState state, TurnCommand command) {
         return switch (state.explorationTurn()) {
             case 0 -> handleEmotionConfirm(state, command);
             case 1 -> handleNeedConfirm(state, command);
-            default -> handleSmallAction(state, command);
+            // 배포 전에 작은 행동 답을 기다리던 세션 — 행동은 이제 편지에서 고르므로 그대로 마무리한다.
+            default -> finishComplete(state);
         };
     }
 
@@ -531,13 +560,17 @@ public class RetrospectEngine {
      * <p>선택한 사건에 연결된 추출 감정만 후보로 쓴다. 후보가 없으면 기존 입력창으로 직접 받는다.
      */
     private ReplyDto presentEmotionConfirm(RetrospectState state) {
+        return presentEmotionConfirm(state, "");
+    }
+
+    private ReplyDto presentEmotionConfirm(RetrospectState state, String lead) {
         List<Choice> options = new ArrayList<>();
         for (Emotion e : distinctNormalized(state.selectedEventEmotions())) {
             options.add(Choice.of(e.label()));
         }
         state.lastOptions(options);
         // 무엇에 대한 질문인지 이름을 밝힌다 — "그 일"만 두면 사용자는 직전 대화를 떠올릴 수밖에 없다.
-        String text = state.selectedEvent()
+        String text = lead + state.selectedEvent()
                 .map(e -> emotionConfirmQuestion(e.summary()))
                 .orElse("오늘 하루를 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?");
         state.addAssistantMessage(text + "\n" + optionLines(options));
@@ -606,65 +639,8 @@ public class RetrospectEngine {
                 ? (command.hasContent() ? clamp(command.content()) : NOT_SURE)
                 : needWordsOf(chosen));
         state.bumpExplorationTurn();
-        return presentSmallAction(state);
-    }
-
-    /** 3턴 — 작은 행동 질문 + 후보. */
-    private ReplyDto presentSmallAction(RetrospectState state) {
-        var suggestions = explorationAssistant.suggestActions(state);
-        List<Choice> options = new ArrayList<>();
-        for (String a : suggestions.actions().stream().limit(3).toList()) {
-            options.add(Choice.of(a));
-        }
-        if (suggestions.failed()) {
-            options.add(Choice.of(RETRY_ACTIONS));
-        }
-        state.lastOptions(options);
-        // 감정 확인 질문처럼 사건 이름을 밝힌다 — 후보도 그 사건을 가리키므로 질문과 후보가 맞물린다.
-        String text = state.selectedEvent()
-                .map(e -> smallActionQuestion(e.summary()))
-                .orElse("이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?");
-        if (suggestions.failed()) {
-            text = "행동 추천을 불러오지 못했어요.\n다시 불러오거나, 직접 떠오르는 작은 행동을 적어볼까요?";
-        } else if (suggestions.actions().isEmpty()) {
-            text = state.selectedEvent().map(e -> e.summary() + Josa.pick(e.summary(), "을", "를")
-                    + " 떠올리며, 이 마음을 위해 직접 떠오르는 작은 행동을 적어볼까요?")
-                    .orElse("이 마음을 위해 직접 떠오르는 작은 행동을 적어볼까요?");
-        }
-        state.addAssistantMessage(text + "\n" + optionLines(options));
-        return ReplyDto.choices(text, Phase.EMOTION_EXPLORATION, toOptionDtos(options),
-                state.safety().level());
-    }
-
-    private ReplyDto handleSmallAction(RetrospectState state, TurnCommand command) {
-        // 응답 유실 뒤 같은 요청이 와도 현재 행동 1번을 고른 것으로 해석하지 않는다.
-        if (!command.hasContent() && command.optionIds().equals(List.of(RETRY_ACTIONS_ID))) {
-            state.addUserMessage(RETRY_ACTIONS);
-            return presentSmallAction(state);
-        }
-        if (picked(state, command, HERE_END)) {
-            return finishComplete(state); // 행동 미정 허용 — 실패로 처리하지 않는다.
-        }
-        if (command.hasContent()) {
-            String typed = clamp(command.content());
-            state.addUserMessage(typed);
-            // "없어"·"딱히" 같은 거절 답은 행동이 아니다 — 카드에 그대로 남기지 않고 빈칸(아직 정하지 않음)으로 둔다.
-            if (!isNoActionAnswer(typed)) {
-                state.smallAction(typed);
-            }
-        } else {
-            Optional<Choice> c = resolveSingle(state, command);
-            if (c.isPresent() && !c.get().input()) {
-                state.smallAction(c.get().label());
-                state.addUserMessage(c.get().label());
-            }
-        }
-        state.bumpExplorationTurn();
+        // 바람에서 끝낸다 — 작은 행동은 다음 날 아침 편지에서 고른다(편지 PRD 14-1).
         return finishComplete(state);
-    }
-
-    private static boolean isNoActionAnswer(String typed) {
-        return NO_ACTION_ANSWERS.contains(NO_ACTION_NOISE.matcher(typed).replaceAll(""));
     }
 
     // ── 종료 ─────────────────────────────────────────────────────────────
@@ -681,7 +657,9 @@ public class RetrospectEngine {
                 diaryEmotionKeys(state));
         // 바람 카드는 감정 탐색을 거친 경우에만 — 작은 행동을 안 정했어도 만든다(빈칸 허용).
         ReplyDto.WishCardDto card = state.explorationEntered() ? buildWishCard(state) : null;
-        String text = "오늘 이야기를 정리해뒀어요. 일기에서 천천히 확인해봐요.";
+        String text = card != null
+                ? "오늘 이야기를 정리해뒀어요. 내일 아침엔 이 마음에 맞는 작은 일을 편지로 골라 올게요."
+                : "오늘 이야기를 정리해뒀어요. 일기에서 천천히 확인해봐요.";
         state.addAssistantMessage(text);
         return ReplyDto.completed(text, diary, card, state.safety().level());
     }
@@ -694,12 +672,6 @@ public class RetrospectEngine {
     private static String emotionConfirmQuestion(String label) {
         return label + Josa.pick(label, "을", "를")
                 + " 떠올렸을 때, 지금 가장 가까운 감정은 무엇인가요?";
-    }
-
-    /** 사건 이름 + 을/를 — 표기·조사 규칙은 {@link #emotionConfirmQuestion} 과 같다. */
-    private static String smallActionQuestion(String label) {
-        return label + Josa.pick(label, "을", "를")
-                + " 떠올리며, 이 마음을 위해 오늘이나 다음에 해볼 수 있는 작은 행동이 있을까요?";
     }
 
     /**
@@ -887,7 +859,7 @@ public class RetrospectEngine {
         List<ReplyDto.OptionDto> out = new ArrayList<>();
         for (int i = 0; i < options.size(); i++) {
             Choice c = options.get(i);
-            String id = RETRY_ACTIONS.equals(c.label()) ? RETRY_ACTIONS_ID : String.valueOf(i + 1);
+            String id = String.valueOf(i + 1);
             out.add(new ReplyDto.OptionDto(id, c.label(), c.description(), null,
                     c.input() ? Boolean.TRUE : null));
         }

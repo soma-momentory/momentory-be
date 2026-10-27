@@ -281,20 +281,13 @@ public class LetterGenerator {
     }
 
     /**
-     * 작은 일 세 칸 — (임시) 바람카드의 작은 일 → AI 가 고른 연결표 행동 → 연결표 순서대로 채우기.
+     * 작은 일 세 칸 — AI 가 고른 연결표 행동 → 연결표 순서대로 채우기.
      * {@code aiAsked} 가 거짓이면(욕구를 모를 때 · 기본 편지) AI 고르기 없이 대체 규칙만 쓴다.
      * {@code aiIds} 가 비어 있으면 AI 고르기가 실패한 것이다(「알맞은 후보 없음」은 빈 목록).
      */
     private Draft withActions(Draft body, LetterMaterials m, List<Need> needs, NeedsSource source,
             boolean aiAsked, Optional<List<String>> aiIds) {
         List<ActionDraft> slots = new ArrayList<>();
-        // 임시 규칙(회고 행동 고르기를 빼기 전까지만): 바람카드에서 이미 작은 일을 골랐으면 그 일을
-        // 첫 칸에 「어젯밤 정한 일」로 미리 골라 두고 나머지 두 칸만 추천한다. 회고에서 행동 고르기를
-        // 빼면 이런 날이 더는 생기지 않으므로, 그때 이 분기와 WISH_CARD 출처를 지운다.
-        if (m.wishAction() != null) {
-            slots.add(new ActionDraft(catalogId(m.wishAction()), truncate(m.wishAction()),
-                    LetterActionSource.WISH_CARD, true));
-        }
         String fallbackReason = "no_ai"; // 욕구를 모를 때 · 기다리다 보여 주는 기본 편지는 처음부터 대체 규칙이다.
         if (aiAsked) {
             Optional<List<String>> ids = aiIds;
@@ -355,16 +348,6 @@ public class LetterGenerator {
 
     private static NeedsSource quickSource(LetterMaterials m) {
         return m.wishNeeds().isEmpty() ? NeedsSource.DEFAULT : NeedsSource.WISH_CARD;
-    }
-
-    private String catalogId(String title) {
-        return catalog.snapshot().actions().stream().filter(a -> a.title().equals(title))
-                .map(NeedActionCatalog.Action::id).findFirst().orElse(null);
-    }
-
-    private static String truncate(String title) {
-        String t = title.strip();
-        return t.length() <= LetterAction.TITLE_MAX_LENGTH ? t : t.substring(0, LetterAction.TITLE_MAX_LENGTH);
     }
 
     // ── 저장 ─────────────────────────────────────────────────────────────

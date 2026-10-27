@@ -36,8 +36,4 @@ final class GeminiStructuredOutputs {
     /** 바람(욕구) 후보 — 고정 목록에서 고른 단어들(어댑터가 Needs 로 검증). */
     record GeminiNeeds(List<String> words) {
     }
-
-    /** 욕구별 허용 후보에서 고른 내부 행동 ID. 화면 문구는 서버 정본으로 치환한다. */
-    record GeminiActions(List<String> actionIds) {
-    }
 }

@@ -26,7 +26,7 @@ public record LetterResponse(
     public record Action(
             @Schema(description = "칸 번호 0~2", example = "0") int position,
             @Schema(description = "승인된 행동 제목 그대로", example = "5분 동안 숨을 들이쉬고 길게 내쉬기") String title,
-            @Schema(description = "CATALOG: AI 가 연결표에서 고름 · FALLBACK: 연결표 순서대로 채움 · WISH_CARD: 어젯밤 정한 일", example = "CATALOG") LetterActionSource source,
+            @Schema(description = "CATALOG: AI 가 연결표에서 고름 · FALLBACK: 연결표 순서대로 채움", example = "CATALOG") LetterActionSource source,
             @Schema(description = "고른 일인가. 한 편지에 하나만 true", example = "false") boolean chosen,
             @Schema(description = "고른 「언제」 칩의 말", example = "점심 뒤", nullable = true) String whenLabel,
             @Schema(description = "일정 칩을 골랐을 때 그 일정 ID", nullable = true) Long scheduleId,

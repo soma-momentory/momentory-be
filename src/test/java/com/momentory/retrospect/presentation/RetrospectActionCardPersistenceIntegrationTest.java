@@ -58,8 +58,8 @@ import com.momentory.user.infrastructure.UserRepository;
  * 행동(바람) 카드 영속화 재현 (채팅흐름_v2) — 카드가 생기는 경로(감정 탐색을 거친 완주)를 실제
  * HTTP 로 몰아, 완료 턴에서 바람 카드가 DB 에 남는지 확인한다.
  *
- * <p>v2 에서 카드는 감정 탐색(분기점 "감정을 더 알아볼래요" → 감정·바람·작은 행동 3턴)을 지난
- * 완주에서만 생긴다. 여기서는 <b>엔진이 만든 바람 카드를 리스너가 저장하는 실제 경로</b>와, 그
+ * <p>카드는 감정 탐색(일기 뒤 분기 없이 감정 · 바람 2턴)을 지난 완주에서 생긴다. 작은 행동은 회고에서
+ * 고르지 않고 다음 날 편지에서 고르므로 카드의 그 칸은 비어 있다(바바의 편지 PRD 14-1). 여기서는 <b>엔진이 만든 바람 카드를 리스너가 저장하는 실제 경로</b>와, 그
  * 저장이 상황 임베딩 실패에 얽매이지 않는지(임베딩은 커밋 뒤 best-effort)를 본다.
  */
 @SpringBootTest(properties = {
@@ -69,8 +69,6 @@ import com.momentory.user.infrastructure.UserRepository;
 })
 @Testcontainers(disabledWithoutDocker = true)
 class RetrospectActionCardPersistenceIntegrationTest {
-
-    private static final String SMALL_ACTION = "편안한 상대에게 ‘조언 없이 잠깐 내 이야기를 들어줄래?’라고 부탁하기";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES =
@@ -112,10 +110,8 @@ class RetrospectActionCardPersistenceIntegrationTest {
                 List.of(new ExtractedEmotion(1, "무시당한 느낌", Emotion.ANGRY, 3,
                         EmotionPhase.DURING, "말을 끊겼어요", List.of(1))),
                 null));
-        // 바람 후보는 엔진 폴백(고정 앞자리)에 맡기고, 작은 행동만 정해 카드 내용을 확인한다.
+        // 바람 후보는 엔진 폴백(고정 앞자리)에 맡긴다.
         when(explorationAssistant.suggestNeeds(any())).thenReturn(List.of());
-        when(explorationAssistant.suggestActions(any())).thenReturn(
-                com.momentory.retrospect.domain.assistant.ActionSuggestions.success(List.of(SMALL_ACTION)));
         when(diaryWriter.write(any())).thenReturn(Optional.of(new DiaryOutput("그냥 일기.", null)));
     }
 
@@ -132,8 +128,9 @@ class RetrospectActionCardPersistenceIntegrationTest {
 
         assertThat((boolean) JsonPath.read(completion.getResponse().getContentAsString(), "$.done"))
                 .isTrue();
-        assertThat((String) JsonPath.read(completion.getResponse().getContentAsString(),
-                "$.wishCard.smallAction")).isEqualTo(SMALL_ACTION);
+        // 작은 행동은 편지에서 고르므로 완료 응답의 카드에는 그 칸이 없다(null 은 생략된다).
+        java.util.Map<String, Object> card = JsonPath.read(completion.getResponse().getContentAsString(), "$.wishCard");
+        assertThat(card.get("smallAction")).isNull();
         // 방금 저장된 카드 id 가 완료 응답에 실려 온다 — 클라이언트가 다음 조회를 기다리지 않고
         // 이 id 로 「해봤어요」·느낀 점을 보낼 수 있다(일기 diaryId 와 같은 결).
         int responseCardId = JsonPath.read(
@@ -142,7 +139,7 @@ class RetrospectActionCardPersistenceIntegrationTest {
         // 그리고 실제로 DB 에 남아 있어야 한다.
         Optional<ActionCard> saved = actionCardRepository.findByRetrospectId(sessionId);
         assertThat(saved).as("감정 탐색을 거친 완주는 바람 카드를 남겨야 한다").isPresent();
-        assertThat(saved.get().getTargetAction()).isEqualTo(SMALL_ACTION);
+        assertThat(saved.get().getTargetAction()).isNull();
         assertThat(saved.get().getSituation()).isNotBlank();
         assertThat((long) responseCardId).isEqualTo(saved.get().getId());
 
@@ -165,17 +162,16 @@ class RetrospectActionCardPersistenceIntegrationTest {
 
         Optional<ActionCard> saved = actionCardRepository.findByRetrospectId(sessionId);
         assertThat(saved).as("임베딩이 실패해도 바람 카드는 영속화돼야 한다").isPresent();
-        assertThat(saved.get().getTargetAction()).isEqualTo(SMALL_ACTION);
     }
 
     // ── 도우미 ───────────────────────────────────────────────────────────
 
     /**
-     * 시작 → 일기 작성 채팅을 분기점까지 → "감정을 더 알아볼래요"(id 1)로 감정 탐색 진입 → 감정·바람·
-     * 작은 행동 3턴을 각각 첫 후보(id 1)로 고른다. 완료 턴의 응답을 돌려준다.
+     * 시작 → 일기 작성 채팅 6턴 → (사건이 하나라) 바로 감정 탐색 → 감정 · 바람 2턴을 각각 첫 후보(id 1)로
+     * 고른다. 완료 턴의 응답을 돌려준다.
      */
     private MvcResult driveExplorationToCompletion(User user, long sessionId) throws Exception {
-        // 일기 작성 채팅 — phase 가 diary_chat 인 동안 자유 텍스트 턴을 이어간다(엔진은 6턴에서 분기점).
+        // 일기 작성 채팅 — phase 가 diary_chat 인 동안 자유 텍스트 턴을 이어간다(엔진은 6턴에서 감정 탐색).
         String phase = "diary_chat";
         for (int i = 0; i < 10 && "diary_chat".equals(phase); i++) {
             MvcResult turn = mockMvc.perform(
@@ -184,17 +180,10 @@ class RetrospectActionCardPersistenceIntegrationTest {
                     .andReturn();
             phase = JsonPath.read(turn.getResponse().getContentAsString(), "$.phase");
         }
-        assertThat(phase).isEqualTo("await_branch");
+        assertThat(phase).isEqualTo("emotion_exploration");
 
-        // 분기점 → 감정 탐색 진입(id 1), 이후 감정 탐색이 끝날 때까지 첫 후보(id 1)를 고른다.
-        MvcResult last = mockMvc.perform(message(user, sessionId, "{\"optionIds\":[\"1\"]}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        phase = JsonPath.read(last.getResponse().getContentAsString(), "$.phase");
-        assertThat(phase).isEqualTo("await_branch"); // 추출 사건 선택
-        last = mockMvc.perform(message(user, sessionId, "{\"optionIds\":[\"1\"]}"))
-                .andExpect(status().isOk()).andReturn();
-        phase = JsonPath.read(last.getResponse().getContentAsString(), "$.phase");
+        // 감정 탐색이 끝날 때까지 첫 후보(id 1)를 고른다.
+        MvcResult last = null;
         for (int i = 0; i < 5 && "emotion_exploration".equals(phase); i++) {
             last = mockMvc.perform(message(user, sessionId, "{\"optionIds\":[\"1\"]}"))
                     .andExpect(status().isOk())
