@@ -1,5 +1,6 @@
 package com.momentory.retrospect.infrastructure.ai;
 
+import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -299,34 +300,12 @@ public class PromptFactory {
 
     /** 작은 행동(G2) — 선택한 욕구의 노션 후보만 주고, 적합한 행동 ID를 고르게 한다. */
     public String actionsPrompt(RetrospectState state, NeedActionCatalog catalog) {
-        String candidates = catalog.candidatesFor(state.needs()).stream()
-                .map(action -> """
-                        %s · %s
-                        실행: %s
-                        연구 분량: %s
-                        한계·조건: %s
-                        """.formatted(action.id(), action.title(), action.instructions(),
-                        action.researchDose(), action.limits()))
-                .collect(Collectors.joining("\n"));
         return """
                 [후보]는 사용자가 고른 바람(욕구)에 연결된 행동 목록입니다.
                 [사건]과 [감정]에 맞고 사용자가 실행할 수 있는 후보를 최대 3개 고르세요.
                 행동 문구를 새로 만들지 말고, 후보의 ID만 actionIds 배열로 반환하세요.
 
-                [규칙]
-                1. 후보 밖 행동·다른 욕구의 행동·중복 ID를 넣지 않습니다.
-                2. 좋았던 일이면 경험을 이어가고, 힘들었던 일이면 선택한 바람을 돕는 후보를 고릅니다.
-                   단순히 기분을 가라앉히는 행동을 모든 사건에 붙이지 않습니다.
-                3. 각 후보의 실행 내용·연구 분량·적용 조건을 지킵니다. 시간이 길다는 이유로
-                   20분·45분 절차를 1분·5분으로 줄이지 않습니다. 분량을 실행할 여유가 없으면 빼세요.
-                4. 필요한 상대·동의·돈·장소·도구가 사건 맥락에서 확인되지 않으면 있다고 가정하지 않습니다.
-                   특히 포옹·도움·구매·낮잠·시험 관련 행동은 그 조건이 맞을 때만 고릅니다.
-                5. 안전하지 않은 관계에 연락하거나 화해·용서·추가 돌봄을 강요하지 않습니다.
-                   타인의 인정·공정한 처리·경제난 해결을 행동 하나로 보장하지 않습니다.
-                6. 후보 수를 채우려고 맞지 않는 행동을 끼워 넣지 않습니다.
-                   적합한 후보가 없으면 actionIds를 빈 배열로 반환합니다.
-                7. 욕구별 연결은 제품의 분류이며, 해당 욕구 충족의 효능이 모두 검증됐다는 뜻이 아닙니다.
-
+                %s
                 [사건] %s
                 [감정] %s
                 [바람] %s
@@ -335,8 +314,39 @@ public class PromptFactory {
 
                 [후보]
                 %s
-                """.formatted(state.cardSituation(), emotionLabels(state), needsWithMeaning(state),
-                catalog.notesFor(state.needs()), candidates);
+                """.formatted(ACTION_RULES, state.cardSituation(), emotionLabels(state),
+                needsWithMeaning(state), catalog.notesFor(state.needs()),
+                describeCandidates(catalog.candidatesFor(state.needs())));
+    }
+
+    /** 작은 행동 고르기 규칙 — 회고(G2)와 편지가 같은 규칙으로 고른다. */
+    public static final String ACTION_RULES = """
+            [규칙]
+            1. 후보 밖 행동·다른 욕구의 행동·중복 ID를 넣지 않습니다.
+            2. 좋았던 일이면 경험을 이어가고, 힘들었던 일이면 선택한 바람을 돕는 후보를 고릅니다.
+               단순히 기분을 가라앉히는 행동을 모든 사건에 붙이지 않습니다.
+            3. 각 후보의 실행 내용·연구 분량·적용 조건을 지킵니다. 시간이 길다는 이유로
+               20분·45분 절차를 1분·5분으로 줄이지 않습니다. 분량을 실행할 여유가 없으면 빼세요.
+            4. 필요한 상대·동의·돈·장소·도구가 사건 맥락에서 확인되지 않으면 있다고 가정하지 않습니다.
+               특히 포옹·도움·구매·낮잠·시험 관련 행동은 그 조건이 맞을 때만 고릅니다.
+            5. 안전하지 않은 관계에 연락하거나 화해·용서·추가 돌봄을 강요하지 않습니다.
+               타인의 인정·공정한 처리·경제난 해결을 행동 하나로 보장하지 않습니다.
+            6. 후보 수를 채우려고 맞지 않는 행동을 끼워 넣지 않습니다.
+               적합한 후보가 없으면 actionIds를 빈 배열로 반환합니다.
+            7. 욕구별 연결은 제품의 분류이며, 해당 욕구 충족의 효능이 모두 검증됐다는 뜻이 아닙니다.
+            """;
+
+    /** 후보 행동 서술 — 번호 · 제목 · 실행 · 연구 분량 · 한계. 회고(G2)와 편지가 함께 쓴다. */
+    public static String describeCandidates(List<NeedActionCatalog.Action> actions) {
+        return actions.stream()
+                .map(action -> """
+                        %s · %s
+                        실행: %s
+                        연구 분량: %s
+                        한계·조건: %s
+                        """.formatted(action.id(), action.title(), action.instructions(),
+                        action.researchDose(), action.limits()))
+                .collect(Collectors.joining("\n"));
     }
 
     /** 일기 생성(G4) — 대화에서 비중 있게 다룬 사건·감정 중심, 전체 6문장 내외. */

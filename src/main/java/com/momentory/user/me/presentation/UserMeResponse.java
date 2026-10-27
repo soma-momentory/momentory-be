@@ -44,7 +44,10 @@ public record UserMeResponse(
             @Schema(description = "회고 시간", example = "21:30")
             @JsonFormat(pattern = "HH:mm") LocalTime reflectionTime,
             @Schema(description = "캘린더 연동 여부", example = "true") boolean calendarIntegrationEnabled,
-            @Schema(description = "푸시 알림 수신 선호 여부", example = "true") boolean notificationEnabled
+            @Schema(description = "푸시 알림 수신 선호 여부", example = "true") boolean notificationEnabled,
+            @Schema(description = "바바의 편지 알림 시각. 아직 고르지 않았으면 없다(앱은 08:30 으로 본다)", example = "08:30", nullable = true)
+            @JsonFormat(pattern = "HH:mm") LocalTime letterTime,
+            @Schema(description = "바바의 편지 알림 켜기 여부", example = "true") boolean letterNotificationEnabled
     ) {
 
         static Profile from(UserMeResult.Profile profile) {
@@ -58,7 +61,9 @@ public record UserMeResponse(
                     profile.otherRestMethodDetail(),
                     profile.reflectionTime(),
                     profile.calendarIntegrationEnabled(),
-                    profile.notificationEnabled()
+                    profile.notificationEnabled(),
+                    profile.letterTime(),
+                    profile.letterNotificationEnabled()
             );
         }
     }

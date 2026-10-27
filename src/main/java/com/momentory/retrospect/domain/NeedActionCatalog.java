@@ -68,14 +68,18 @@ public final class NeedActionCatalog {
 
     /** 모델이 보낸 번호는 허용된 연결과 대조하고, 문구는 모델 출력이 아닌 정본에서 가져온다. */
     public List<String> selectedTitles(List<Need> needs, List<String> selectedIds) {
+        return selectedActions(needs, selectedIds).stream().map(Action::title).toList();
+    }
+
+    /** {@link #selectedTitles} 와 같은 검증으로, 번호까지 필요한 쪽(편지)에 행동째 돌려준다. */
+    public List<Action> selectedActions(List<Need> needs, List<String> selectedIds) {
         if (selectedIds == null) {
             return List.of();
         }
         Map<String, Action> allowed = candidatesFor(needs).stream()
                 .collect(Collectors.toMap(Action::id, action -> action));
         return selectedIds.stream().filter(Objects::nonNull).map(String::strip)
-                .map(allowed::get).filter(Objects::nonNull).distinct().limit(3)
-                .map(Action::title).toList();
+                .map(allowed::get).filter(Objects::nonNull).distinct().limit(3).toList();
     }
 
     public record Snapshot(String sourcePage, String dictionaryPage, String snapshotDate,

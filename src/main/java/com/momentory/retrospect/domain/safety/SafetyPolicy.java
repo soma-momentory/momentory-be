@@ -88,6 +88,20 @@ public class SafetyPolicy {
         return false;
     }
 
+    /**
+     * 이 글이 위기 안내 문구인가 — 회고 대화에 안내가 한 번이라도 나왔는지 볼 때 쓴다.
+     * 「이어서 얘기하기」가 누적 안전 상태를 지우므로({@code SafetyState#reset}), 일기까지 간
+     * 회고에서는 상태 대신 남은 안내 문구로 판정한다(바바의 편지 · 조용한 편지).
+     */
+    public boolean isGuidance(String text) {
+        return text != null && GUIDANCE.values().stream().anyMatch(g -> text.startsWith(g.title()));
+    }
+
+    /** 도움받을 곳 목록 — 위기 안내와 조용한 편지가 같은 목록을 쓴다. */
+    public List<String> resources() {
+        return RESOURCES;
+    }
+
     /** 해당 레벨의 고정 응답. none/caution 은 없다. */
     public Guidance guidanceFor(SafetyLevel level) {
         return GUIDANCE.get(level);

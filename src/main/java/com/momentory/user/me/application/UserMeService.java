@@ -8,6 +8,8 @@ import com.momentory.user.infrastructure.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalTime;
+
 @Service
 public class UserMeService {
 
@@ -37,6 +39,18 @@ public class UserMeService {
         );
     }
 
+    /** 편지 알림 시각 저장 — 프로필은 온보딩 때 생기므로, 없으면 온보딩을 먼저 마쳐야 한다. */
+    @Transactional
+    public LetterPreference updateLetterPreference(Long userId, LocalTime letterTime, boolean enabled) {
+        UserProfile profile = userProfileRepository.findById(userId)
+                .orElseThrow(OnboardingRequiredException::new);
+        profile.changeLetterPreference(letterTime, enabled);
+        return new LetterPreference(profile.getLetterTime(), profile.isLetterNotificationEnabled());
+    }
+
+    public record LetterPreference(LocalTime letterTime, boolean notificationEnabled) {
+    }
+
     private static UserMeResult.Profile toProfile(UserProfile profile) {
         return new UserMeResult.Profile(
                 profile.getNickname(),
@@ -48,7 +62,9 @@ public class UserMeService {
                 profile.getOtherRestMethodDetail(),
                 profile.getReflectionTime(),
                 profile.isCalendarIntegrationEnabled(),
-                profile.isNotificationEnabled()
+                profile.isNotificationEnabled(),
+                profile.getLetterTime(),
+                profile.isLetterNotificationEnabled()
         );
     }
 }

@@ -172,6 +172,28 @@ class GeminiApiClientTest {
         assertThat(events).isEmpty(); // 유출 응답은 성공 계측을 남기지 않는다
     }
 
+    @Test
+    void attemptMarksServerErrorAndTimeoutRetryableButSafetyBlockNot() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(429));
+        assertThat(client().attempt(request("q"), DiaryOutput.class, null).retryable()).isTrue();
+
+        server.enqueue(new MockResponse().setResponseCode(400));
+        assertThat(client().attempt(request("q"), DiaryOutput.class, null).retryable()).isFalse();
+
+        // 호출별 읽기 한도 — 한도를 넘기면 시간 초과로 다시 불러 볼 만한 실패다.
+        server.enqueue(jsonResponse("{}").setHeadersDelay(1, java.util.concurrent.TimeUnit.SECONDS));
+        GeminiApiClient.Attempt<DiaryOutput> timedOut = client().withReadTimeout(Duration.ofMillis(200))
+                .attempt(request("q"), DiaryOutput.class, null);
+        assertThat(timedOut.value()).isEmpty();
+        assertThat(timedOut.retryable()).isTrue();
+
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of("finishReason", "SAFETY"))))));
+        GeminiApiClient.Attempt<DiaryOutput> blocked = client().attempt(request("q"), DiaryOutput.class, null);
+        assertThat(blocked.value()).isEmpty();
+        assertThat(blocked.retryable()).isFalse();
+    }
+
     private GeminiApiClient client() {
         GeminiApiProperties properties = new GeminiApiProperties(
                 server.url("/").toString(), "test-key", "gemini-flash-lite-latest",
