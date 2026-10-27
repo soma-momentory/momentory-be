@@ -120,6 +120,7 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(docs, action, "put", "401", "ApiErrorResponse", auth, auth, authMessage);
         assertErrorExample(docs, action, "put", "404", "ApiErrorResponse", "LETTER_NOT_FOUND", "LETTER_NOT_FOUND", "편지를 찾을 수 없습니다.");
         assertErrorExample(docs, action, "put", "404", "ApiErrorResponse", "SCHEDULE_NOT_FOUND", "SCHEDULE_NOT_FOUND", "일정을 찾을 수 없습니다.");
+        assertErrorExample(docs, action, "put", "409", "ApiErrorResponse", "LETTER_ACTION_LOCKED", "LETTER_ACTION_LOCKED", "이미 해 본 작은 일은 바꿀 수 없습니다.");
         JsonNode request = docs.at("/components/schemas/ChooseLetterActionRequest/properties");
         assertThat(request.size()).isEqualTo(4);
         assertThat(request.has("position") && request.has("whenLabel") && request.has("scheduleId") && request.has("remindAt")).isTrue();

@@ -8,6 +8,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.momentory.actioncard.domain.ActionCard;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.letter.domain.Letter;
 import com.momentory.letter.domain.LetterAction;
@@ -32,15 +33,17 @@ public class LetterService {
     private final LetterGenerator generator;
     private final ScheduleRepository scheduleRepository;
     private final SafetyPolicy safetyPolicy;
+    private final LetterWishCards wishCards;
 
     public LetterService(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, LetterGenerator generator,
-            ScheduleRepository scheduleRepository, SafetyPolicy safetyPolicy) {
+            ScheduleRepository scheduleRepository, SafetyPolicy safetyPolicy, LetterWishCards wishCards) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.generator = generator;
         this.scheduleRepository = scheduleRepository;
         this.safetyPolicy = safetyPolicy;
+        this.wishCards = wishCards;
     }
 
     /** 열 수 있는 가장 최근 편지 — 오래된 것이어도 준다. 홈 아이콘의 점은 {@code isNew} 로 판단한다. */
@@ -92,8 +95,16 @@ public class LetterService {
         // 지우지 않게 여기서도 남긴다.
         letter.markOpened(Instant.now());
         List<LetterAction> actions = letterActionRepository.findByLetterIdOrderByPositionAsc(id);
+        Optional<ActionCard> card = wishCards.of(letter);
+        // 해 본 일이 기록됐으면(밤 회고 답 · 쉼터 「했어요」) 고르기 · 바꾸기 · 풀기를 모두 막는다(편지 PRD 14).
+        // 카드가 이미 「했어요」면 처음 고르는 것도 막는다 — 해 보지 않은 일이 해 본 일로 남지 않게.
+        if (actions.stream().anyMatch(a -> a.isChosen() && a.isTried())
+                || card.map(ActionCard::isDone).orElse(false)) {
+            throw new LetterActionLockedException();
+        }
         if (position == null) {
             actions.forEach(LetterAction::unchoose);
+            card.ifPresent(c -> c.changeSmallAction(null));
             return view(letter, actions, today);
         }
         LetterAction target = actions.stream().filter(a -> a.getPosition() == position)
@@ -105,6 +116,8 @@ public class LetterService {
         actions.forEach(LetterAction::unchoose);
         letterActionRepository.flush();
         target.choose(whenLabel, scheduleId, remindAt);
+        // 바람카드의 「작은 행동」 줄은 편지에서 고른 일로 채운다(편지 PRD 14-3).
+        card.ifPresent(c -> c.changeSmallAction(target.getTitle()));
         return view(letter, actions, today);
     }
 

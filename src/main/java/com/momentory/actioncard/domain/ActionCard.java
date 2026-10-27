@@ -25,6 +25,7 @@ import jakarta.persistence.Table;
  * 상태다. 생성 시점엔 아직 비어 있다.
  */
 @Entity
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "action_cards")
 public class ActionCard extends BaseTimeEntity {
 
@@ -135,6 +136,14 @@ public class ActionCard extends BaseTimeEntity {
             this.doneAt = null;
             this.reflection = null;
         }
+    }
+
+    /**
+     * 「작은 행동」을 바꾼다 — 바바의 편지에서 고른 일을 그대로 옮겨 적는다(편지 PRD 14-3). 편지에서
+     * 선택을 풀면 null 이다. 이미 해 본 카드는 편지 쪽이 바꾸지 못하게 막는다.
+     */
+    public void changeSmallAction(String smallAction) {
+        this.targetAction = smallAction;
     }
 
     public Long getId() {

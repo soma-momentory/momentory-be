@@ -18,6 +18,7 @@ import jakarta.persistence.Table;
  * 그날 밤 회고 답({@code result})은 회고 연결 작업(BE PR 2)이 채운다.
  */
 @Entity
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "letter_actions")
 public class LetterAction {
 
@@ -90,6 +91,16 @@ public class LetterAction {
         this.whenLabel = null;
         this.scheduleId = null;
         this.remindAt = null;
+    }
+
+    /** 그날 밤 회고 첫 질문의 답을 남긴다(DONE · NOT_DONE · SKIPPED). */
+    public void recordResult(String result, Instant now) {
+        this.result = Objects.requireNonNull(result);
+        this.resultAt = Objects.requireNonNull(now);
+    }
+
+    public boolean isTried() {
+        return "DONE".equals(result);
     }
 
     public Long getId() {
