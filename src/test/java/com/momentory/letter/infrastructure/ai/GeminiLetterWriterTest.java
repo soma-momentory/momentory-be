@@ -103,7 +103,7 @@ class GeminiLetterWriterTest {
 
     private static LetterMaterials materials() {
         return new LetterMaterials(1L, LocalDate.of(2026, 10, 26), "하늘", "오늘은 발표가 있었다.",
-                List.of("발표 전에 손이 떨렸어요"), false, List.of(), null, List.of("팀 회의 (했음)"),
+                List.of("발표 전에 손이 떨렸어요"), false, List.of(), List.of("팀 회의 (했음)"),
                 List.of(), null);
     }
 }

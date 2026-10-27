@@ -83,7 +83,6 @@ class LetterMaterialsReader {
                         .anyMatch(safetyPolicy::isGuidance),
                 card.map(ActionCard::getNeeds).map(LetterMaterialsReader::csv).orElse(List.of())
                         .stream().map(Needs::byWord).flatMap(Optional::stream).toList(),
-                card.map(ActionCard::getTargetAction).filter(a -> !a.isBlank()).orElse(null),
                 schedules(letter, 0).stream()
                         .map(s -> s.getTitle() + (s.isCompleted() ? " (했음)" : " (안 했음)")).toList(),
                 schedules(letter, 1).stream().map(Schedule::getTitle).toList(),

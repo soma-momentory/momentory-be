@@ -10,7 +10,6 @@ import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
-import com.momentory.retrospect.domain.assistant.ActionSuggestions;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.domain.assistant.DiaryWriter;
@@ -45,9 +44,6 @@ class FakeAssistant
     Emotion inferredEmotion;
     // 감정 탐색 후보
     final List<Need> needs = new ArrayList<>();
-    final List<String> actions = new ArrayList<>();
-    boolean failActions;
-    int actionCalls;
 
     // 일기 생성
     boolean failDiary;
@@ -79,12 +75,6 @@ class FakeAssistant
     @Override
     public List<Need> suggestNeeds(RetrospectState state) {
         return List.copyOf(needs);
-    }
-
-    @Override
-    public ActionSuggestions suggestActions(RetrospectState state) {
-        actionCalls++;
-        return failActions ? ActionSuggestions.failure() : ActionSuggestions.success(actions);
     }
 
     @Override

@@ -6,7 +6,6 @@ import java.util.Map;
 
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
-import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiActions;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiExtraction;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
 
@@ -21,7 +20,6 @@ final class GeminiResponseSchemas {
             DiaryTurn.class, diaryTurnSchema(),
             GeminiExtraction.class, extractionSchema(),
             GeminiNeeds.class, needsSchema(),
-            GeminiActions.class, actionsSchema(),
             DiaryOutput.class, diarySchema());
 
     private GeminiResponseSchemas() {
@@ -82,12 +80,6 @@ final class GeminiResponseSchemas {
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
         props.put("words", arrayOf(str()));
         return object(props, List.of());
-    }
-
-    private static Map<String, Object> actionsSchema() {
-        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
-        props.put("actionIds", arrayOf(str()));
-        return object(props, List.of("actionIds"));
     }
 
     private static Map<String, Object> diarySchema() {

@@ -12,13 +12,12 @@ import com.momentory.retrospect.domain.Need;
  * @param userWords        그 회고에서 사용자가 한 말(바바의 말은 뺀다)
  * @param crisis           회고 중 위기 안내가 한 번이라도 나왔는가
  * @param wishNeeds        그 일기의 바람카드에서 확인한 욕구(없으면 빈 목록)
- * @param wishAction       바람카드에서 고른 작은 일(없으면 null)
  * @param todaySchedules   일기 날의 일정 — 「제목 (했음)」 · 「제목 (안 했음)」처럼 체크 여부를 붙인다
  * @param tomorrowSchedules 편지를 받는 날의 일정 제목
  * @param previousAction   전날 편지에서 고른 작은 일과 그 결과(없으면 null)
  */
 public record LetterMaterials(Long letterId, LocalDate letterDate, String nickname, String diary,
-        List<String> userWords, boolean crisis, List<Need> wishNeeds, String wishAction,
+        List<String> userWords, boolean crisis, List<Need> wishNeeds,
         List<String> todaySchedules, List<String> tomorrowSchedules, String previousAction) {
 
     public LetterMaterials {

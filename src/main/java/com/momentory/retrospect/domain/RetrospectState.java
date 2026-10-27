@@ -12,12 +12,12 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * 회고 세션 애그리거트 루트 (채팅흐름_v2).
  *
  * <p>세션 스코프 상태를 전부 소유한다 — 진입 컨텍스트(일정·닉네임·관심사), 진행 위치(phase),
- * 일기 작성 슬롯(사건·감정·의미), 감정 탐색 슬롯(감정·바람·바랐던 모습·작은 행동), 대화 로그, 안전
+ * 일기 작성 슬롯(사건·감정·의미), 감정 탐색 슬롯(감정·바람·바랐던 모습), 대화 로그, 안전
  * 상태. 상태 변경은 이 클래스의 메서드로만 한다.
  *
- * <p>흐름: {@code diary_chat}(≤6턴, 사건·감정·의미 수집) → {@code await_branch}(감정 더 알아볼까)
- * → (선택 시) {@code emotion_exploration}(고정 3턴) → {@code complete}. 종료·다음 슬롯 선택은
- * 서버(엔진)가 이 슬롯 상태로 결정한다.
+ * <p>흐름: {@code diary_chat}(≤6턴, 사건·감정·의미 수집) → (사건이 둘이면 {@code await_branch}: 사건 고르기)
+ * → {@code emotion_exploration}(감정 → 바람, 2턴) → {@code complete}. 작은 행동은 다음 날 바바의 편지에서
+ * 고른다(작은 행동 슬롯은 옛 세션 호환으로만 남는다). 종료·다음 슬롯 선택은 서버(엔진)가 이 슬롯 상태로 결정한다.
  */
 public class RetrospectState {
 

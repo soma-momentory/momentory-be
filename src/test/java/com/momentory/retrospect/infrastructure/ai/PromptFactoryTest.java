@@ -235,17 +235,6 @@ class PromptFactoryTest {
     }
 
     @Test
-    @DisplayName("작은 행동 프롬프트는 카드 상황과 같은 대표 사건 · 한국어 감정 · 뜻을 붙인 바람을 싣는다")
-    void actionsPromptUsesCardSituation() {
-        String prompt = prompts.actionsPrompt(stateForExploration(), NeedActionCatalogFixture.load());
-
-        assertThat(prompt).contains("[사건] 팀 발표 자료를 혼자 만듦")
-                .contains("[감정] 답답함")
-                .contains("[바람] 인정(내 노력과 존재를 알아봐 주길 바라는 마음)");
-        assertThat(prompt).doesNotContain("다짐한 것").doesNotContain("frustrated");
-    }
-
-    @Test
     @DisplayName("바람 프롬프트도 같은 대표 사건과 한국어 감정을 싣는다")
     void needsPromptUsesCardSituation() {
         String prompt = prompts.needsPrompt(stateForExploration());
@@ -255,31 +244,16 @@ class PromptFactoryTest {
     }
 
     @Test
-    @DisplayName("감정·바람을 고르지 않았으면 '없음'으로 싣는다")
-    void actionsPromptWithoutEmotionOrNeed() {
-        RetrospectState state = new RetrospectState("sess-y");
-        state.events(List.of(new ExtractedEvent(1, "호수공원", "가족과 호수공원을 걸음", List.of(1))));
+    @DisplayName("편지가 쓰는 작은 일 규칙 · 후보 서술은 분량 · 조건 · 욕구별 한계를 그대로 싣는다")
+    void actionRulesAndCandidatesKeepResearchDoseConditionsAndLimits() {
+        var catalog = NeedActionCatalogFixture.load();
+        String justice = PromptFactory.describeCandidates(
+                catalog.candidatesFor(List.of(Needs.byWord("정의").orElseThrow())));
 
-        assertThat(prompts.actionsPrompt(state, NeedActionCatalogFixture.load()))
-                .contains("[사건] 가족과 호수공원을 걸음")
-                .contains("[감정] 없음")
-                .contains("[바람] 없음");
-    }
-
-    @Test
-    void actionSelectionKeepsResearchDoseConditionsAndNeedSpecificLimitations() {
-        var state = new RetrospectState("justice");
-        state.chooseNeeds(List.of(Needs.byWord("정의").orElseThrow()));
-        String prompt = prompts.actionsPrompt(state, NeedActionCatalogFixture.load());
-
-        assertThat(prompt).contains("actionIds", "최대 3개", "빈 배열", "A35 ·", "A59 ·", "간접 참고")
-                .doesNotContain("A01 ·", "A33 ·", "40자 안쪽", "하나 이상 그대로");
-
-        state.chooseNeeds(List.of(Needs.byWord("사랑").orElseThrow()));
-        assertThat(prompts.actionsPrompt(state, NeedActionCatalogFixture.load()))
-                .contains("A32 · 가벼운 질문부터 서로 묻고 답하며 알아가기",
-                        "약 45분의 점진적 상호 공개 절차", "5분·질문 한 개는 별도 축약안",
-                        "상대·동의·돈·장소·도구");
+        assertThat(PromptFactory.ACTION_RULES).contains("빈 배열", "상대·동의·돈·장소·도구");
+        assertThat(justice).contains("A35 ·", "A59 ·").doesNotContain("A01 ·", "A33 ·");
+        assertThat(PromptFactory.describeCandidates(catalog.candidatesFor(List.of(Needs.byWord("사랑").orElseThrow()))))
+                .contains("A32 · 가벼운 질문부터 서로 묻고 답하며 알아가기", "약 45분의 점진적 상호 공개 절차");
     }
 
     @Test

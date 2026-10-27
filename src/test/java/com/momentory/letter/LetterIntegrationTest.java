@@ -570,14 +570,14 @@ class LetterIntegrationTest {
     }
 
     @Test
-    void wishCardActionTakesFirstSlotAsChosenAndItsNeedsAreUsed() {
+    void wishCardNeedsAreUsedAndNoSlotIsPreChosen() {
         when(writer.writeBody(any())).thenReturn(Optional.of(new Body("", "관점", "질문")));
         when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(List.of()));
-        NeedActionCatalog.Action wishAction = catalog.candidatesFor(List.of(REST)).get(0);
         User user = userRepository.saveAndFlush(User.create());
         Diary diary = diaryOf(user, false);
+        // 회고에서 행동을 고르던 때의 카드여도 편지 칸을 미리 고르지 않는다(임시 규칙 삭제 · 편지 PRD 14-1).
         actionCardRepository.save(ActionCard.createWish(user.getId(), diary.getRetrospectId(), "발표",
-                wishAction.title(), yesterday(), null, "휴식", null, null));
+                "5분 동안 숨을 들이쉬고 길게 내쉬기", yesterday(), null, "휴식", null, null));
         Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
 
         generator.generateForDiary(diary.getId());
@@ -587,11 +587,8 @@ class LetterIntegrationTest {
         assertThat(saved.getNeedsSource()).isEqualTo(NeedsSource.WISH_CARD);
         assertThat(saved.getNeeds()).isEqualTo("휴식");
         List<LetterAction> actions = letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId());
-        assertThat(actions).hasSize(3);
-        assertThat(actions.get(0).getSource()).isEqualTo(LetterActionSource.WISH_CARD);
-        assertThat(actions.get(0).getActionId()).isEqualTo(wishAction.id());
-        assertThat(actions.get(0).isChosen()).isTrue();
-        assertThat(actions.subList(1, 3)).extracting(LetterAction::getActionId).doesNotContain(wishAction.id());
+        assertThat(actions).hasSize(3).noneMatch(LetterAction::isChosen);
+        assertThat(actions).extracting(LetterAction::getSource).containsOnly(LetterActionSource.FALLBACK);
     }
 
     @Test
