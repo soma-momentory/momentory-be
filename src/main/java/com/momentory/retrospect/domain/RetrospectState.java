@@ -51,6 +51,8 @@ public class RetrospectState {
     private boolean topicMeaningSeen;
     private Integer selectedEventId;
     private boolean awaitingEventSelection;
+    /** 아침 편지에서 고른 오늘의 작은 일 — 없으면 null(옛 스냅샷 포함). */
+    private TodayAction todayAction;
     /** 온보딩 '평소 쉬는 방법' 라벨 — 작은 행동 제안에 선호를 반영한다(없으면 빈 목록). */
     private List<String> restMethods = List.of();
 
@@ -284,6 +286,25 @@ public class RetrospectState {
 
     public boolean shouldSwitchTopic() {
         return (topicEmotionSeen && topicMeaningSeen) || (topicTurn >= 2 && !topicEmotionSeen);
+    }
+
+    public TodayAction todayAction() {
+        return todayAction;
+    }
+
+    /** 오늘의 작은 일을 첫 질문으로 물었다 — 답을 받은 뒤 {@code followUp} 을 이어서 묻는다. */
+    public void askTodayAction(TodayAction action, String followUp) {
+        this.todayAction = action.asked(followUp);
+    }
+
+    public boolean awaitingTodayAction() {
+        return todayAction != null && todayAction.awaiting();
+    }
+
+    public void answerTodayAction() {
+        if (todayAction != null) {
+            this.todayAction = todayAction.answered();
+        }
     }
 
     public boolean awaitingEventSelection() {
@@ -595,7 +616,7 @@ public class RetrospectState {
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
                 List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
-                topicMeaningSeen, selectedEventId, awaitingEventSelection);
+                topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -651,6 +672,7 @@ public class RetrospectState {
         state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
         state.selectedEventId = s.selectedEventId();
         state.awaitingEventSelection = Boolean.TRUE.equals(s.awaitingEventSelection());
+        state.todayAction = s.todayAction();
         // 이미 감정 탐색 중이던 구버전 세션은 기존 대표 사건을 유지한다.
         if (state.explorationEntered && state.selectedEventId == null) {
             state.mainEvent().ifPresent(e -> state.selectedEventId = e.id());

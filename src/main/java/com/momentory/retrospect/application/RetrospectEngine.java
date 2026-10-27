@@ -3,6 +3,7 @@ package com.momentory.retrospect.application;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -13,6 +14,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import com.momentory.retrospect.application.event.CrisisDetected;
+import com.momentory.retrospect.application.event.TodayActionAnswered;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.AnswerGate;
 import com.momentory.retrospect.domain.Choice;
@@ -24,6 +26,8 @@ import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.ScheduleItem;
+import com.momentory.retrospect.domain.TodayAction;
+import com.momentory.retrospect.domain.TodayActionResult;
 import com.momentory.retrospect.domain.WishSentiment;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
@@ -123,6 +127,15 @@ public class RetrospectEngine {
     }
 
     public ReplyDto start(RetrospectState state, StartCommand command, List<String> restMethods) {
+        return start(state, command, restMethods, null);
+    }
+
+    /**
+     * 오늘의 작은 일({@code todayAction})이 있으면 원래 첫 질문 <b>앞에</b> 「해 봤어요?」를 한 번 묻고,
+     * 답을 받은 뒤 원래 첫 질문을 이어서 묻는다(바바의 편지 PRD 4-5 · 14-4). 이 물음은 일기 턴을 쓰지 않는다.
+     */
+    public ReplyDto start(RetrospectState state, StartCommand command, List<String> restMethods,
+            TodayAction todayAction) {
         state.restMethods(restMethods);
         ScheduleItem topic = pickTopic(command.schedules(), command.interest());
         if (topic != null) {
@@ -133,6 +146,68 @@ public class RetrospectEngine {
         }
         state.scheduleHint(topic != null && !directTopic(topic));
         String text = openingQuestion(state, command.schedules());
+        usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
+        if (todayAction != null) {
+            return askTodayAction(state, todayAction, text);
+        }
+        state.addAssistantMessage(text);
+        return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
+    }
+
+    // ── 오늘의 작은 일 (바바의 편지) ─────────────────────────────────────
+
+    static final String TRIED = "해 봤어요";
+    static final String NOT_TRIED = "못 했어요";
+    static final String WAS_GOOD = "좋았어요";
+    static final String WAS_SO_SO = "그저 그랬어요";
+    static final String OTHER_TOPIC = "다른 얘기 할래요";
+
+    /** 맞장구는 고정 문구다 — AI 를 부르지 않는다. 뒤에 원래 첫 질문이 붙는다. */
+    private static final Map<String, String> TODAY_ACTION_ACKS = Map.of(
+            TRIED, "해 봤군요, 잘했어요.",
+            NOT_TRIED, "못 해도 괜찮아요. 그런 날도 있죠.",
+            WAS_GOOD, "좋았다니 다행이에요.",
+            WAS_SO_SO, "그럴 때도 있죠.",
+            OTHER_TOPIC, "좋아요, 오늘 이야기부터 해요.");
+
+    private ReplyDto askTodayAction(RetrospectState state, TodayAction action, String followUp) {
+        String who = blankName(state) ? "" : state.nickname().strip() + "님, ";
+        String text;
+        List<Choice> options;
+        if (action.alreadyDone()) {
+            text = "오늘 「" + action.title() + "」 해 봤네요. 해 보니 어땠어요?";
+            options = List.of(Choice.of(WAS_GOOD), Choice.of(WAS_SO_SO), Choice.of(OTHER_TOPIC));
+        } else {
+            text = who + "오늘 「" + action.title() + "」 해 봤어요?";
+            options = List.of(Choice.of(TRIED), Choice.of(NOT_TRIED), Choice.of(OTHER_TOPIC));
+        }
+        state.askTodayAction(action, followUp);
+        state.lastOptions(options);
+        state.addAssistantMessage(text + "\n" + optionLines(options));
+        return ReplyDto.choices(text, Phase.DIARY_CHAT, toOptionDtos(options), state.safety().level());
+    }
+
+    /**
+     * 「해 봤어요?」에 대한 답. 선택지를 고르면 결과를 기록(이벤트)하고 맞장구 + 원래 첫 질문을 잇는다.
+     * 자유 입력이면 기록하지 않고 그 글로 일기 대화를 시작한다(단답 체크인의 자유 입력과 같다).
+     */
+    private ReplyDto resolveTodayAction(RetrospectState state, TurnCommand command) {
+        TodayAction action = state.todayAction();
+        String label = resolveMany(state, command).stream().map(Choice::label)
+                .filter(TODAY_ACTION_ACKS::containsKey).findFirst().orElse(null);
+        state.lastOptions(List.of());
+        state.answerTodayAction();
+        if (label == null) {
+            return handleDiaryTurn(state, command);
+        }
+        state.addUserMessage(label);
+        // 이미 쉼터에서 해 본 사람은 무엇을 고르든 해 본 것이다. 카드는 이미 체크돼 있다.
+        TodayActionResult result = action.alreadyDone() ? TodayActionResult.DONE
+                : TRIED.equals(label) ? TodayActionResult.DONE
+                : NOT_TRIED.equals(label) ? TodayActionResult.NOT_DONE
+                : TodayActionResult.SKIPPED;
+        events.publishEvent(new TodayActionAnswered(action.letterActionId(), result));
+        String text = TODAY_ACTION_ACKS.get(label) + " " + action.followUp();
         state.addAssistantMessage(text);
         usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
@@ -203,6 +278,9 @@ public class RetrospectEngine {
     // ── 일기 작성 채팅 ───────────────────────────────────────────────────
 
     private ReplyDto handleDiaryTurn(RetrospectState state, TurnCommand command) {
+        if (state.awaitingTodayAction()) {
+            return resolveTodayAction(state, command);
+        }
         // 단답 체크인을 띄운 상태면, 이 턴은 그 선택('일기 보러 갈래요' vs '조금 더')에 대한 답이다.
         if (!state.lastOptions().isEmpty()) {
             return resolveDiaryCheckin(state, command);

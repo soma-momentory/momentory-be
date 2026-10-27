@@ -38,12 +38,14 @@ class LetterMaterialsReader {
     private final ScheduleRepository scheduleRepository;
     private final UserProfileRepository userProfileRepository;
     private final SafetyPolicy safetyPolicy;
+    private final LetterWishCards wishCards;
 
     LetterMaterialsReader(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, DiaryRepository diaryRepository,
             RetrospectRepository retrospectRepository, RetrospectStateCodec codec,
             ActionCardRepository actionCardRepository, ScheduleRepository scheduleRepository,
-            UserProfileRepository userProfileRepository, SafetyPolicy safetyPolicy) {
+            UserProfileRepository userProfileRepository, SafetyPolicy safetyPolicy,
+            LetterWishCards wishCards) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.diaryRepository = diaryRepository;
@@ -53,6 +55,7 @@ class LetterMaterialsReader {
         this.scheduleRepository = scheduleRepository;
         this.userProfileRepository = userProfileRepository;
         this.safetyPolicy = safetyPolicy;
+        this.wishCards = wishCards;
     }
 
     /** 만드는 사이 일기가 지워졌으면 empty. */
@@ -93,22 +96,25 @@ class LetterMaterialsReader {
                 .filter(s -> !s.isHidden()).toList();
     }
 
+    /**
+     * 전날 편지에서 고른 일 — 편지를 받는 날 기준으로 「어제 해 보기로 한 일」이다(편지 PRD 14-4).
+     * 해 봤는지는 바람카드의 완료 표시가 원본이다. 쉼터에서 나중에 체크한 것도 그대로 반영된다.
+     */
     private String previousAction(Letter letter) {
         return letterRepository
                 .findFirstByUserIdAndLetterDateLessThanOrderByLetterDateDesc(letter.getUserId(),
                         letter.getLetterDate())
                 .filter(previous -> previous.getLetterDate().equals(letter.getLetterDate().minusDays(1)))
-                .flatMap(previous -> letterActionRepository.findByLetterIdAndChosenTrue(previous.getId()))
-                .map(a -> a.getTitle() + (a.getResult() == null ? "" : " (" + resultLabel(a.getResult()) + ")"))
+                .flatMap(previous -> letterActionRepository.findByLetterIdAndChosenTrue(previous.getId())
+                        .flatMap(action -> {
+                            if (wishCards.tried(previous, action)) {
+                                return Optional.of(action.getTitle() + " (해 봤다고 함)");
+                            }
+                            return "NOT_DONE".equals(action.getResult())
+                                    ? Optional.of(action.getTitle() + " (못 했다고 함 · 못 해도 괜찮다는 쪽으로)")
+                                    : Optional.empty();
+                        }))
                 .orElse(null);
-    }
-
-    private static String resultLabel(String result) {
-        return switch (result) {
-            case "DONE" -> "해 봤다고 함";
-            case "NOT_DONE" -> "못 했다고 함";
-            default -> "다른 얘기를 함";
-        };
     }
 
     private static List<String> csv(String value) {

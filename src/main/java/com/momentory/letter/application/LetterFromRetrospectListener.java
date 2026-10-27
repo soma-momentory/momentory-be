@@ -1,5 +1,7 @@
 package com.momentory.letter.application;
 
+import java.time.Instant;
+
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -8,8 +10,13 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.diary.application.DiaryOriginalUpdated;
 import com.momentory.diary.infrastructure.DiaryRepository;
+import com.momentory.letter.domain.Letter;
+import com.momentory.letter.domain.LetterAction;
+import com.momentory.letter.infrastructure.LetterActionRepository;
 import com.momentory.letter.infrastructure.LetterRepository;
 import com.momentory.retrospect.application.RetrospectCompleted;
+import com.momentory.retrospect.application.event.TodayActionAnswered;
+import com.momentory.retrospect.domain.TodayActionResult;
 
 /**
  * 회고 완료 · 일기 고침을 받아 편지를 만든다(PRD 6-1 · 6-2).
@@ -27,13 +34,18 @@ public class LetterFromRetrospectListener {
     private final LetterRepository letterRepository;
     private final LetterGenerator generator;
     private final LetterTaskLauncher launcher;
+    private final LetterActionRepository letterActionRepository;
+    private final LetterWishCards wishCards;
 
     public LetterFromRetrospectListener(DiaryRepository diaryRepository,
-            LetterRepository letterRepository, LetterGenerator generator, LetterTaskLauncher launcher) {
+            LetterRepository letterRepository, LetterGenerator generator, LetterTaskLauncher launcher,
+            LetterActionRepository letterActionRepository, LetterWishCards wishCards) {
         this.diaryRepository = diaryRepository;
         this.letterRepository = letterRepository;
         this.generator = generator;
         this.launcher = launcher;
+        this.letterActionRepository = letterActionRepository;
+        this.wishCards = wishCards;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
@@ -66,5 +78,28 @@ public class LetterFromRetrospectListener {
     public void regenerate(DiaryOriginalUpdated event) {
         Long diaryId = event.diaryId();
         launcher.launch(() -> generator.generateForDiary(diaryId));
+    }
+
+    /**
+     * 밤 회고 첫 질문의 답 — 같은 트랜잭션에서 작은 일의 결과를 남기고, 「해 봤어요」면 바람카드도
+     * 「했어요」로 바꾼다(편지 PRD 14-4 · 원본은 카드의 완료 표시).
+     */
+    @EventListener
+    public void recordTodayAction(TodayActionAnswered event) {
+        letterActionRepository.findLetterIdById(event.letterActionId()).ifPresent(letterId -> {
+            // 작은 일 고르기(chooseAction)와 같은 순서로 편지 행을 먼저 잠근다 — 서로의 값을 덮어쓰지 않게.
+            Letter letter = letterRepository.findForUpdate(letterId).orElse(null);
+            LetterAction action = letterActionRepository.findById(event.letterActionId()).orElse(null);
+            // 회고 도중 편지에서 다른 일로 바꿨으면, 물어본 일은 더는 고른 일이 아니다 — 기록하지 않는다.
+            if (letter == null || action == null || !action.isChosen()) {
+                return;
+            }
+            Instant now = Instant.now();
+            action.recordResult(event.result().name(), now);
+            if (event.result() == TodayActionResult.DONE) {
+                wishCards.of(letter).filter(card -> !card.isDone())
+                        .ifPresent(card -> card.changeCompletion(true, card.getReflection(), now));
+            }
+        });
     }
 }

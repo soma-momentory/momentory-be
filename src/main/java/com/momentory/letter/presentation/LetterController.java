@@ -101,7 +101,7 @@ public class LetterController {
         letterService.open(principal.userId(), id);
     }
 
-    @Operation(summary = "작은 일 고르기", description = "작은 일 하나를 고르거나 바꾸고 「언제」를 남긴다. position 이 null 이면 선택을 푼다.")
+    @Operation(summary = "작은 일 고르기", description = "작은 일 하나를 고르거나 바꾸고 「언제」를 남긴다. position 이 null 이면 선택을 푼다. 고른 일은 그 일기의 바람카드 「작은 행동」에도 옮겨 적고, 해 본 일이 기록된 뒤(밤 회고 답 · 쉼터 「했어요」)에는 바꿀 수 없다(409).")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "저장 성공", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = LetterResponse.class))),
@@ -115,7 +115,8 @@ public class LetterController {
             @ApiResponse(responseCode = "404", description = "편지 또는 일정 없음", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = {
                     @ExampleObject(name = "LETTER_NOT_FOUND", value = "{\"code\":\"LETTER_NOT_FOUND\",\"message\":\"편지를 찾을 수 없습니다.\"}"),
                     @ExampleObject(name = "SCHEDULE_NOT_FOUND", value = "{\"code\":\"SCHEDULE_NOT_FOUND\",\"message\":\"일정을 찾을 수 없습니다.\"}")
-            }))
+            })),
+            @ApiResponse(responseCode = "409", description = "해 본 일이 이미 기록됨", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(name = "LETTER_ACTION_LOCKED", value = "{\"code\":\"LETTER_ACTION_LOCKED\",\"message\":\"이미 해 본 작은 일은 바꿀 수 없습니다.\"}")))
     })
     @PutMapping(value = "/{id}/action", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)

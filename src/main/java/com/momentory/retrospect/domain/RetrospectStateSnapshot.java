@@ -51,7 +51,9 @@ public record RetrospectStateSnapshot(
         Boolean topicEmotionSeen,
         Boolean topicMeaningSeen,
         Integer selectedEventId,
-        Boolean awaitingEventSelection) {
+        Boolean awaitingEventSelection,
+        // 오늘의 작은 일(바바의 편지) — 옛 스냅샷은 null
+        TodayAction todayAction) {
 
     /** 안전 상태 스냅샷 — 누적 레벨·플래그·마지막 플래그 메시지 id. */
     public record SafetySnapshot(SafetyLevel level, List<String> flags, String lastFlaggedMsgId) {
