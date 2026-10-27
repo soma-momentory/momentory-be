@@ -33,7 +33,10 @@ public record UserMeResult(
             String otherRestMethodDetail,
             LocalTime reflectionTime,
             boolean calendarIntegrationEnabled,
-            boolean notificationEnabled
+            boolean notificationEnabled,
+            /** 아직 고르지 않았으면 {@code null} */
+            LocalTime letterTime,
+            boolean letterNotificationEnabled
     ) {
     }
 }

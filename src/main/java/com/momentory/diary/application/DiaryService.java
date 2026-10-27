@@ -1,5 +1,6 @@
 package com.momentory.diary.application;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,9 +15,11 @@ import com.momentory.diary.infrastructure.DiaryRepository;
 public class DiaryService {
 
     private final DiaryRepository diaryRepository;
+    private final ApplicationEventPublisher events;
 
-    public DiaryService(DiaryRepository diaryRepository) {
+    public DiaryService(DiaryRepository diaryRepository, ApplicationEventPublisher events) {
         this.diaryRepository = diaryRepository;
+        this.events = events;
     }
 
     /** 외부 조회는 트랜잭션 밖에서 수행하고, 기록 시 소유권과 날짜를 다시 검사한다. */
@@ -61,6 +64,7 @@ public class DiaryService {
                 .filter(d -> d.getUserId().equals(userId))
                 .orElseThrow(DiaryNotFoundException::new);
         diary.updateOriginal(original);
+        events.publishEvent(new DiaryOriginalUpdated(diary.getId()));
         return DiaryView.from(diary);
     }
 }

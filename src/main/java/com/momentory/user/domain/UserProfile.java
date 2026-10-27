@@ -95,6 +95,13 @@ public class UserProfile extends BaseTimeEntity {
     @Column(name = "notification_enabled", nullable = false)
     private boolean notificationEnabled;
 
+    /** 바바의 편지 알림 시각 — null 은 아직 고르지 않았다는 뜻이다(앱은 08:30 으로 보여 준다). */
+    @Column(name = "letter_time")
+    private LocalTime letterTime;
+
+    @Column(name = "letter_notification_enabled", nullable = false)
+    private boolean letterNotificationEnabled = true;
+
     protected UserProfile() {
     }
 
@@ -276,6 +283,20 @@ public class UserProfile extends BaseTimeEntity {
 
     public String getOtherRestMethodDetail() {
         return otherRestMethodDetail;
+    }
+
+    /** 처음 일기를 저장할 때 · 알림 설정에서 고른 편지 알림 시각과 켜기 여부. */
+    public void changeLetterPreference(LocalTime letterTime, boolean letterNotificationEnabled) {
+        this.letterTime = Objects.requireNonNull(letterTime);
+        this.letterNotificationEnabled = letterNotificationEnabled;
+    }
+
+    public LocalTime getLetterTime() {
+        return letterTime;
+    }
+
+    public boolean isLetterNotificationEnabled() {
+        return letterNotificationEnabled;
     }
 
     public LocalTime getReflectionTime() {

@@ -39,6 +39,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -154,6 +155,61 @@ class UserMeControllerIntegrationTest {
                 .andExpect(jsonPath("$.profile.reflectionTime").value("21:30"))
                 .andExpect(jsonPath("$.profile.calendarIntegrationEnabled").value(true))
                 .andExpect(jsonPath("$.profile.notificationEnabled").value(true));
+    }
+
+    @Test
+    void savesLetterTimeOnProfileAndReturnsItFromMe() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        String token = accessTokenIssuer.issueAccessToken(user.getId(), user.getRole());
+
+        // 온보딩 전에는 프로필이 없어 저장할 곳이 없다
+        mockMvc.perform(letterTime(token, "{\"letterTime\":\"08:30\",\"notificationEnabled\":true}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ONBOARDING_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("온보딩을 먼저 마쳐 주세요."));
+
+        mockMvc.perform(put("/api/v1/users/me/onboarding")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"nickname":"지은","age":25,"gender":"FEMALE",
+                                 "interestAreas":["CAREER"],"restMethods":["READING"],
+                                 "reflectionTime":"21:30","calendarIntegrationEnabled":true,"notificationEnabled":true}
+                                """))
+                .andExpect(status().isOk());
+
+        // 아직 고르지 않았으면 시각이 없다 — 앱이 처음 일기를 저장할 때 한 번 묻는 기준이다
+        mockMvc.perform(me(token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profile.letterTime").doesNotExist())
+                .andExpect(jsonPath("$.profile.letterNotificationEnabled").value(true));
+
+        mockMvc.perform(letterTime(token, "{\"letterTime\":\"7:30\",\"notificationEnabled\":true}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("letterTime은 HH:mm 형식이어야 합니다."));
+        mockMvc.perform(letterTime(token, "{\"letterTime\":\"07:30\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("notificationEnabled는 필수입니다."));
+
+        mockMvc.perform(letterTime(token, "{\"letterTime\":\"07:30\",\"notificationEnabled\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.letterTime").value("07:30"))
+                .andExpect(jsonPath("$.notificationEnabled").value(false));
+
+        mockMvc.perform(me(token))
+                .andExpect(jsonPath("$.profile.letterTime").value("07:30"))
+                .andExpect(jsonPath("$.profile.letterNotificationEnabled").value(false));
+        assertThat(userProfileRepository.findById(user.getId()).orElseThrow().getLetterTime())
+                .isEqualTo(java.time.LocalTime.of(7, 30));
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder letterTime(
+            String accessToken, String body) {
+        return put("/api/v1/users/me/letter-time")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body);
     }
 
     @Test
