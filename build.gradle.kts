@@ -1,3 +1,19 @@
+buildscript {
+    configurations.classpath {
+        resolutionStrategy.activateDependencyLocking()
+    }
+    dependencies {
+        constraints {
+            add("classpath", "org.apache.commons:commons-lang3:3.20.0") {
+                because("Align the plugin classpath with Boot 4.1.2 and avoid CVE-2025-48924")
+            }
+        }
+    }
+    if (!gradle.startParameter.isWriteDependencyLocks && !file("buildscript-gradle.lockfile").isFile) {
+        throw GradleException("Reviewed buildscript dependency lock state is required")
+    }
+}
+
 plugins {
     java
     id("org.springframework.boot") version "4.1.2"
@@ -43,4 +59,10 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// Candidate lock state is generated and reviewed separately from dependency trust approval.
+dependencyLocking {
+    lockAllConfigurations()
+    lockMode.set(LockMode.STRICT)
 }
