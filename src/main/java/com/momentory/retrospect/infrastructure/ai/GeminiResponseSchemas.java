@@ -43,7 +43,7 @@ final class GeminiResponseSchemas {
         props.put("noMoreToAsk", bool());
         props.put("offTopic", bool());
         props.put("vague", bool());
-        return object(props, List.of("question"));
+        return object(props, List.of("question", "empathy"));
     }
 
     /**
