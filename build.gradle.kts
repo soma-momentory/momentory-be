@@ -3,6 +3,7 @@ buildscript {
         resolutionStrategy.activateDependencyLocking()
     }
     dependencies {
+        add("classpath", platform("tools.jackson:jackson-bom:3.1.8"))
         constraints {
             add("classpath", "org.apache.commons:commons-lang3:3.20.0") {
                 because("Align the plugin classpath with Boot 4.1.2 and avoid CVE-2025-48924")
@@ -34,6 +35,8 @@ repositories {
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.2"))
     implementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.8"))
+    implementation(platform("tools.jackson:jackson-bom:3.1.8"))
 
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
