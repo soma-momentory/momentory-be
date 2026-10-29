@@ -64,7 +64,7 @@ import com.momentory.user.infrastructure.UserRepository;
  * AI 포트 4종은 모킹해 흐름을 결정적으로 만든다(실 Gemini 검증은 opt-in 통합 테스트).
  *
  * <p>v2 계약: 시작은 감정을 고르지 않고(일정 이름만), 첫 phase 는 {@code diary_chat}. 일기 작성
- * 채팅을 최대 6턴 이어가면 분기 없이 감정 탐색({@code emotion_exploration})으로 넘어간다(사건이 둘이면
+ * 채팅을 최대 5턴 이어가면 분기 없이 감정 탐색({@code emotion_exploration})으로 넘어간다(사건이 둘이면
  * {@code await_branch} 에서 사건을 고른다 · 바바의 편지 PRD 14-1). 턴 입력은 {@code content} 또는 {@code optionIds}.
  */
 @SpringBootTest(properties = {
@@ -223,14 +223,56 @@ class RetrospectApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("일기 작성 6턴을 이어가면 분기 없이 감정 확인으로 넘어간다(사건이 하나일 때)")
+    @DisplayName("첫 발화에는 공감만 저장하고 후속 감정 발화에서 소재를 전환한다")
+    void emotionMovesOnAndPersistsWithoutMeaning() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(user);
+        when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.of(new DiaryTurn(
+                "면접 스터디에서 말이 막혔다", List.of(), null, true,
+                "그 일에 대해 어떤 생각이 들었어요?", "속상한 마음이 들었군요.",
+                "none", List.of(), false, false, false)));
+
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"속상했어요.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("diary_chat"))
+                .andExpect(jsonPath("$.text").value("속상한 마음이 들었군요."));
+
+        String firstSnapshot = retrospectRepository.findById(sessionId).orElseThrow().getStateJson();
+        assertThat(((Number) JsonPath.read(firstSnapshot, "$.topicTurn")).intValue()).isEqualTo(1);
+        assertThat((Boolean) JsonPath.read(firstSnapshot, "$.topicEmotionSeen")).isTrue();
+
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"아쉬운 마음도 들었어요.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("diary_chat"))
+                .andExpect(jsonPath("$.text").value(
+                        "속상한 마음이 들었군요.\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?"));
+
+        String snapshot = retrospectRepository.findById(sessionId).orElseThrow().getStateJson();
+        assertThat((Boolean) JsonPath.read(snapshot, "$.topicEmotionSeen")).isTrue();
+        assertThat((Boolean) JsonPath.read(snapshot, "$.topicMeaningSeen")).isFalse();
+        assertThat(((Number) JsonPath.read(snapshot, "$.diaryTurn")).intValue()).isEqualTo(2);
+        assertThat(((Number) JsonPath.read(snapshot, "$.topicTurn")).intValue()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("일기 작성 5턴을 이어가면 분기 없이 감정 확인으로 넘어간다(사건이 하나일 때)")
     void diaryGoesStraightToEmotionConfirm() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         long sessionId = startSession(user);
 
-        String phase = driveDiaryToBranch(user, sessionId);
+        for (int i = 1; i < 5; i++) {
+            mockMvc.perform(message(user, sessionId,
+                            "{\"content\":\"팀원이 말을 끊어서 속상했어요.\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.phase").value("diary_chat"));
+        }
+        mockMvc.perform(message(user, sessionId,
+                        "{\"content\":\"내 의견을 존중받고 싶었어요.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("emotion_exploration"));
 
-        assertThat(phase).isEqualTo("emotion_exploration");
+        String snapshot = retrospectRepository.findById(sessionId).orElseThrow().getStateJson();
+        assertThat(((Number) JsonPath.read(snapshot, "$.diaryTurn")).intValue()).isEqualTo(5);
     }
 
     @Test
@@ -315,7 +357,7 @@ class RetrospectApiIntegrationTest {
 
     /**
      * 일기 작성 채팅을 분기점까지 몰아준다 — phase 가 {@code diary_chat} 인 동안 자유 텍스트 턴을
-     * 계속 보낸다(엔진은 최대 6턴에서 분기점을 낸다). 분기점의 phase 를 돌려준다.
+     * 계속 보낸다(엔진은 최대 5턴에서 분기점을 낸다). 분기점의 phase 를 돌려준다.
      */
     private String driveDiaryToBranch(User user, long sessionId) throws Exception {
         String phase = "diary_chat";

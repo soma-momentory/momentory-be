@@ -28,6 +28,16 @@ class PromptFactoryTest {
     private final PromptFactory prompts =
             new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT);
 
+    @Test
+    @DisplayName("일기 질문 프롬프트도 서버와 같은 5턴 상한을 안내한다")
+    void diaryPromptUsesFiveTurnLimit() {
+        RetrospectState state = new RetrospectState("sess-five-turns");
+
+        assertThat(prompts.diaryTurnPrompt(state, "오늘 발표했어요"))
+                .contains("일기 작성 채팅은 5턴 고정")
+                .doesNotContain("6턴 고정");
+    }
+
     private static RetrospectState stateWithConversation() {
         RetrospectState state = new RetrospectState("sess-1");
         state.addUserMessage("오늘 발표에서 말이 막혔어요");
@@ -273,21 +283,36 @@ class PromptFactoryTest {
     }
 
     @Test
+    void diaryPromptMovesOnAfterEmotionAndDoesNotProbeForMeaning() {
+        var state = new RetrospectState("emotion-only");
+        state.event("친구와 저녁");
+        state.markEmotionSeen();
+
+        assertThat(prompts.diaryTurnPrompt(state, "반가웠어요"))
+                .contains("질문 없이 짧게 공감만", "그 공감에 이어 사용자가 같은 소재의 감정을 말하면 다시 공감",
+                        "생각·의미·이유를 더 묻거나", "자발적으로 말한 사건의 의미만",
+                        "empathy: 반드시 채우세요", "구체적인 장면·행동", "짧은 맞장구만으로 끝내거나",
+                        "감정을 지어내지 말고")
+                .doesNotContain("첫 답변부터 바로 다른 소재", "감정과 의미를 모두 모았거나");
+    }
+
+    @Test
     void serverSwitchInstructionUsesOnlyCurrentTopicProgress() {
         var state = new RetrospectState("progress");
         state.event("면접");
         state.bumpDiaryTurn();
         state.bumpDiaryTurn();
         assertThat(prompts.diaryTurnPrompt(state, "끝났어요"))
-                .contains("현재 소재를 더 탐색하지 말고 다른 소재로 전환하세요", "첫 답변부터 바로 다른 소재");
+                .contains("현재 소재의 후속 답변이면 다른 소재로 전환할 수 있습니다. 새 소재의 첫 발화면 공감만 하세요");
         state.markEmotionSeen();
         state.meaning("마음에 남았다");
         assertThat(prompts.diaryTurnPrompt(state, "생각이 나요"))
-                .contains("현재 소재를 더 탐색하지 말고 다른 소재로 전환하세요");
+                .contains("현재 소재의 후속 답변이면 다른 소재로 전환할 수 있습니다");
         state.event("저녁");
         assertThat(prompts.diaryTurnPrompt(state, "밥 먹었어요"))
-                .contains("이 소재의 감정 수집: 아니요", "이 소재의 의미 수집: 아니요")
-                .doesNotContain("서버 진행 지시: 현재 소재를 더 탐색하지 말고");
+                .contains("이 소재의 감정 수집: 아니요")
+                .doesNotContain("이 소재의 의미 수집")
+                .contains("서버 진행 지시: 새 소재의 첫 발화에는 공감만 하고");
     }
 
 }

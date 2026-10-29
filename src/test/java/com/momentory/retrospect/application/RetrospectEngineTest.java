@@ -45,7 +45,7 @@ class RetrospectEngineTest {
     }
 
     /**
-     * 슬롯을 채운 채 6턴(최대)까지 이어가 일기를 마친다(조기 종료 금지 규칙). 사건이 하나면 곧바로
+     * 슬롯을 채운 채 5턴(최대)까지 이어가 일기를 마친다(조기 종료 금지 규칙). 사건이 하나면 곧바로
      * 감정 확인이, 둘이면 사건 고르기가 돌아온다(분기 없음 · 편지 PRD 14-1).
      */
     private ReplyDto toBranch() {
@@ -86,23 +86,320 @@ class RetrospectEngineTest {
 
     // ── 일기 작성 → 종료 ────────────────────────────────────────────────
 
+    @ParameterizedTest
+    @ValueSource(strings = {"반가웠어요.", "속상했어요."})
+    @DisplayName("소재 첫 발화는 공감만 하고 후속 감정에 다시 공감한 뒤 다른 일을 묻는다")
+    void emotionMovesOnWithoutAskingMeaning(String content) {
+        start();
+        fake.turnEvent = "친구를 만났다";
+        fake.turnQuestion = "그 일에 대해 어떤 생각이 들었어요?";
+        fake.turnEmpathy = "그런 마음이 들었군요.";
+
+        ReplyDto first = engine.handle(state, TurnCommand.text("친구를 만났어요."));
+        assertThat(first.text()).isEqualTo("그런 마음이 들었군요.");
+        assertThat(state.shouldSwitchTopic()).isFalse();
+
+        fake.turnEvent = null; // 감정만 답해도 직전 소재가 유지된다.
+        fake.turnEmotionPresent = true;
+        ReplyDto reply = engine.handle(state, TurnCommand.text(content));
+
+        assertThat(reply.phase()).isEqualTo("diary_chat");
+        assertThat(reply.text()).isEqualTo("그런 마음이 들었군요.\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+        assertThat(state.topicMeaningSeen()).isFalse();
+        assertThat(state.diaryTurn()).isEqualTo(2);
+        assertThat(state.event()).isEqualTo("친구를 만났다");
+        assertThat(fake.diaryWriteCalls).isZero();
+    }
+
     @Test
-    @DisplayName("슬롯이 1턴에 다 모여도 6턴까지 이어가고, 6턴에서 분기 없이 감정 확인으로 넘어간다(조기 종료 금지).")
-    void diaryRunsToSixTurnsEvenWhenSlotsFillEarly() {
+    @DisplayName("사건 이름 없이 감정만 말해도 사건을 더 캐묻지 않는다")
+    void emotionWithoutEventMovesOn() {
+        start();
+        fake.turnEmotionPresent = true;
+        fake.turnQuestion = "어떤 일 때문에 그런 생각이 들었어요?";
+
+        assertThat(engine.handle(state, TurnCommand.text("기분이 좋았어요.")).text())
+                .doesNotContain("그랬군요.", "?", "？").contains("들려주신 이야기");
+        ReplyDto reply = engine.handle(state, TurnCommand.text("기분이 좋았어요."));
+
+        assertThat(state.event()).isNull();
+        assertThat(reply.text()).doesNotContain("그랬군요.")
+                .endsWith("\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+    }
+
+    @Test
+    @DisplayName("3턴 이후 짧게 감정을 답해도 단답 체크인 대신 다음 일로 넘어간다")
+    void shortEmotionDoesNotTriggerCheckin() {
+        start();
+        fake.turnEvent = "발표를 했다";
+        engine.handle(state, TurnCommand.text("발표를 준비했어요."));
+        engine.handle(state, TurnCommand.text("사람들 앞에 섰어요."));
+        fake.turnEmotionPresent = true;
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("화"));
+
+        assertThat(reply.phase()).isEqualTo("diary_chat");
+        assertThat(reply.options()).isNull();
+        assertThat(reply.text()).doesNotContain("그랬군요.")
+                .endsWith("\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+    }
+
+    @Test
+    @DisplayName("이미 두 사건을 이야기했으면 감정 확인 뒤 다른 기존 사건으로 전환한다")
+    void emotionAtEventLimitDoesNotOpenThirdEvent() {
+        start();
+        state.event("발표를 했다");
+        state.addSecondaryEvents(List.of("친구와 저녁을 먹었다"));
+        fake.turnEvent = "발표를 했다";
+        assertThat(engine.handle(state, TurnCommand.text("발표를 했어요.")).text())
+                .doesNotContain("그랬군요.", "?", "？").contains("들려주신 이야기");
+        fake.turnEmotionPresent = true;
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("떨렸어요."));
+
+        assertThat(reply.text()).doesNotContain("그랬군요.")
+                .endsWith("\n지금까지 이야기한 것 중에, 다른 이야기를 나눠볼까요?");
+        assertThat(state.knownEventCount()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("감정 없는 첫 발화에도 공감만 하고 후속 발화부터 기분을 물을 수 있다")
+    void keepsEmotionQuestionWhenEmotionIsMissing() {
+        start();
+        fake.turnEvent = "친구와 저녁을 먹었다";
+        fake.turnQuestion = "그때 어떤 기분이 들었어요?";
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("친구와 저녁을 먹었어요."));
+
+        assertThat(reply.text()).doesNotContain("그랬군요.", "?", "？").contains("들려주신 이야기");
+        assertThat(state.shouldSwitchTopic()).isFalse();
+        assertThat(engine.handle(state, TurnCommand.text("식사를 같이 했어요.")).text())
+                .isEqualTo("그때 어떤 기분이 들었어요?");
+    }
+
+    @Test
+    @DisplayName("감정을 이미 확인한 뒤 AI 호출이 실패해도 생각 질문으로 돌아가지 않는다")
+    void fallbackAfterEmotionDoesNotAskMeaning() {
+        start();
+        fake.turnEvent = "친구를 만났다";
+        fake.turnEmotionPresent = true;
+        engine.handle(state, TurnCommand.text("반가웠어요."));
+        fake.failDiaryChat = true;
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("그랬던 것 같아요."));
+
+        assertThat(reply.text()).doesNotContain("그랬군요.")
+                .endsWith("\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+        assertThat(state.topicMeaningSeen()).isFalse();
+    }
+
+    @Test
+    @DisplayName("두 번째 소재도 첫 발화에 감정이 있어도 공감만 한다")
+    void eachNewTopicWaitsForFollowup() {
+        start();
+        fake.turnEvent = "친구를 만났다";
+        fake.turnEmotionPresent = true;
+        fake.turnEmpathy = "반가운 시간이었군요.";
+        engine.handle(state, TurnCommand.text("친구를 만나 반가웠어요."));
+        engine.handle(state, TurnCommand.text("정말 즐거웠어요."));
+        fake.turnEvent = "팀 발표를 했다";
+        fake.turnEmpathy = "긴장되는 자리였군요.";
+        fake.turnQuestion = "다른 일은 없었어요?";
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("발표도 했는데 떨렸어요."));
+
+        assertThat(reply.text()).isEqualTo("긴장되는 자리였군요.");
+        assertThat(state.topicTurn()).isEqualTo(1);
+        assertThat(state.diaryTurn()).isEqualTo(3);
+        assertThat(state.shouldSwitchTopic()).isFalse();
+    }
+
+    @Test
+    @DisplayName("3턴의 짧은 새 소재도 정상 사건이면 체크인 대신 공감만 한다")
+    void shortNewTopicGetsEmpathyBeforeCheckin() {
+        start();
+        fake.turnEvent = "친구를 만났다";
+        engine.handle(state, TurnCommand.text("친구를 만났어요."));
+        engine.handle(state, TurnCommand.text("같이 밥을 먹었어요."));
+        fake.turnEvent = "집으로 돌아왔다";
+        fake.turnEmpathy = "집으로 돌아오셨군요.";
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("집"));
+
+        assertThat(reply.text()).isEqualTo("집으로 돌아오셨군요.");
+        assertThat(reply.options()).isNull();
+        assertThat(state.topicTurn()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("새 사건이 추출돼도 얼버무린 답변은 기존 단답 체크인을 유지한다")
+    void vagueNewTopicStillOffersCheckin() {
+        start();
+        fake.turnEvent = "친구를 만났다";
+        engine.handle(state, TurnCommand.text("친구를 만났어요."));
+        engine.handle(state, TurnCommand.text("같이 밥을 먹었어요."));
+        fake.turnEvent = "집으로 돌아왔다";
+        fake.turnVague = true;
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("글쎄요"));
+
+        assertThat(reply.options()).extracting("label")
+                .containsExactly(RetrospectEngine.WRAP_UP, RetrospectEngine.KEEP_TALKING);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"사실만 짧게 말했어요.", "그 일정은 취소됐어요.", "발표가 잘됐어요."})
+    @DisplayName("짧은 사실·취소 발화에도 AI의 즉시 소재 전환 질문을 보내지 않는다")
+    void firstTopicIgnoresImmediateSwitchQuestion(String content) {
+        start();
+        fake.turnEvent = content;
+        fake.turnQuestion = "다른 기억에 남는 일은 뭐였어요?";
+        fake.turnEmpathy = "그런 일이 있었군요.";
+
+        assertThat(engine.handle(state, TurnCommand.text(content)).text())
+                .isEqualTo("그런 일이 있었군요.");
+    }
+
+    @Test
+    @DisplayName("첫 소재에서 AI가 실패해도 질문 없이 공감만 한다")
+    void firstTopicFallbackWaits() {
+        start();
+        fake.failDiaryChat = true;
+
+        assertThat(engine.handle(state, TurnCommand.text("친구를 만났어요.")).text())
+                .doesNotContain("그랬군요.", "?", "？").contains("친구를 만났어요.", "들려주신 이야기");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"함께해서 재밌으셨나요?", "그때 화가 나셨나요?", "많이 뿌듯하셨나요？",
+            "그때 어떤 기분이 드셨나요?"})
+    @DisplayName("되돌린 첫 응답은 AI의 감정 확인 질문도 붙이지 않는다")
+    void firstTopicOmitsEmotionQuestion(String question) {
+        start();
+        fake.turnEmpathy = "함께한 시간이 마음에 남으셨군요.";
+        fake.turnQuestion = question;
+
+        assertThat(engine.handle(state, TurnCommand.text("친구를 만났어요.")).text())
+                .isEqualTo(fake.turnEmpathy).doesNotContain("?", "？");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"다른 기억에 남는 일은 뭐였어요?", "그 일에 무슨 의미가 있었나요?",
+            "어떤 생각이 들었어요?", "왜 화가 나셨나요?", "어떤 일 때문에 속상하셨나요?",
+            "무엇 때문에 화가 나셨나요?", "어떤 부분이 마음에 남았나요?",
+            "그때 기분을 말씀해 주세요.", ""})
+    @DisplayName("첫 응답은 생각·이유·새 사건 질문이나 질문 누락에도 공감만 보낸다")
+    void firstTopicOmitsOtherQuestions(String question) {
+        start();
+        fake.turnEmpathy = "이야기를 이어가기 쉽지 않으셨겠어요.";
+        fake.turnQuestion = question;
+
+        assertThat(engine.handle(state, TurnCommand.text("회의에서 자꾸 말을 끊었어요.")).text())
+                .isEqualTo(fake.turnEmpathy).doesNotContain("?", "？");
+    }
+
+    @Test
+    @DisplayName("공감이 질문 필드에도 있어도 중복 없이 공감만 보낸다")
+    void firstTopicOmitsAllQuestionsAfterDuplicateEmpathy() {
+        start();
+        fake.turnEmpathy = "말을 끝내기 어려운 자리였군요.";
+        fake.turnQuestion = "말을 끝내기 어려운 자리였군요. 그때 화가 나셨나요? 다른 일은요?";
+
+        assertThat(engine.handle(state, TurnCommand.text("회의에서 자꾸 말을 끊었어요.")).text())
+                .isEqualTo(fake.turnEmpathy).doesNotContain("?", "？");
+    }
+
+    @Test
+    @DisplayName("공감의 두 번째 문장도 살려 구체적인 마음을 받아 준다")
+    void preservesTwoContextualEmpathySentences() {
+        start();
+        fake.turnEmpathy = "친구가 생일을 챙겨줬군요. 기억하고 챙겨준 마음이 고마우셨겠어요.";
+
+        assertThat(engine.handle(state, TurnCommand.text("친구가 생일을 챙겨줘 고마웠어요.")).text())
+                .isEqualTo(fake.turnEmpathy).doesNotContain("?", "？");
+    }
+
+    @Test
+    @DisplayName("짧은 맞장구 뒤의 구체적인 공감을 남긴다")
+    void discardsBareAcknowledgementButKeepsGroundedEmpathy() {
+        start();
+        fake.turnEmpathy = "그랬군요. 친구가 생일을 기억하고 챙겨준 마음이 고마우셨겠어요.";
+
+        assertThat(engine.handle(state, TurnCommand.text("친구가 생일을 챙겨줘 고마웠어요.")).text())
+                .isEqualTo("친구가 생일을 기억하고 챙겨준 마음이 고마우셨겠어요.");
+    }
+
+    @Test
+    @DisplayName("공감 필드가 빠져도 질문 앞의 상황 공감을 복구하고 질문은 보내지 않는다")
+    void recoversContextualReflectionFromQuestionField() {
+        start();
+        fake.turnQuestion = "말을 끝내기 전에 끊겨 이야기를 이어가기 쉽지 않으셨겠어요. 다른 일은 없었나요?";
+
+        assertThat(engine.handle(state, TurnCommand.text("회의에서 말을 계속 끊었어요.")).text())
+                .isEqualTo("말을 끝내기 전에 끊겨 이야기를 이어가기 쉽지 않으셨겠어요.");
+    }
+
+    @Test
+    @DisplayName("물음표 없는 요청 문장도 첫 소재의 공감으로 잘못 보내지 않는다")
+    void imperativeQuestionIsNotRecoveredAsEmpathy() {
+        start();
+        fake.turnQuestion = "다른 기억에 남는 일을 들려주세요.";
+
+        assertThat(engine.handle(state, TurnCommand.text("친구를 만났어요.")).text())
+                .contains("친구를 만났어요.").doesNotContain("들려주세요", "다른 기억", "그랬군요.");
+    }
+
+    @Test
+    @DisplayName("AI가 맞장구만 줘도 사용자 이야기가 담긴 응답으로 바꾼다")
+    void bareAcknowledgementDoesNotBecomeWholeReply() {
+        start();
+        fake.turnEmpathy = "그랬군요.";
+
+        assertThat(engine.handle(state, TurnCommand.text("친구를 만났어요.")).text())
+                .contains("친구를 만났어요.").doesNotContain("그랬군요.", "?");
+    }
+
+    @Test
+    @DisplayName("후속 답변에서도 AI가 실패하면 맥락 공감을 붙여 다음 일을 묻는다")
+    void repeatedAiFailureStillReflectsFollowupBeforeSwitching() {
+        start();
+        fake.failDiaryChat = true;
+        engine.handle(state, TurnCommand.text("친구를 만났어요."));
+
+        assertThat(engine.handle(state, TurnCommand.text("반가웠어요.")).text())
+                .contains("반가웠어요.").doesNotContain("그랬군요.")
+                .endsWith("오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"어떤 기분이 들었어요?", "어땠나요？"})
+    @DisplayName("공감 필드에 질문이 섞여도 첫 소재에는 공감만 보낸다")
+    void firstTopicRejectsQuestionInEmpathy(String empathy) {
+        start();
+        fake.turnEmpathy = empathy;
+
+        assertThat(engine.handle(state, TurnCommand.text("친구를 만났어요.")).text())
+                .doesNotContain("그랬군요.", "?", "？").contains("들려주신 이야기");
+    }
+
+    @Test
+    @DisplayName("슬롯이 1턴에 다 모여도 5턴까지 이어가고, 5턴에서 분기 없이 감정 확인으로 넘어간다(조기 종료 금지).")
+    void diaryRunsToFiveTurnsEvenWhenSlotsFillEarly() {
         start();
         fake.events.add(new ExtractedEvent(1, "면접 스터디", "팀원이 말을 끊었던 일", List.of(1, 2)));
         fake.turnEvent = "면접 스터디에서 팀원이 말을 끊었다";
         fake.turnMeaning = "내 의견이 가볍게 다뤄진 게 계속 걸린다";
         fake.turnEmotionPresent = true; // 1턴에 사건·감정·의미가 다 찬다
 
-        // 슬롯이 다 찼어도 6턴 전에는 종료하지 않고 계속 일기 작성 채팅을 이어간다.
-        for (int i = 1; i < RetrospectState.DIARY_MAX_TURNS; i++) {
+        // 슬롯이 다 찼어도 5턴 전에는 종료하지 않고 계속 일기 작성 채팅을 이어간다.
+        for (int i = 1; i < 5; i++) {
             ReplyDto mid = engine.handle(state, TurnCommand.text("속상한 일이 있었어요 " + i));
             assertThat(mid.phase()).as("%d턴", i).isEqualTo("diary_chat");
         }
 
-        // 6턴에 도달하면 일기를 정리하고 곧바로 감정 확인을 묻는다.
+        // 5턴에 도달하면 일기를 정리하고 곧바로 감정 확인을 묻는다.
         ReplyDto reply = engine.handle(state, TurnCommand.text("계속 마음에 걸려요."));
+        assertThat(state.diaryTurn()).isEqualTo(5);
         assertThat(reply.phase()).isEqualTo("emotion_exploration");
         assertThat(reply.text()).startsWith(RetrospectEngine.EXPLORATION_TRANSITION)
                 .contains("팀원이 말을 끊었던 일을 떠올렸을 때");
@@ -113,27 +410,29 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("슬롯이 안 차도 6턴에 도달하면 있는 것만으로 종료한다.")
-    void diaryStopsAtSixTurns() {
+    @DisplayName("슬롯이 안 차도 5턴에 도달하면 있는 것만으로 종료한다.")
+    void diaryStopsAtFiveTurns() {
         start();
         fake.failDiaryChat = true; // 추출 없음 → 슬롯이 채워지지 않는다
 
-        for (int i = 1; i <= 5; i++) {
+        for (int i = 1; i <= 4; i++) {
             ReplyDto mid = engine.handle(state, TurnCommand.text("오늘 여러 일이 있었어요 " + i));
             assertThat(mid.phase()).as("%d번째 턴", i).isEqualTo("diary_chat");
         }
-        ReplyDto sixth = engine.handle(state, TurnCommand.text("마지막으로 이런 일도 있었어요."));
+        ReplyDto fifth = engine.handle(state, TurnCommand.text("마지막으로 이런 일도 있었어요."));
         // 뽑힌 사건이 없으면 감정 탐색 없이 일기로 마무리한다.
-        assertThat(sixth.phase()).isEqualTo("complete");
-        assertThat(sixth.wishCard()).isNull();
+        assertThat(fifth.phase()).isEqualTo("complete");
+        assertThat(fifth.wishCard()).isNull();
+        assertThat(state.diaryTurn()).isEqualTo(5);
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {"이제 그만할래", "됐어요", "이제 됐어요.", "됐어"})
     @DisplayName("사용자가 그만하려 하면 감정 탐색 없이 즉시 일기로 마무리한다(편지 PRD 14-1).")
-    void stopRequestEndsDiaryChat() {
+    void stopRequestEndsDiaryChat(String content) {
         start();
         fake.events.add(new ExtractedEvent(1, "면접 스터디", "팀원이 말을 끊었던 일", List.of(1, 2)));
-        ReplyDto reply = engine.handle(state, TurnCommand.text("이제 그만할래"));
+        ReplyDto reply = engine.handle(state, TurnCommand.text(content));
 
         assertThat(reply.phase()).isEqualTo("complete");
         assertThat(reply.wishCard()).isNull();
@@ -201,7 +500,7 @@ class RetrospectEngineTest {
         ReplyDto done = engine.handle(state, TurnCommand.text("이제 그만할래"));
         assertThat(done.wishCard()).isNull();
 
-        // 6턴을 다 채워 마친 경우도 같다.
+        // 5턴을 다 채워 마친 경우도 같다.
         state = new RetrospectState("s-crisis");
         start();
         fake.turnEvent = "면접 스터디에서 팀원이 말을 끊었다";
@@ -288,7 +587,7 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("모델이 더 물어볼 게 없다고 해도 6턴 전에 자동 종료하지 않는다")
+    @DisplayName("모델이 더 물어볼 게 없다고 해도 5턴 전에 자동 종료하지 않는다")
     void noMoreToAskDoesNotEndEarly() {
         RetrospectState state = new RetrospectState("s-1");
         engine.start(state, StartCommand.single("팀 발표", null, "정민"));
@@ -325,7 +624,7 @@ class RetrospectEngineTest {
         }
         ReplyDto done = engine.handle(state, new TurnCommand("조금 더 얘기할게요", null));
 
-        // 뽑힌 사건이 없어 감정 탐색 없이 마무리된다 — 여기서 보는 것은 6턴까지 이어갔다는 점이다.
+        // 뽑힌 사건이 없어 감정 탐색 없이 마무리된다 — 여기서 보는 것은 5턴까지 이어갔다는 점이다.
         assertThat(done.phase()).isEqualTo(Phase.COMPLETE.key());
         assertThat(state.diaryTurn()).isEqualTo(RetrospectState.DIARY_MAX_TURNS);
     }

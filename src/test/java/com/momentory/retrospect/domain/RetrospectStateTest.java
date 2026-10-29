@@ -37,13 +37,16 @@ class RetrospectStateTest {
     }
 
     @Test
-    @DisplayName("일기 턴을 6까지 세면 소진 조건이 참이다")
+    @DisplayName("일기 턴을 5까지 세면 소진 조건이 참이다")
     void diaryTurnsExhausted() {
         RetrospectState s = new RetrospectState("s1");
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 4; i++) {
             s.bumpDiaryTurn();
         }
         assertThat(s.diaryTurnsExhausted()).isFalse();
+        s.bumpDiaryTurn();
+        assertThat(s.diaryTurnsExhausted()).isTrue();
+        // 이전 정책에서 이미 6턴 이상 진행한 세션도 소진 상태를 유지한다.
         s.bumpDiaryTurn();
         assertThat(s.diaryTurnsExhausted()).isTrue();
     }
@@ -147,11 +150,29 @@ class RetrospectStateTest {
     }
 
     @Test
+    @DisplayName("첫 발화에 감정이 있어도 기다리고 후속 발화부터 소재를 바꾼다")
+    void switchesTopicOnEmotionWithoutMeaning() {
+        var state = new RetrospectState("emotion-only");
+        state.event("친구와 저녁");
+        state.bumpDiaryTurn();
+        assertThat(state.shouldSwitchTopic()).isFalse();
+
+        state.markEmotionSeen();
+
+        assertThat(state.topicMeaningSeen()).isFalse();
+        assertThat(state.shouldSwitchTopic()).isFalse();
+        state.bumpDiaryTurn();
+        assertThat(state.shouldSwitchTopic()).isTrue();
+    }
+
+    @Test
     void topicProgressResetsWithoutBorrowingEarlierEmotionOrMeaning() {
         var state = new RetrospectState("topic");
         state.event("면접");
         state.markEmotionSeen();
         state.meaning("인정받고 싶었다");
+        state.bumpDiaryTurn();
+        assertThat(state.shouldSwitchTopic()).isFalse();
         state.bumpDiaryTurn();
         assertThat(state.shouldSwitchTopic()).isTrue();
         state.event("친구와 저녁");
@@ -164,7 +185,7 @@ class RetrospectStateTest {
         assertThat(state.topicTurn()).isEqualTo(1);
         state.bumpDiaryTurn();
         assertThat(state.shouldSwitchTopic()).isTrue();
-        assertThat(state.diaryTurn()).isEqualTo(3);
+        assertThat(state.diaryTurn()).isEqualTo(4);
         assertThat(state.knownEventCount()).isEqualTo(2);
     }
 

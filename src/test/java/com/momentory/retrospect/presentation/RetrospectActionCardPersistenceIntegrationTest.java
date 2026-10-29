@@ -167,11 +167,11 @@ class RetrospectActionCardPersistenceIntegrationTest {
     // ── 도우미 ───────────────────────────────────────────────────────────
 
     /**
-     * 시작 → 일기 작성 채팅 6턴 → (사건이 하나라) 바로 감정 탐색 → 감정 · 바람 2턴을 각각 첫 후보(id 1)로
+     * 시작 → 일기 작성 채팅 5턴 → (사건이 하나라) 바로 감정 탐색 → 감정 · 바람 2턴을 각각 첫 후보(id 1)로
      * 고른다. 완료 턴의 응답을 돌려준다.
      */
     private MvcResult driveExplorationToCompletion(User user, long sessionId) throws Exception {
-        // 일기 작성 채팅 — phase 가 diary_chat 인 동안 자유 텍스트 턴을 이어간다(엔진은 6턴에서 감정 탐색).
+        // 일기 작성 채팅 — phase 가 diary_chat 인 동안 자유 텍스트 턴을 이어간다(엔진은 5턴에서 감정 탐색).
         String phase = "diary_chat";
         for (int i = 0; i < 10 && "diary_chat".equals(phase); i++) {
             MvcResult turn = mockMvc.perform(

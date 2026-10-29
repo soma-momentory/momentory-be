@@ -167,7 +167,11 @@ class RetrospectStateCodecTest {
         assertThat(pending.awaitingEventSelection()).isTrue();
         assertThat(pending.scheduleHint()).isTrue();
         assertThat(pending.topicTurn()).isEqualTo(1);
-        assertThat(pending.shouldSwitchTopic()).isTrue();
+        assertThat(pending.shouldSwitchTopic()).isFalse();
+        pending.bumpDiaryTurn();
+        var followup = codec.deserialize(codec.serialize(pending));
+        assertThat(followup.topicTurn()).isEqualTo(2);
+        assertThat(followup.shouldSwitchTopic()).isTrue();
         assertThat(pending.selectEvent(9)).isTrue();
         pending.enterExploration();
         var selected = codec.deserialize(codec.serialize(pending));
