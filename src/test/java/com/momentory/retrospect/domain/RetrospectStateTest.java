@@ -160,6 +160,7 @@ class RetrospectStateTest {
         state.markEmotionSeen();
 
         assertThat(state.topicMeaningSeen()).isFalse();
+        assertThat(state.topicCauseDiscussed()).isFalse();
         assertThat(state.shouldSwitchTopic()).isFalse();
         state.bumpDiaryTurn();
         assertThat(state.shouldSwitchTopic()).isTrue();
@@ -171,6 +172,7 @@ class RetrospectStateTest {
         state.event("면접");
         state.markEmotionSeen();
         state.meaning("인정받고 싶었다");
+        state.markTopicCauseDiscussed();
         state.bumpDiaryTurn();
         assertThat(state.shouldSwitchTopic()).isFalse();
         state.bumpDiaryTurn();
@@ -179,6 +181,7 @@ class RetrospectStateTest {
         assertThat(state.topicTurn()).isZero();
         assertThat(state.topicEmotionSeen()).isFalse();
         assertThat(state.topicMeaningSeen()).isFalse();
+        assertThat(state.topicCauseDiscussed()).isFalse();
         assertThat(state.shouldSwitchTopic()).isFalse();
         state.bumpDiaryTurn();
         state.event("친구와 저녁");

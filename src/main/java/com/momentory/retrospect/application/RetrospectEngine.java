@@ -295,6 +295,12 @@ public class RetrospectEngine {
         }
         state.resetAbuse();
 
+        if (declinesAnotherTopic(state, command.content())) {
+            state.bumpDiaryTurn();
+            generateDiary(state);
+            return startExploration(state, "좋아요. 지금까지 들려주신 이야기를 잘 담아둘게요.\n", true);
+        }
+
         // 사용자가 그만하려 함 → 확인된 것만으로 일기 정리(즉시 종료).
         if (isStopRequest(command.content())) {
             state.markDiaryUserEnded();
@@ -307,6 +313,8 @@ public class RetrospectEngine {
         boolean terse = AnswerGate.inspect(command.content()).isPresent();
         boolean emotionAnswered = false;
         boolean topicAnswered = false;
+        boolean eventPending = false;
+        boolean causeProvided = false;
 
         String question = null;
         String empathy = null;
@@ -320,26 +328,37 @@ public class RetrospectEngine {
             if (t.offTopic() || t.vague()) {
                 terse = true;
             }
-            state.event(t.event());
-            topicAnswered = t.event() != null && !t.event().isBlank() && !t.offTopic() && !t.vague();
-            state.addSecondaryEvents(t.secondaryEvents());
-            state.meaning(t.meaning());
-            if (t.emotionPresent()) {
-                state.markEmotionSeen();
-                emotionAnswered = !t.offTopic() && !t.vague();
+            eventPending = t.eventPending() && !t.offTopic() && !t.vague();
+            if (!eventPending) {
+                state.event(t.event());
+                topicAnswered = t.event() != null && !t.event().isBlank() && !t.offTopic() && !t.vague();
+                state.addSecondaryEvents(t.secondaryEvents());
+                state.meaning(t.meaning());
+                if (t.emotionPresent()) {
+                    state.markEmotionSeen();
+                    emotionAnswered = !t.offTopic() && !t.vague();
+                }
+            }
+            causeProvided = !eventPending && !t.offTopic() && !t.vague()
+                    && state.topicEmotionSeen() && t.emotionCausePresent();
+            if (causeProvided) {
+                state.markTopicCauseDiscussed();
             }
             question = t.question();
             empathy = t.empathy();
         } else {
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(),
                     Phase.DIARY_CHAT.key());
+            // 장애 때도 이 명확한 정정 답변을 공감 한마디로 끝내지 않는다.
+            eventPending = command.content().replaceAll("\\s+", "")
+                    .matches("아직(?:안|못)만났(?:어|어요|습니다)?[.!。！]*");
         }
         // 짧게 답해도 한 턴으로 센다 — 그래야 3턴 이후 체크인·5턴 종료에 제대로 도달한다.
         state.bumpDiaryTurn();
 
         // 3턴을 넘겨서도 단답이 이어지면 강제로 끌지 않고 "이대로 끝낼지/더 할지"를 물어 분기한다.
         boolean firstTopicAnswer = state.topicTurn() == 1 && topicAnswered;
-        if (terse && !emotionAnswered && !firstTopicAnswer && !state.diaryTurnsExhausted()
+        if (terse && !emotionAnswered && !causeProvided && !firstTopicAnswer && !eventPending && !state.diaryTurnsExhausted()
                 && state.diaryTurn() >= DIARY_CHECKIN_AFTER_TURN) {
             return presentDiaryCheckin(state);
         }
@@ -347,16 +366,24 @@ public class RetrospectEngine {
             return finishDiaryChat(state, empathy);
         }
         String text;
-        if (state.topicTurn() == 1) {
-            // 첫 소재 발화에 감정이 포함돼도 질문을 붙이지 않는다. 공감 뒤 사용자가 이어 말하게 둔다.
+        if (eventPending) {
+            // 일정의 시간 정정은 소재를 풀어낸 답변이 아니다. 그전에 있었던 실제 일로 대화를 연다.
+            text = diaryEmpathy(empathy, question, command.content()) + "\n그럼 그전에는 어떤 일을 하셨어요?";
+        } else if (causeProvided) {
+            // 감정과 그 이유까지 들었으면 새 질문을 붙이지 않고 공감만 보낸다.
             text = diaryEmpathy(empathy, question, command.content());
+        } else if (state.topicEmotionSeen() && !state.topicCauseDiscussed()) {
+            // 감정을 이미 들었으면 다시 이름을 묻지 않고 그 마음이 든 계기를 한 번 확인한다.
+            state.markTopicCauseDiscussed();
+            text = diaryEmpathy(empathy, question, command.content()) + "\n" + diaryCauseQuestion(question);
+        } else if (state.topicTurn() == 1) {
+            text = diaryEmpathy(empathy, question, command.content()) + "\n" + diaryEmotionQuestion(question);
         } else if (state.topicEmotionSeen()) {
-            // 공감에 이어진 답변에서 감정이 확인되면 생각·의미 대신 다른 기억을 묻는다.
+            // 계기 질문에 답한 뒤에는 같은 소재를 더 캐묻지 않고 다른 기억을 묻는다.
             text = diaryEmpathy(empathy, question, command.content()) + "\n" + fallbackDiaryQuestion(state);
         } else {
-            text = (question != null && !question.isBlank())
-                    ? breakAfterEmpathy(question.strip())
-                    : diaryEmpathy(empathy, question, command.content()) + "\n" + fallbackDiaryQuestion(state);
+            text = diaryEmpathy(empathy, question, command.content()) + "\n"
+                    + (ai.isPresent() ? diaryEmotionQuestion(question) : fallbackDiaryQuestion(state));
         }
         state.addAssistantMessage(text);
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
@@ -375,7 +402,7 @@ public class RetrospectEngine {
         String quote = userText.strip().replaceAll("\\s+", " ").replace("?", "").replace("？", "");
         int length = Math.min(quote.codePointCount(0, quote.length()), 60);
         quote = quote.substring(0, quote.offsetByCodePoints(0, length));
-        return "「" + quote + "」라고 들려주신 이야기를 소중히 듣고 있어요.\n"
+        return "「" + quote + "」라고 들려주신 이야기를 소중히 듣고 있어요. "
                 + "그 순간에 담긴 마음을 가볍게 넘기지 않고 함께할게요.";
     }
 
@@ -402,17 +429,73 @@ public class RetrospectEngine {
         return String.join(" ", statements);
     }
 
+    /** 공감과 섞인 출력에서도 감정 확인 질문 하나만 쓴다. 없거나 다른 질문이면 열린 질문으로 대체한다. */
+    private static String diaryEmotionQuestion(String candidate) {
+        if (candidate != null) {
+            for (String part : candidate.strip().split("(?<=[.!?。！？])\\s*|\\R")) {
+                String question = part.strip();
+                if ((question.endsWith("?") || question.endsWith("？"))
+                        && !question.matches(".*(?:생각|의미|이유|왜|다른|기억|무슨 일|어떤 일|때문|"
+                                + "무엇|뭐가|어떤 부분|어느 부분|어떤 점|어느 점|마음에 남|어떻게|계기|원인|"
+                                + "앞으로|계획|만나면|나가면|어떨 것|어떤 기분일 것).*")
+                        && question.matches(".*(?:기분|감정|마음|느낌|느끼|느꼈|즐거|즐겁|재미|재밌|화나|화가|"
+                                + "속상|슬프|슬펐|기쁘|기뻤|행복|뿌듯|서운|긴장|떨리|떨렸|편안|고마|반가|"
+                                + "외로|우울|불안|걱정|답답|설레|짜증).*")) {
+                    return question;
+                }
+            }
+        }
+        return "그때 어떤 기분이 드셨나요?";
+    }
+
+    /** 감정은 이미 표현했으므로 계기·상황을 묻는다. 생각·의미나 다른 소재 질문은 쓰지 않는다. */
+    private static String diaryCauseQuestion(String candidate) {
+        if (candidate != null) {
+            for (String part : candidate.strip().split("(?<=[.!?。！？])\\s*|\\R")) {
+                String question = part.strip();
+                if ((question.endsWith("?") || question.endsWith("？"))
+                        && question.matches(".*(?:때문|계기|어떤 일|무슨 일|어떤 상황|어떤 부분|어느 부분|어떤 순간|어느 순간|어떤 점|어느 점|어떨 때|왜|무엇|뭐가).*")
+                        && !question.matches(".*(?:생각|의미|다른|앞으로|계획|만나면|나가면).*")) {
+                    return question;
+                }
+            }
+        }
+        return "어떤 일 때문에 그런 마음이 드셨나요?";
+    }
+
     /** AI 실패와 체크인 재개 시에도 현재 소재의 진행 상태와 사건 상한을 따른다. */
     private static String fallbackDiaryQuestion(RetrospectState state) {
         if (state.shouldSwitchTopic()) {
             return state.knownEventCount() >= RetrospectState.MAX_EVENTS
-                    ? "지금까지 이야기한 것 중에, 다른 이야기를 나눠볼까요?"
-                    : "오늘 하루 중 다른 기억에 남는 일은 뭐였어요?";
+                    ? OTHER_TOPIC_QUESTION
+                    : OTHER_MEMORY_QUESTION;
         }
         if (state.event() == null) {
             return "그때 무슨 일이 있었는지 조금만 더 들려줄래요?";
         }
         return "그 순간에는 어떤 기분이 들었어요?";
+    }
+
+    private static final String OTHER_MEMORY_QUESTION = "오늘 하루 중 다른 기억에 남는 일은 뭐였어요?";
+
+    private static final String OTHER_TOPIC_QUESTION = "지금까지 이야기한 것 중에, 다른 이야기를 나눠볼까요?";
+
+    /** 다른 이야기 제안 직후의 명확한 부정만 받는다. 다른 질문의 '없어요'나 새 이야기는 종료하지 않는다. */
+    private static boolean declinesAnotherTopic(RetrospectState state, String content) {
+        String last = state.messages().stream().filter(Message::isAssistant).map(Message::content)
+                .reduce((previous, current) -> current).orElse("");
+        if (!last.endsWith(OTHER_MEMORY_QUESTION) && !last.endsWith(OTHER_TOPIC_QUESTION)) {
+            return false;
+        }
+        String answer = content.strip().replaceAll("[\\s.!。！,，~～]+", "");
+        return Set.of("아니", "아니요", "아뇨", "그게다야", "그게다예요", "그게다에요").contains(answer)
+                || answer.matches("(?:다른(?:이야기|얘기)(?:는|를)?)?(?:더는|더)?(?:말|이야기|얘기)?"
+                        + "(?:하기|하는건)?싫(?:어|어요|습니다|다|음|네요)?")
+                || answer.matches("(?:다른(?:이야기|얘기)(?:는|를)?)?(?:더는|더)?(?:안(?:할래|할래요|할게|할게요|하고싶어|하고싶어요)"
+                        + "|(?:말|이야기|얘기)?하고싶지않(?:아|아요|습니다))")
+                || answer.matches("(?:이제)?(?:그만|그만할래|그만할게|그만할래요|그만하고싶어|그만하고싶어요|여기까지|됐어|됐어요)")
+                || answer.matches("(?:아니요|아뇨|아니|네|응)?(?:더는|더)?(?:딱히|특별히)?(?:다른건|다른일은|기억에남는일은|"
+                        + "다른기억에남는일은|특별한일은|생각나는건|할말(?:은|이)?|말할건)?없(?:었)?(?:어|어요|습니다|네요|다|음|는데|는데요|는것같아|는것같아요)?");
     }
 
     /**
@@ -421,7 +504,8 @@ public class RetrospectEngine {
      */
     private ReplyDto finishDiaryChat(RetrospectState state, String empathy) {
         generateDiary(state);
-        String lead = (empathy != null && !empathy.isBlank()) ? empathy.strip() + "\n" : "";
+        String reflection = empathyStatements(empathy);
+        String lead = reflection.isBlank() ? "" : reflection + "\n";
         return startExploration(state, lead);
     }
 
@@ -430,15 +514,21 @@ public class RetrospectEngine {
      * 바로 감정을 묻는다. 뽑힌 사건이 없으면(추출 실패) 카드 없이 마무리한다.
      */
     private ReplyDto startExploration(RetrospectState state, String lead) {
+        return startExploration(state, lead, false);
+    }
+
+    private ReplyDto startExploration(RetrospectState state, String lead, boolean skipEventSelection) {
         // 위기 안내가 나왔던 날은 「이어서 얘기하기」로 대화를 마쳤어도 카드 없이 끝낸다(편지 PRD 14-1) —
         // 그날 편지는 작은 일이 없는 조용한 편지라, 카드의 작은 행동을 채울 수 없다.
         if (state.events().isEmpty() || crisisGuidanceShown(state)) {
             return finishComplete(state);
         }
-        String text = lead + EXPLORATION_TRANSITION + "\n";
+        String text = (lead.isBlank() ? "오늘 들려주신 이야기를 소중히 담아둘게요.\n" : lead)
+                + EXPLORATION_TRANSITION + "\n";
         usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.EMOTION_EXPLORATION.key());
-        if (state.events().size() == 1) {
-            state.selectEvent(state.events().get(0).id());
+        if (state.events().size() == 1 || skipEventSelection) {
+            // 다른 이야기 제안을 거절했으면 사건을 다시 고르게 하지 않고 기존 대표 사건으로 탐색한다.
+            state.selectEvent(state.mainEvent().orElseThrow().id());
             state.enterExploration();
             return presentEmotionConfirm(state, text);
         }
@@ -949,8 +1039,14 @@ public class RetrospectEngine {
             return text;
         }
         int question = text.indexOf('?');
-        int limit = question >= 0 ? question : text.length();
-        int boundary = text.lastIndexOf(". ", limit);
+        int wideQuestion = text.indexOf('？');
+        if (question < 0 || (wideQuestion >= 0 && wideQuestion < question)) {
+            question = wideQuestion;
+        }
+        if (question < 0) {
+            return text;
+        }
+        int boundary = text.lastIndexOf(". ", question);
         if (boundary < 0) {
             return text;
         }

@@ -22,7 +22,7 @@ class GeminiDiaryChatAssistantTest {
     private GeminiDiaryChatAssistant assistant;
     private final DiaryTurn turn = new DiaryTurn("친구가 생일을 챙겨줬다", List.of(), null, true,
             "친구가 기억하고 챙겨준 마음이 고맙게 느껴지셨겠어요.",
-            "친구가 기억하고 챙겨준 마음이 고맙게 느껴지셨겠어요.", "none", List.of(), false, false, false);
+            "친구가 기억하고 챙겨준 마음이 고맙게 느껴지셨겠어요.", "none", List.of(), false, false, false, false, false);
 
     @BeforeEach
     void setUp() {
@@ -66,8 +66,9 @@ class GeminiDiaryChatAssistantTest {
     }
 
     @Test
-    void schemaRequiresEmpathy() {
+    void schemaRequiresEmpathyAndAllPrimitiveDecisions() {
         assertThat(GeminiResponseSchemas.forType(DiaryTurn.class).get("required"))
-                .isEqualTo(List.of("question", "empathy"));
+                .isEqualTo(List.of("question", "empathy", "emotionPresent", "noMoreToAsk",
+                        "offTopic", "vague", "eventPending", "emotionCausePresent"));
     }
 }

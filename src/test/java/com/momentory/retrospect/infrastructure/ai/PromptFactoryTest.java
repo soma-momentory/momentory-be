@@ -34,8 +34,8 @@ class PromptFactoryTest {
         RetrospectState state = new RetrospectState("sess-five-turns");
 
         assertThat(prompts.diaryTurnPrompt(state, "오늘 발표했어요"))
-                .contains("일기 작성 채팅은 5턴 고정")
-                .doesNotContain("6턴 고정");
+                .contains("일기 작성 채팅은 최대 5턴")
+                .doesNotContain("최대 6턴");
     }
 
     private static RetrospectState stateWithConversation() {
@@ -289,30 +289,54 @@ class PromptFactoryTest {
         state.markEmotionSeen();
 
         assertThat(prompts.diaryTurnPrompt(state, "반가웠어요"))
-                .contains("질문 없이 짧게 공감만", "그 공감에 이어 사용자가 같은 소재의 감정을 말하면 다시 공감",
-                        "생각·의미·이유를 더 묻거나", "자발적으로 말한 사건의 의미만",
-                        "empathy: 반드시 채우세요", "구체적인 장면·행동", "짧은 맞장구만으로 끝내거나",
-                        "감정을 지어내지 말고")
-                .doesNotContain("첫 답변부터 바로 다른 소재", "감정과 의미를 모두 모았거나");
+                .contains("구체적인 공감과 위 기준에 맞는 질문을 같은 응답", "감정 표현이 없음", "감정 표현만 있음 + 계기 미확인",
+                        "계기 확인 완료 + 같은 소재의 후속 답변", "자발적으로 말한 해당 사건의 의미만",
+                        "empathy: 반드시 채우세요", "구체적인 장면·행동", "맞장구나 원문 반복으로 끝내지",
+                        "행동·결정·감정·감각을 지어내지")
+                .doesNotContain("예:", "카페", "생일", "회의에서");
     }
 
     @Test
-    void serverSwitchInstructionUsesOnlyCurrentTopicProgress() {
+    void pendingScheduleExceptionAsksAboutEarlierActualExperience() {
+        assertThat(prompts.diaryTurnPrompt(new RetrospectState("pending"), "아직 안 만났어"))
+                .contains("eventPending=true", "그전에 실제로 있었던 일을 질문",
+                        "실제 경험도 함께 답하면 eventPending=false", "취소·불참·하지 않기로 한 결정",
+                        "미래 사건은 event/secondaryEvents/meaning에 넣거나 emotionPresent의 근거로 삼지",
+                        "사용자가 실제 경험을 처음", "같은 응답")
+                .doesNotContain("예:");
+    }
+
+    @Test
+    void freeChatJudgesMeaningAndContextRatherThanImitatingOneSpeakingStyle() {
+        assertThat(prompts.system()).contains("사용자가 전한 의미와 맥락", "말투·문장 구조를 흉내 내거나");
+        assertThat(prompts.diaryTurnPrompt(new RetrospectState("styles"), "버스 놓침"))
+                .contains("특정 단어의 일치가 아니라", "앞선 대화와 방금 답변의 의미", "짧거나 간접적인 답변",
+                        "감정의 방향과 강도", "정해진 공감 문구를 반복하지")
+                .doesNotContain("예:", "카페", "유나", "민지");
+    }
+
+    @Test
+    void conversationParagraphsFollowContextInsteadOfEachSentence() {
+        assertThat(prompts.system()).contains("문장마다 줄바꿈하지 않습니다", "같은 맥락의 문장은 한 문단",
+                "공감에서 질문으로 넘어가는 등 맥락이 바뀔 때만 줄바꿈");
+    }
+
+    @Test
+    void topicProgressAndHistoryDriveMeaningInsteadOfDuplicateScriptedInstructions() {
         var state = new RetrospectState("progress");
         state.event("면접");
         state.bumpDiaryTurn();
         state.bumpDiaryTurn();
-        assertThat(prompts.diaryTurnPrompt(state, "끝났어요"))
-                .contains("현재 소재의 후속 답변이면 다른 소재로 전환할 수 있습니다. 새 소재의 첫 발화면 공감만 하세요");
         state.markEmotionSeen();
-        state.meaning("마음에 남았다");
-        assertThat(prompts.diaryTurnPrompt(state, "생각이 나요"))
-                .contains("현재 소재의 후속 답변이면 다른 소재로 전환할 수 있습니다");
+        state.addUserMessage("면접에 다녀왔어요.");
+        state.addAssistantMessage("그때 마음은 어떠셨어요?");
+        assertThat(prompts.diaryTurnPrompt(state, "긴장했어요"))
+                .contains("이 소재에서 이전에 진행한 턴: 2", "이 소재의 감정 수집: 예", "그때 마음은 어떠셨어요?")
+                .doesNotContain("서버 진행 지시:");
         state.event("저녁");
         assertThat(prompts.diaryTurnPrompt(state, "밥 먹었어요"))
-                .contains("이 소재의 감정 수집: 아니요")
-                .doesNotContain("이 소재의 의미 수집")
-                .contains("서버 진행 지시: 새 소재의 첫 발화에는 공감만 하고");
+                .contains("이 소재에서 이전에 진행한 턴: 0", "이 소재의 감정 수집: 아니요")
+                .doesNotContain("이 소재의 의미 수집");
     }
 
 }

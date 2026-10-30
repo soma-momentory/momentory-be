@@ -48,6 +48,7 @@ public class RetrospectState {
     private boolean scheduleHint;
     private int topicTurn;
     private boolean topicEmotionSeen;
+    private boolean topicCauseDiscussed;
     private boolean topicMeaningSeen;
     private Integer selectedEventId;
     private boolean awaitingEventSelection;
@@ -258,6 +259,7 @@ public class RetrospectState {
                 secondaryEvents.remove(next);
                 this.topicTurn = 0;
                 this.topicEmotionSeen = false;
+                this.topicCauseDiscussed = false;
                 this.topicMeaningSeen = false;
             }
             this.event = next;
@@ -278,6 +280,14 @@ public class RetrospectState {
 
     public boolean topicEmotionSeen() {
         return topicEmotionSeen;
+    }
+
+    public boolean topicCauseDiscussed() {
+        return topicCauseDiscussed;
+    }
+
+    public void markTopicCauseDiscussed() {
+        topicCauseDiscussed = true;
     }
 
     public boolean topicMeaningSeen() {
@@ -617,7 +627,7 @@ public class RetrospectState {
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
                 List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
-                topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction);
+                topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction, topicCauseDiscussed);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -670,6 +680,7 @@ public class RetrospectState {
         state.scheduleHint = Boolean.TRUE.equals(s.scheduleHint());
         state.topicTurn = s.topicTurn() == null ? 0 : s.topicTurn();
         state.topicEmotionSeen = Boolean.TRUE.equals(s.topicEmotionSeen());
+        state.topicCauseDiscussed = Boolean.TRUE.equals(s.topicCauseDiscussed());
         state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
         state.selectedEventId = s.selectedEventId();
         state.awaitingEventSelection = Boolean.TRUE.equals(s.awaitingEventSelection());
