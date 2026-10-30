@@ -1,5 +1,266 @@
 # 회고 채팅 v2 — 진행상황 & 이어서 할 일 (핸드오프)
 
+## 2026-10-30 감정·계기 3분기 및 다른 이야기 거절 후 즉시 감정 탐색
+
+- 최신 사용자 결정: 감정이 없으면 기분 질문, 감정만 있으면 계기 질문 한 번, 감정과 이유가 함께면
+  질문 없이 공감만 반환한다. 앞선 ‘감정 확인 뒤 바로 다른 소재’ 정책은 이 결정으로 대체한다.
+- G2 내부 출력에 `emotionCausePresent` boolean을 추가하고, 감정·계기 분류를 텍스트 생성보다
+  먼저 출력하도록 propertyOrdering을 조정했다. 감정이 행동의 원인인 것과 감정이 든 원인의 설명을 구분하며,
+  이전 사건만으로 사용자의 감정 계기를 추정하지 않는다. 특정 사람의 표현 예시는 넣지 않았다.
+- `topicCauseDiscussed`를 새 소재에서 초기화하고 snapshot에 nullable Boolean으로 저장한다.
+  구버전은 false로 복원한다. 계기를 물었거나 이미 제공받았으면 반복 질문하지 않는다.
+  감정 없는 유효한 후속 응답도 생각·원인이 아닌 기분 질문으로 안내한다.
+- 다른 기억 질문과 두 사건 이후 다른 이야기 제안에 명확한 없음·거절로 답하면 G2를 재호출하지 않고
+  초안을 생성해 감정 탐색으로 직행한다. 사건이 둘이어도 선택을 다시 권하지 않고 기존 mainEvent 정책
+  (근거 수 최다, 동점 첫 사건)으로 대상을 정하며 감정 질문에 사건 이름을 표시한다.
+- 거절 문맥 밖의 일반 종료·질문·새 소재·이중 부정과 안전 규칙은 유지한다. 거절에는 없는 감정을
+  추정하지 않는 중립적 마무리를 쓴다. 사건이 추출되지 않거나 위기 안내 후인 기존 일기 완료 정책은 유지한다.
+- 공개 API 경로·필드·상태/오류 계약·인증·JPA/DDL/Flyway 변경 없음. snapshot 내부 필드만 호환 확장했다.
+  선행 미커밋 변경을 보존했으며 원격 배포·커밋·푸시는 하지 않는다.
+- 이번 수정 BE: `RetrospectEngine.java`, `RetrospectState.java`, `RetrospectStateSnapshot.java`,
+  `DiaryTurn.java`, `GeminiResponseSchemas.java`, `PromptFactory.java`, `FakeAssistant.java`, 엔진·도메인·
+  codec·G2 스키마·prompt·REST·실모델 검사와 계획·진행 문서. FE: `docs/DESIGN.md`, 계획 문서.
+  이번 묶음의 신규/삭제 파일 없음. 직전 FE의 말풍선 경계 수정은 보존했다.
+- 독립 리뷰 1차 Major: 3턴 이후 짧은 유효 계기 답변이 단답 체크인에 걸렸다. `causeProvided`를
+  체크인에서 제외하고 ‘비’처럼 짧은 답도 공감만 하는 회귀를 추가해 집중 검사로 확인했다.
+- 집중 6종 검사(engine/state/codec/prompt/API/G2 adapter) 통과(12초). 이전 정책을 기대한 검사들은
+  새 요구에 맞춰 기대값과 원인 질문 단계를 갱신했고, 기존 안전·최대 턴·일반 종료 검사는 유지했다.
+  구버전 복원·새 소재 초기화·감정+계기 공감 전용·짧은 계기·두 사건 거절 즉시 탐색·DB snapshot을 확인했다.
+- 실모델 검사에서 짧은 기분 답변에 이전 사건을 원인으로 추정하거나 두 boolean과 질문 목적이 어긋난
+  사례를 발견해 분류 근거와 출력 순서를 보강했다. 초기 실패 실행은 성공으로 기록하지 않는다.
+- 최종 실제 G2+prompt `./gradlew test --tests '*GeminiDiaryChatAssistantRealIntegrationTest'
+  --tests '*PromptFactoryTest' --no-daemon` 통과(22초). 공개 가상 실제 모델 12사례 모두 통과,
+  prompt 24건 중 기존 환경 의존 1건 스킵. 아직 전 일정·실제 경험 혼합·감정 없음·감정만·감정+이유·말투 변형 확인.
+  ‘어떤 순간에 편안했는가’처럼 계기·상황을 묻는 정상 표현도 인정하도록 계기 질문 검사를 일반화했다.
+- 전체 프롬프트 열람 파일 `/private/tmp/momentory-current-prompts-2026-10-30.txt`를 최종 지시와 일치하게 갱신했다.
+- 최종 집중 `./gradlew test --tests '*RetrospectEngineTest' --tests '*RetrospectStateTest'
+  --tests '*RetrospectStateCodecTest' --tests '*PromptFactoryTest' --tests '*RetrospectApiIntegrationTest'
+  --tests '*GeminiDiaryChatAssistantTest' --no-daemon` 통과(12초). 6개 스위트 총 187건 중
+  **186개 통과 / 실패·오류 0 / 기존 환경 의존 1건 스킵**.
+- 2차 독립 리뷰에서 1차 Major 수정 확인, 남은 Critical/Major/Minor 없음. ‘더 말할 건 없어’ 등도
+  다른 이야기 제안 문맥에서는 일반 전체 종료로 빠지지 않고 감정 탐색으로 가도록 거절 대상 명사와
+  끝맺음의 경계를 보완하고 3사례 회귀를 추가했다. 최종 전체 검사를 이 마지막 코드 변경 후 재실행한다.
+  보완 전 시작한 전체 검사 1회는 중단했으며 성공으로 기록하지 않는다.
+- 마지막 코드 변경 후 전체 `./gradlew clean check --no-daemon` 통과(1분 27초).
+  88개 스위트 총 743건: **729개 통과 / 실패 0 / 오류 0 / 스킵 14**.
+  기본 실행의 실제 Gemini·외부 challenge 옵트인 노드는 스킵하며 실제 G2 12사례는 위 별도 실행에서 통과했다.
+- 독립 읽기 전용 리뷰 총 3회. 1차 Major(짧은 계기 체크인) 1건을 수정·회귀 검증했고,
+  2·3차 남은 Critical/Major/Minor 없음. 반려한 지적 없음. 최종 전체 검사 통과도 이후 확인했다.
+- 최종 변경·untracked 확인 및 양쪽 `git diff --check`, 변경 FE 문서 Prettier 통과.
+  공개 API·인증 계약을 바꾸지 않았고 실제 PostgreSQL REST/snapshot·legacy codec 호환 검사를 포함했다.
+- 최종 코드로 로컬 BE 서버 재시작, `/actuator/health` UP과 Expo `packager-status:running` 확인.
+  다만 마지막 확인에서 ADB 기기 목록이 비어 있고 USB 기기도 감지되지 않아 실기기 재연결 확인은 못 했다.
+  기기 데이터·개인 대화를 대신 변경하지 않았고 앱 강제 재시작도 하지 않았다. 원격 배포·커밋·푸시 없음.
+- 결과: **PASS WITH WARNINGS**. 요청 구현·집중/전체 검사·독립 리뷰 완료, 커밋·PR 검토 준비 상태다.
+  생성형 AI의 모든 표현에 대한 분류 정확성을 보장하는 검증은 아니다. 없는 사건·위기 안내 시의 기존 완료 경로,
+  5턴 상한은 우선한다. 실기기 USB 재연결 및 사용자 본인의 최종 대화 확인이 남는다.
+
+## 2026-10-30 다른 기억 없음의 과거형 답변 반복 수정
+
+- 실기기 제보의 원인: `declinesAnotherMemory`가 현재형 ‘없어/없어요’만 받아서 과거형 ‘없었어’는
+  종료 신호가 되지 않았다. 따라서 G2를 다시 호출한 뒤 같은 다른 기억 질문이 돌아왔다.
+- 부정의 시제를 `없(?:었)?`로 일반화하고 응답 앞의 긍정/부정 맞장구, 추가 없음 부사,
+  강조 부사, 대상 표현을 각각 선택적으로 조합한다. 특정 사용자의 문장 하나만 추가하지 않는다.
+- 직전 바바 메시지가 고정 다른 기억 질문으로 끝나는지 확인하고 답변 전체를 매칭하는 조건은 유지한다.
+  새 경험을 뒤에 붙임, 질문, 이중 부정, 모호한 답변, 다른 질문에 대한 없음은 조기 종료하지 않는다.
+  일치 시 G2 재호출 없이 기존 일기 초안 생성·감정 탐색 전환 경로를 따른다.
+- 이번 수정 파일: `RetrospectEngine.java`, `RetrospectEngineTest.java`, `RetrospectApiIntegrationTest.java`,
+  이 진행 문서. 선행 미커밋 변경 모두 보존, 신규·삭제 파일 없음. 공개 API·인증·DB·Flyway 변경 없음.
+- 엔진 회귀 검사는 과거형·수식어 조합 및 새 이야기·물음표·이중 부정 경계를 추가했다.
+  REST 기존 현재형 검사도 남기고 제보 문장과 수식어 조합을 매개변수화했으며,
+  조기 전환·3턴 snapshot·초안 보존·완료 전 일기 테이블 미저장 검사를 유지했다.
+- 집중 `./gradlew test --tests '*RetrospectEngineTest' --tests '*RetrospectApiIntegrationTest' --no-daemon`
+  **115건 통과 / 실패·오류·스킵 0**(9초). G2 미재호출·초안 1회 생성, 기존 API·DB 동작 검증 포함.
+- 독립 읽기 전용 리뷰 1회 Critical/Major/Minor 없음. 당시 진행 중인 검사·실기기 반영은 Unable to verify였고,
+  이후 집중 검사 통과를 확인했다. 반려한 지적 없음.
+- 최종 전체 `./gradlew clean check --no-daemon` 통과(1분 27초). 88개 스위트 총 717건 중
+  **705개 통과 / 실패 0 / 오류 0 / 스킵 12**. 실제 Gemini 옵트인·외부 challenge 검사는 기본 스킵이며,
+  이번 수정은 모델 호출 이전의 결정적 종료 판정이므로 엔진·실제 REST/DB 회귀로 검증했다.
+- 독립 읽기 전용 최종 리뷰까지 총 2회, 남은 Critical/Major/Minor 없음. 당시 실기기 최종 응답은
+  Unable to verify였으며 사용자의 실제 대화로 대신 재현하지 않았다. 반려한 지적 없음.
+- 최종 코드로 실기기용 로컬 BE 서버 재시작 후 `/actuator/health` UP과 기기 USB reverse 8080/8081 유지 확인.
+  FE 변경 없이 다음 요청부터 서버 수정이 적용된다. 앱 데이터·기존 대화·기록은 수정하거나 삭제하지 않았다.
+- 최종 Git status/전체 변경·untracked 확인 및 `git diff --check` 통과. 원격 배포·커밋·푸시 없음.
+- 결과: **PASS WITH WARNINGS**. 원인 수정·집중/전체 검사·독립 리뷰 완료로 커밋·PR 검토 준비 상태다.
+  실제 기기에서 사용자 본인이 다시 답변한 최종 화면 전환은 별도 확인이 필요하다.
+
+## 2026-10-30 일기 5~6문장·맥락별 문단 및 자유 대화 규칙 일반화
+
+- G4 일기는 기본 5~6문장으로 작성하고 같은 맥락의 문장은 이어 쓴다. 사건·시간·상황이
+  달라지면 빈 줄로 문단을 구분한다. 재료가 충분하면 문장 수를 확인하도록 하되,
+  없는 사실·감정을 만들거나 잡일로 분량을 채우지 않는 원칙은 유지한다. 모델 장애 시 기존 최소 일기 대체 경로도 유지한다.
+- FE 초안에서 모든 줄바꿈을 공백으로 접던 `asOneParagraph`와 폐기된 동작 전용 검사를 제거했다.
+  초안 읽기·편집·저장·기존 상세 표시에서 원문 문단을 유지한다. 대신 화면과 저장 경로에서 회귀 검증한다.
+- G2의 특정 상황 예시를 제거하고 시간 정정 / 실제 새 소재 / 같은 소재의 후속 감정 / 다른 소재 전환의
+  우선순위와 공감 기준·출력 필드로 일반화했다. 예시에 없는 사용자 표현에도 같은 기준을 적용한다.
+  추가 사용자 요청에 따라 말투·문장 길이·맞춤법·특정 단어보다 이전 대화의 의미·발생 여부·소재 연속성·감정을
+  판단하도록 명시했다. 사용자 말투·문장 구조를 흉내 내거나 고정 공감 문구를 반복하지 않고 감정의 방향·강도에 맞춰 반응한다.
+  시간 상태→소재 관계→질문 목적의 판단 순서로 다시 정리하고 첫 설명/후속 답변의 의미를 정의했다.
+  상태와 중복되던 서버 진행 문구도 제거해 충돌을 줄였다. 최종 질문·종료는 기존 서버 규칙이 보장한다.
+  첫 소재의 공감+감정 질문, 후속 감정 후 다른 기억 질문, 미래 일정 제외, 최대 두 사건·다섯 턴 정책은 유지한다.
+- 실제 모델 검사에서 후속 감정 뒤 같은 사건의 세부 장면을 다시 묻는 경우를 발견해 탐색 종료와
+  재질문 금지를 명시했다. 선택 필드였던 primitive boolean이 null로 생성된 1건도 발견해
+  G2 내부 응답 스키마의 모든 boolean을 필수로 지정했다. 공개 API 필드·인증·DB·Flyway 변경 없음.
+- 일기 실모델 검사에서 4문장으로 과도 압축하는 경우를 발견해 재료 충분 시 문장 수 확인과
+  행동·감정의 과도한 압축 금지를 추가했다. 이후에도 4문장인 경우가 있어 어댑터에서 문장 수를 확인하고
+  범위를 벗어나면 원래 대화·최초 초안만으로 한 번 검토하도록 보완했다. 검토는 읽기 제한 5초,
+  실패 시 최초 초안을 유지한다. 재료 부족 시 짧아도 정확성을 우선한다. 정상 분량은 추가 호출하지 않는다.
+  실패 실행을 성공으로 처리하지 않았다. `GeminiDiaryWriterTest`에 정상 무추가호출·분량검토·
+  검토실패 보존·재료부족 무한재시도 방지·최초실패 대체 경로 검사를 추가했다.
+- 이번 수정 BE: `PromptFactory.java`, `GeminiDiaryWriter.java`, `GeminiResponseSchemas.java`,
+  `PromptFactoryTest.java`, `GeminiDiaryChatAssistantTest.java`, `GeminiDiaryChatAssistantRealIntegrationTest.java`,
+  신규 `GeminiDiaryWriterRealIntegrationTest.java`, `GeminiDiaryWriterTest.java`, 계획·진행 문서. FE: `app/retro/draft.tsx`,
+  `app/retro/__tests__/diary.test.tsx`, `app/diary/__tests__/detail.test.tsx`, `docs/DESIGN.md`, 계획 문서;
+  삭제 `src/features/diary/model/body.ts`, `src/features/diary/model/__tests__/body.test.ts`.
+  직전 요청의 미커밋 변경은 모두 보존했다. 전체 프롬프트 열람용 `/private/tmp/momentory-current-prompts-2026-10-30.txt`도 갱신했다.
+- 집중 FE `npm test -- --runInBand app/retro/__tests__/diary.test.tsx app/diary/__tests__/detail.test.tsx`
+  2개 스위트·53건 통과. 전체 `npm test -- --runInBand` 130개 스위트·1,638건 통과(18.3초).
+  `npm run typecheck` 및 변경 FE 파일 Prettier 검사 통과.
+- 초기 BE 집중 `./gradlew test --tests '*PromptFactoryTest' --tests '*RetrospectEngineTest' --no-daemon` 통과(4초).
+- 말투 일반화 전 실모델+집중 검사 `./gradlew test --tests '*GeminiDiaryChatAssistantRealIntegrationTest'
+  --tests '*GeminiDiaryWriterRealIntegrationTest' --tests '*GeminiDiaryChatAssistantTest'
+  --tests '*PromptFactoryTest' --no-daemon` 통과(17초). 실행 프로세스에만 기존 키를 전달했고 개인 기록·키는 출력하지 않았다.
+  자유 대화 공개 가상 7사례 및 2사건 일기 5~6문장·2문단·문단당 복수 문장을 확인했다.
+- 독립 읽기 전용 리뷰 2회에서 Critical/Major/Minor 없음. 2차 당시 최신 검사 결과 미확인과
+  생성형 AI의 분량 준수 변동성이 검증 한계로 남았다. 해당 실제 실행은 통과했으며 기계적 문장 자르기는 하지 않는다.
+  이후 말투 일반화 검사에서 생각 질문이 생성된 1건을 발견해 첫 설명에서도 감정과 생각을 구분하도록 보강했다. 전체 검사·로컬 서버 반영 결과는 아래에 이어 기록한다.
+- 추가 말투 일반화 전 전체 BE `./gradlew clean check --no-daemon`는 1분 28초에 통과했다.
+  이후 사용자 요청으로 공통 지시와 의미 판단 규칙·말투 변형 검사를 추가했으므로 최종 전체 검사를 다시 실행한다.
+- 최종 일반화 후 실모델+집중 검사 `./gradlew test --tests '*GeminiDiaryChatAssistantRealIntegrationTest'
+  --tests '*GeminiDiaryWriterRealIntegrationTest' --tests '*GeminiDiaryWriterTest'
+  --tests '*GeminiDiaryChatAssistantTest' --tests '*PromptFactoryTest' --no-daemon` 통과(22초).
+  실제 모델 자유 대화 10사례(간단 구어체·정중체·오탈자 포함)와 문단 일기 1사례가 통과했다.
+  특정 문장을 학습 예시로 프롬프트에 넣지 않고 의미·단계 판단 규칙만으로 검사했다.
+- 최종 코드 전체 BE `./gradlew clean check --no-daemon` 통과(1분 27초).
+  88개 스위트 총 703건: **691개 통과 / 실패 0 / 오류 0 / 스킵 12**.
+  기본 실행에서 키가 없는 실제 Gemini 테스트 노드 및 외부 challenge 검사는 스킵한다.
+  Gemini 자유 대화 10사례·일기 1사례는 위 별도 실제 호출 실행에서 통과했다.
+- 독립 읽기 전용 리뷰 총 3회, 최종 Critical/Major/Minor 없음. 반려한 지적 없음.
+  마지막 리뷰 당시 전체 검사와 실기기 최종 응답은 Unable to verify였고, 이후 위 전체 검사 통과를 확인했다.
+  연결된 실기기의 개인 대화를 대신 생성하거나 기존 기록을 수정하지 않았다.
+- 최종 코드로 로컬 BE 서버를 재시작하고 `/actuator/health`의 `UP` 확인. Expo `packager-status:running`,
+  USB 기기 `R3CY106R8JL` 연결, 8080/8081 reverse 연결 유지 확인. 원격 배포·커밋·푸시하지 않았다.
+- 최종 변경 파일·untracked 파일을 재확인하고 양쪽 `git diff --check`, 변경 FE 파일 Prettier 통과.
+- 결과: **PASS WITH WARNINGS**. 요청 구현·필수 전체 검사·독립 리뷰 완료로 커밋·PR 검토 준비 상태다.
+  생성형 AI의 모든 표현·분량 준수를 보장하는 검증은 아니다. 분량 재검토 후에도 재료가 부족하면
+  정확성을 우선해 짧을 수 있고, 검토 호출이 필요한 경우 읽기 대기가 최대 5초 추가될 수 있다.
+  실기기 최종 문단 배치와 새로운 개인 대화 응답은 사용자의 다음 테스트에서 확인할 수 있다.
+
+
+## 2026-10-30 자유 대화 마무리와 공감·감정 질문을 한 응답으로 연결
+
+- 작업 중 사용자가 추가한 요구를 함께 반영했다. 실제 경험 첫 답변은 구체적인 공감과 그때 마음을
+  묻는 질문 하나를 같은 응답·말풍선으로 보낸다. ‘맞아’라는 확인 답변을 먼저 받지 않는다.
+  10/29의 ‘첫 소재 공감만’ 결정은 이번 명시적 요청으로 대체한다. 아직 전인 일정의 예외는 유지한다.
+- 카페에 가려다 귀찮아 안 나갔다면 그 상황을 받아주고 집에 있으면서 마음이 어땠는지 묻는다.
+  사용자가 말하지 않은 ‘쉬기로 했다/편안했다’ 같은 행동·결정·감정은 지어내지 않도록 지시했다.
+  G2의 첫 질문이 미래·생각·이유·의미·다른 소재 질문이거나 없으면 열린 감정 질문으로 대체한다.
+- 다른 기억을 묻는 고정 질문 직후의 명확한 없음 답변은 AI로 되묻지 않고 초안을 만든 뒤
+  기존 감정 탐색으로 넘어간다. 전체 답을 정확 매칭하므로 ‘없는데 산책했다’ 같은 새 내용,
+  ‘없어요?’ 같은 질문, 다른 질문에 대한 없음은 종료하지 않는다. 5턴은 상한이다.
+- 사용자 선택에 따라 일상 대화의 마지막 공감 / 감정 탐색 안내·질문은 두 말풍선으로 표시한다.
+  기존 API text는 유지하고 FE의 diary_chat→emotion_exploration/await_branch 전환에서
+  알려진 안내 경계로만 표시 버블을 나눈다. lastReply 원문·사용자 메시지·평소 바바 문단은 바꾸지 않는다.
+- 공개 API DTO·필드·경로·상태·오류·인증, DB·snapshot·JPA·Flyway 정의 변경 없음.
+- BE 집중 검사 `./gradlew test --tests '*RetrospectEngineTest' --tests '*PromptFactoryTest'
+  --tests '*RetrospectApiIntegrationTest' --no-daemon` 성공(10초).
+  없음 종료/오탐 방지·REST 저장·공감과 질문을 한 번에 보내기·5턴 상한·일정 예외를 확인했다.
+  새 REST 검사에서 중간 초안을 일기 테이블에 기대한 1건은 실패했다. 실제 기존 설계상 초안은
+  snapshot에 저장되고 회고 완료 시 일기 테이블에 저장하므로 snapshot 확인+테이블 empty로 수정했다.
+  미래 질문을 받는 실제 경험 검사 1건은 첫 감정 질문에서 미래 표현을 제외하고 회귀를 추가해 고쳤다.
+- FE 집중 `npm test -- --runInBand app/retro/__tests__/talk.test.tsx
+  src/components/ds/__tests__/chatSentenceLines.test.tsx src/components/ds/__tests__/chatBubbleWidth.test.tsx`
+  **3개 스위트·42건 통과**. 실제 두 단계 전환의 말풍선 분리, 원문 보존·고유 ID와 일반 문단 유지 확인.
+  `npm run typecheck`, `npm run typecheck:expo-lab`, 변경 파일·문서 Prettier 및 양쪽 diff 검사 통과.
+- 실제 Gemini 검사 `./gradlew test --tests '*GeminiDiaryChatAssistantRealIntegrationTest' --no-daemon`
+  성공(11초). 공개 가상 5사례: 기존 구체적 공감, 아직 안 만남, 저녁 약속 전,
+  아직 전+산책 경험, 새 카페 사례. 개인 대화·인증 정보는 전송·출력하지 않았다.
+- 이번 추가 수정: FE `src/features/retro/model/retro.ts`, `app/retro/__tests__/talk.test.tsx`,
+  `docs/DESIGN.md`, `docs/retro-chat-v2-plan.md`; BE `RetrospectEngine.java`, `DiaryTurn.java`,
+  `PromptFactory.java`, `RetrospectEngineTest.java`, `PromptFactoryTest.java`,
+  `RetrospectApiIntegrationTest.java`, `GeminiDiaryChatAssistantRealIntegrationTest.java`,
+  `docs/retro-chat-v2-plan.md`, 이 문서. 직전 줄바꿈 변경과 아직 전 일정 변경은 보존했다.
+  이번 추가 요청으로 새 파일·삭제 파일 없음.
+- 최종 전체 BE `./gradlew clean check --no-daemon` 성공(1분 29초).
+  86개 스위트 총 693건 중 **685개 통과 / 실패 0 / 오류 0 / 스킵 8**.
+  PostgreSQL·기존 공개 API 계약 검사를 포함했다. 기본 실행의 Gemini 실제 호출 테스트 노드 7개와
+  외부 challenge 검사 1개는 스킵했으며 위 별도 Gemini 실행에서 공개 가상 5사례는 통과했다.
+- 최종 FE `npm test -- --runInBand` **131개 스위트·1,639건 통과**(19.8초).
+  요청이 추가되기 전 시작한 BE 전체 검사 1회는 새 변경을 안정적으로 검증하기 위해 중단했으며,
+  위 최종 전체 검사를 마지막 코드 변경 후 다시 실행해 통과했다.
+- 독립 읽기 전용 리뷰 2회. 1차 Major 1건: 질문이 없는 같은 맥락의 두 문장도
+  breakAfterEmpathy가 마지막 마침표에서 줄을 나눴다. 질문 없는 응답은 원문 유지하고
+  전각 물음표도 질문 경계에 포함하도록 수정·회귀 검증했다. 2차 미해결 Critical/Major/Minor 없음.
+  반려한 지적 없음. FE 폭 보정 후 실제 기기 자동 접힘·잘림·최종 두 버블 배치는 추가 확인이 필요하다.
+- 최종 코드로 실기기에 연결된 로컬 서버를 재시작하고 `/actuator/health`의 `UP`을 확인했다.
+  앱 화면 전달 서버도 `packager-status:running` 확인했다. 사용자 갤러리가 전면이라 화면을 강제로
+  전환하거나 개인 채팅을 대신 보내지 않았다. USB·개발 서버·Expo가 켜져 있어야 한다.
+- 결과: **PASS WITH WARNINGS**. 구현·필수 검증·리뷰 완료, 커밋·PR 검토 준비 상태다.
+  다양한 실제 AI 표현과 실기기 최종 표시 검증 한계는 남는다. 커밋·푸시·원격 배포는 수행하지 않았다.
+
+## 2026-10-30 채팅 줄바꿈을 문장이 아닌 맥락 단위로 변경
+
+- 사용자 메시지는 입력한 문단·줄바꿈을 그대로 표시한다. 문장 부호마다 강제로 줄을 나누던
+  FE 포맷터를 제거했다. 바바의 같은 맥락 문장도 이어 쓰고, 공감에서 질문으로 넘어가는 등
+  서버가 나눈 맥락 경계의 줄바꿈을 그대로 표시한다.
+- 말풍선 폭 측정 시 화면에서 접힌 글줄을 강제 줄바꿈으로 다시 조합하던 처리도 제거했다.
+  폭만 보정하고 원문을 렌더링하므로 화면 폭에 따른 자동 접힘과 원문의 문단을 구분한다.
+- G2 시스템 지시에 맥락별 문단 원칙을 명시했다. 장애 대체 공감의 경청·공감 두 문장은
+  같은 문단으로 이어 쓴다. 기존 공감 전체와 다음 질문 사이 줄바꿈은 유지한다.
+- 공개 API·전송·저장 원문·DB·인증 변경 없음. 직전 아직 전인 일정 예외와 공감 대화 정책은 보존했다.
+- FE 집중 검사: `npm test -- --runInBand src/components/ds/__tests__/chatSentenceLines.test.tsx
+  src/components/ds/__tests__/chatBubbleWidth.test.tsx expo-lab/src/retro/__tests__/RetroDiaryPreview.test.tsx
+  expo-lab/src/retro/__tests__/BubbleComparisonPreview.test.tsx` **4개 스위트·21건 통과**.
+  `npm run typecheck` 통과. 수동 줄바꿈·빈 문단·공백·문장 부호 보존, 폭 보정 뒤 원문·접근성,
+  같은 맥락의 공감과 질문 문단을 확인했다.
+- BE 집중 검사: `./gradlew test --tests '*RetrospectEngineTest' --tests '*PromptFactoryTest'
+  --no-daemon` 성공(4초). 공감 두 문장을 이어 쓰고 질문만 다음 줄로 나누는 응답과 장애 대체 문단을 확인했다.
+- 이번 수정: FE `ChatBubble.tsx`, `chatSentenceLines.test.tsx`, `chatBubbleWidth.test.tsx`,
+  `docs/DESIGN.md`; 삭제 파일 `chatSentenceLines.ts`(호출부 없음). BE `RetrospectEngine.java`,
+  `PromptFactory.java`, `RetrospectEngineTest.java`, `PromptFactoryTest.java`, 이 문서.
+  새 파일 없음. 이전 미커밋 일정 예외 작업은 유지한다.
+- 전체 검사·독립 리뷰·실기기 서버 재시작 결과는 아래에 기록한다. 커밋·푸시·원격 배포는 수행하지 않는다.
+
+## 2026-10-30 아직 전인 일정에서 이전 경험으로 이어가기
+
+- 사용자 실기기 피드백: ‘오늘 유나 약속 어땠어요?’에 ‘아직 안 만났어’라고 답하면
+  ‘아직 만나기 전이시군요’에서 멈췄다. 실제 경험의 첫 공감 정책이 시간 정정에도 적용된 원인이었다.
+- G2 내부 `eventPending`으로 아직 일어나지 않은 일정만 답한 경우를 구분한다.
+  이때 상황을 받아주는 문장 뒤 ‘그럼 그전에는 어떤 일을 하셨어요?’를 묻는다.
+  그 답변의 미래 사건·곁가지·의미·감정 슬롯은 반영하지 않아 이미 한 일로 잘못 기록하지 않는다.
+- 실제 과거 경험도 함께 말했으면 그 경험을 추출해 기존 첫 공감 흐름을 따른다.
+  일정 취소·못 만난 완료 사실에는 이 예외를 적용하지 않는다. 5턴 상한·안전·종료 우선순위와
+  단답 체크인은 유지하되, 유효한 시간 정정 자체는 3턴 체크인으로 막지 않는다.
+- AI 장애 시에도 공백을 제거한 ‘아직 안/못 만났어(요/습니다)’와 종결 부호만인 명확한 답은
+  이전 경험 질문으로 이어간다. 복합 문장·다른 시간 표현은 AI 분류를 사용한다.
+- 공개 API DTO·필드·경로·상태·오류·인증과 DB·snapshot·JPA·Flyway 정의 변경 없음.
+  `eventPending`은 Gemini 내부 구조화 출력에만 추가했다. 기존 테스트 생성자에 기본 false를 전달했다.
+- 집중 검증: `./gradlew test --tests '*RetrospectEngineTest' --tests '*PromptFactoryTest'
+  --tests '*GeminiDiaryChatAssistantTest' --tests '*RetrospectApiIntegrationTest' --no-daemon` 성공(11초).
+  첫 시간 정정→실제 경험의 첫 공감 복구, 미래 슬롯 미저장·기존 슬롯 보존, 3턴 체크인·5턴 상한,
+  장애 대체 응답·내부 스키마와 REST 두 요청 사이 저장 상태를 검증했다.
+- 실제 Gemini 검사: 키를 출력하지 않고 환경으로 전달해
+  `./gradlew test --tests '*GeminiDiaryChatAssistantRealIntegrationTest' --no-daemon` 성공(10초).
+  새 공개 가상 사례 3건(아직 안 만남·저녁 약속 전·아직 전+오전 산책)과 기존 구체적 공감 1건 통과.
+- 수정 파일: BE `RetrospectEngine.java`, `DiaryTurn.java`, `GeminiResponseSchemas.java`,
+  `PromptFactory.java`, `FakeAssistant.java`, `RetrospectEngineTest.java`,
+  `GeminiDiaryChatAssistantRealIntegrationTest.java`, `GeminiDiaryChatAssistantTest.java`,
+  `PromptFactoryTest.java`, `RetrospectApiIntegrationTest.java`,
+  `RetrospectActionCardPersistenceIntegrationTest.java`, `docs/retro-chat-v2-plan.md`, 이 문서.
+  FE `docs/DESIGN.md`, `docs/retro-chat-v2-plan.md` 설명만 갱신. 새 파일·삭제 파일 없음.
+- FE 문서 Prettier와 양쪽 `git diff --check` 통과. Git 상태·전체 diff·untracked를 확인했다.
+- 최종 전체 검증 `./gradlew clean check --no-daemon` 성공(1분 28초).
+  86개 스위트 총 673건 중 **666개 통과 / 실패 0 / 오류 0 / 스킵 7**.
+  PostgreSQL 저장·기존 공개 API 계약 검사를 포함했다. 스킵은 기본 실행의 실제 Gemini 호출
+  테스트 노드 6개와 외부 challenge 데이터 검사 1개이며, 위 Gemini 별도 실행에서는 4사례 모두 통과했다.
+- 독립 읽기 전용 리뷰 2회 완료. 미해결 Critical/Major/Minor 없음. 수정·반려한 지적 없음.
+- 최종 코드로 실기기에 연결된 로컬 서버를 재시작하고 `/actuator/health`의 `UP`을 확인했다.
+  Galaxy USB reverse 8080·8081 연결도 확인했다. 기존 앱은 다음 응답부터 새 정책을 사용한다.
+- 결과: **PASS WITH WARNINGS**. 구현·필수 검증·독립 리뷰를 마쳐 커밋·PR 검토 준비 상태다.
+  실제 Gemini 검사는 공개 가상 사례이며, 모든 자연어 표현 및 재시작 후 사용자의 최종 실기기 응답은
+  추가 확인이 필요하다. USB·개발 서버·Expo가 켜져 있어야 한다.
+  이번 변경은 아직 커밋·푸시·원격 배포하지 않았다.
+
 ## 2026-10-29 감정 확인 질문 추가 철회 및 기능별 커밋
 
 - 사용자가 직전 변경을 되돌리도록 요청해 첫 소재 응답의 감정 확인 질문 추가만 철회했다.
