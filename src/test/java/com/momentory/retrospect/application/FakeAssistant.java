@@ -36,6 +36,8 @@ class FakeAssistant
     boolean turnNoMoreToAsk;
     boolean turnOffTopic;
     boolean turnVague;
+    boolean turnEventPending;
+    boolean turnEmotionCausePresent;
     String turnSafetyLevel = "none";
 
     // 대화 끝 사건·감정 추출 결과
@@ -63,7 +65,7 @@ class FakeAssistant
         }
         return Optional.of(new DiaryTurn(turnEvent, List.of(), turnMeaning, turnEmotionPresent,
                 turnQuestion, turnEmpathy, turnSafetyLevel, List.of(), turnNoMoreToAsk, turnOffTopic,
-                turnVague));
+                turnVague, turnEventPending, turnEmotionCausePresent));
     }
 
     @Override

@@ -15,18 +15,18 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * 일기 작성 슬롯(사건·감정·의미), 감정 탐색 슬롯(감정·바람·바랐던 모습), 대화 로그, 안전
  * 상태. 상태 변경은 이 클래스의 메서드로만 한다.
  *
- * <p>흐름: {@code diary_chat}(≤6턴, 사건·감정·의미 수집) → (사건이 둘이면 {@code await_branch}: 사건 고르기)
+ * <p>흐름: {@code diary_chat}(≤5턴, 사건·감정·의미 수집) → (사건이 둘이면 {@code await_branch}: 사건 고르기)
  * → {@code emotion_exploration}(감정 → 바람, 2턴) → {@code complete}. 작은 행동은 다음 날 바바의 편지에서
  * 고른다(작은 행동 슬롯은 옛 세션 호환으로만 남는다). 종료·다음 슬롯 선택은 서버(엔진)가 이 슬롯 상태로 결정한다.
  */
 public class RetrospectState {
 
     /** 일기 작성 최대 턴 (채팅흐름_v2). */
-    public static final int DIARY_MAX_TURNS = 6;
+    public static final int DIARY_MAX_TURNS = 5;
     /** 한 세션에서 뽑는 사건 개수 상한 (모델 비교 계획 §3.1). */
     public static final int MAX_EVENTS = 2;
     /**
-     * 일기 작성 권장 최소 턴 — 엔진은 6턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
+     * 일기 작성 권장 최소 턴 — 엔진은 5턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
      * 이 값을 하한으로 알려 "최소 이만큼은 소재를 넓혀가라"는 진행 안내에 쓴다({@code PromptFactory}).
      */
     public static final int DIARY_MIN_TURNS = 4;
@@ -48,6 +48,7 @@ public class RetrospectState {
     private boolean scheduleHint;
     private int topicTurn;
     private boolean topicEmotionSeen;
+    private boolean topicCauseDiscussed;
     private boolean topicMeaningSeen;
     private Integer selectedEventId;
     private boolean awaitingEventSelection;
@@ -258,6 +259,7 @@ public class RetrospectState {
                 secondaryEvents.remove(next);
                 this.topicTurn = 0;
                 this.topicEmotionSeen = false;
+                this.topicCauseDiscussed = false;
                 this.topicMeaningSeen = false;
             }
             this.event = next;
@@ -280,12 +282,21 @@ public class RetrospectState {
         return topicEmotionSeen;
     }
 
+    public boolean topicCauseDiscussed() {
+        return topicCauseDiscussed;
+    }
+
+    public void markTopicCauseDiscussed() {
+        topicCauseDiscussed = true;
+    }
+
     public boolean topicMeaningSeen() {
         return topicMeaningSeen;
     }
 
     public boolean shouldSwitchTopic() {
-        return (topicEmotionSeen && topicMeaningSeen) || (topicTurn >= 2 && !topicEmotionSeen);
+        // 소재의 첫 발화에는 공감만 하고 한 번 더 답할 여지를 둔다. 이후 의미·생각은 더 캐묻지 않는다.
+        return topicTurn >= 2;
     }
 
     public TodayAction todayAction() {
@@ -616,7 +627,7 @@ public class RetrospectState {
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
                 List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
-                topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction);
+                topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction, topicCauseDiscussed);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -669,6 +680,7 @@ public class RetrospectState {
         state.scheduleHint = Boolean.TRUE.equals(s.scheduleHint());
         state.topicTurn = s.topicTurn() == null ? 0 : s.topicTurn();
         state.topicEmotionSeen = Boolean.TRUE.equals(s.topicEmotionSeen());
+        state.topicCauseDiscussed = Boolean.TRUE.equals(s.topicCauseDiscussed());
         state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
         state.selectedEventId = s.selectedEventId();
         state.awaitingEventSelection = Boolean.TRUE.equals(s.awaitingEventSelection());

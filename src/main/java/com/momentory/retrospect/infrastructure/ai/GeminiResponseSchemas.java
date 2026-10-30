@@ -32,18 +32,26 @@ final class GeminiResponseSchemas {
 
     private static Map<String, Object> diaryTurnSchema() {
         LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        props.put("eventPending", Map.of("type", "BOOLEAN", "description",
+                "답변 전체가 아직 전인 일정만 가리킬 때 true. 실제로 한 경험도 포함되면 false."));
+        props.put("emotionPresent", Map.of("type", "BOOLEAN", "description",
+                "이번 답변에서 감정·기분·의욕 같은 주관적 상태를 표현했으면 true."));
+        props.put("emotionCausePresent", Map.of("type", "BOOLEAN", "description",
+                "그 감정이 생긴 이유를 이번 답변에서 설명했을 때만 true. 감정만 답하면 false."));
         props.put("event", str());
         props.put("secondaryEvents", arrayOf(str()));
         props.put("meaning", str());
-        props.put("emotionPresent", bool());
-        props.put("question", str());
+        props.put("question", Map.of("type", "STRING", "description",
+                "미래 일정뿐이면 그전 경험 질문. 그 외 감정 없음=기분 질문, 감정만 있음=계기 질문, 감정과 이유 있음=빈 문자열."));
         props.put("empathy", str());
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
         props.put("noMoreToAsk", bool());
         props.put("offTopic", bool());
         props.put("vague", bool());
-        return object(props, List.of("question"));
+        // primitive boolean은 null로 역직렬화할 수 없으므로 생략 가능한 필드로 두지 않는다.
+        return object(props, List.of("question", "empathy", "emotionPresent", "noMoreToAsk",
+                "offTopic", "vague", "eventPending", "emotionCausePresent"));
     }
 
     /**

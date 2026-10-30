@@ -103,7 +103,7 @@ class RetrospectActionCardPersistenceIntegrationTest {
 
         when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.of(new DiaryTurn(
                 "면접 스터디에서 팀원이 말을 끊었다", List.of(), "내 의견이 가볍게 다뤄진 게 걸린다", true,
-                "조금 더 들려줄래요?", null, "none", List.of(), false, false, false)));
+                "조금 더 들려줄래요?", null, "none", List.of(), false, false, false, false, false)));
         // 대화 끝 감정 추출 — 감정 탐색 1턴의 후보가 된다.
         when(emotionExtractor.extract(any())).thenReturn(new EmotionExtraction(
                 List.of(new ExtractedEvent(1, "면접 스터디", "면접 스터디에서 팀원이 말을 끊었다", List.of(1))),
@@ -167,11 +167,11 @@ class RetrospectActionCardPersistenceIntegrationTest {
     // ── 도우미 ───────────────────────────────────────────────────────────
 
     /**
-     * 시작 → 일기 작성 채팅 6턴 → (사건이 하나라) 바로 감정 탐색 → 감정 · 바람 2턴을 각각 첫 후보(id 1)로
+     * 시작 → 일기 작성 채팅 5턴 → (사건이 하나라) 바로 감정 탐색 → 감정 · 바람 2턴을 각각 첫 후보(id 1)로
      * 고른다. 완료 턴의 응답을 돌려준다.
      */
     private MvcResult driveExplorationToCompletion(User user, long sessionId) throws Exception {
-        // 일기 작성 채팅 — phase 가 diary_chat 인 동안 자유 텍스트 턴을 이어간다(엔진은 6턴에서 감정 탐색).
+        // 일기 작성 채팅 — phase 가 diary_chat 인 동안 자유 텍스트 턴을 이어간다(엔진은 5턴에서 감정 탐색).
         String phase = "diary_chat";
         for (int i = 0; i < 10 && "diary_chat".equals(phase); i++) {
             MvcResult turn = mockMvc.perform(
