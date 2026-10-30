@@ -276,9 +276,10 @@ class PromptFactoryTest {
     }
 
     @Test
-    void diaryPromptUsesSixSentencesWithoutPaddingMinorEvents() {
+    void diaryPromptUsesFiveToSixSentencesAndContextParagraphsWithoutInventingFacts() {
         assertThat(prompts.diaryPrompt(new RetrospectState("diary")))
-                .contains("전체 6문장 내외", "가볍게 언급한 잡일", "대화에 없는 사실·감정")
+                .contains("전체 5~6문장", "같은 맥락의 문장은 한 문단", "맥락이 달라지면", "빈 줄 하나",
+                        "문장마다 줄바꿈하거나", "가볍게 언급한 잡일", "대화에 없는 사실·감정", "재료가 부족하면 있는 내용만")
                 .doesNotContain("최소 5문장", "넉넉하게");
     }
 
