@@ -143,6 +143,7 @@ class RetrospectStateCodecTest {
         assertThat(restored.id()).isEqualTo("sess-legacy");
         assertThat(restored.event()).isEqualTo("팀원이 말을 끊었다");
         assertThat(restored.events()).isEmpty();
+        assertThat(restored.topicCauseDiscussed()).isFalse();
         assertThat(restored.emotions()).hasSize(1);
         assertThat(restored.emotions().get(0).normalized()).isEqualTo(Emotion.ANGRY);
         assertThat(restored.emotions().get(0).evidence()).isEqualTo("끊겼어요");
@@ -159,6 +160,7 @@ class RetrospectStateCodecTest {
         state.event("저녁");
         state.markEmotionSeen();
         state.meaning("고마웠다");
+        state.markTopicCauseDiscussed();
         state.bumpDiaryTurn();
         state.events(List.of(new ExtractedEvent(9, "저녁", "친구와 밥을 먹음", List.of(1))));
         state.changePhase(Phase.AWAIT_BRANCH);
@@ -167,7 +169,12 @@ class RetrospectStateCodecTest {
         assertThat(pending.awaitingEventSelection()).isTrue();
         assertThat(pending.scheduleHint()).isTrue();
         assertThat(pending.topicTurn()).isEqualTo(1);
-        assertThat(pending.shouldSwitchTopic()).isTrue();
+        assertThat(pending.topicCauseDiscussed()).isTrue();
+        assertThat(pending.shouldSwitchTopic()).isFalse();
+        pending.bumpDiaryTurn();
+        var followup = codec.deserialize(codec.serialize(pending));
+        assertThat(followup.topicTurn()).isEqualTo(2);
+        assertThat(followup.shouldSwitchTopic()).isTrue();
         assertThat(pending.selectEvent(9)).isTrue();
         pending.enterExploration();
         var selected = codec.deserialize(codec.serialize(pending));
