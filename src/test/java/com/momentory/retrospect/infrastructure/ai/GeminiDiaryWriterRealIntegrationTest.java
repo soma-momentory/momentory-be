@@ -40,5 +40,11 @@ class GeminiDiaryWriterRealIntegrationTest {
         assertThat(paragraphs).hasSize(2);
         assertThat(Arrays.stream(paragraphs).allMatch(p ->
                 Pattern.compile("[.!?。！？]+(?=\\s|$)").matcher(p).results().count() >= 2)).isTrue();
+        assertThat(diary).doesNotContain("\n\n\n");
+        var lines = diary.lines().filter(line -> !line.isBlank()).toList();
+        assertThat(lines).hasSize((int) sentences);
+        assertThat(lines).allSatisfy(line ->
+                assertThat(Pattern.compile("[.!?。！？]+(?=\\s|$)").matcher(line).results().count())
+                        .as("각 줄은 한 문장이어야 한다").isEqualTo(1));
     }
 }

@@ -30,7 +30,7 @@ class GeminiDiaryWriterTest {
 
     @Test
     void fiveSentencesAndContextParagraphsAreReturnedWithoutAnotherCall() {
-        var diary = new DiaryOutput("발표했다. 긴장했다. 마쳤다.\n\n산책했다. 편안했다.", null);
+        var diary = new DiaryOutput("발표했다.\n긴장했다.\n마쳤다.\n\n산책했다.\n편안했다.", null);
         when(client.generate(any(), eq(DiaryOutput.class))).thenReturn(Optional.of(diary));
 
         assertThat(writer.write(state)).contains(diary);
@@ -41,7 +41,7 @@ class GeminiDiaryWriterTest {
     void compressedDraftIsRevisedOnceUsingOriginalConversationAndWithoutInventingFacts() {
         state.addUserMessage("발표 때 긴장했지만 마쳤어요. 퇴근 후 산책하니 편안했어요.");
         var compressed = new DiaryOutput("발표하고 긴장했다. 마쳤다. 산책했다. 편안했다.", null);
-        var revised = new DiaryOutput("발표했다. 긴장했다. 마쳤다.\n\n산책했다. 편안했다.", null);
+        var revised = new DiaryOutput("발표했다.\n긴장했다.\n마쳤다.\n\n산책했다.\n편안했다.", null);
         when(client.generate(any(), eq(DiaryOutput.class)))
                 .thenReturn(Optional.of(compressed)).thenReturn(Optional.of(revised));
 
@@ -50,7 +50,8 @@ class GeminiDiaryWriterTest {
         var requests = ArgumentCaptor.forClass(LlmRequest.class);
         verify(client, times(2)).generate(requests.capture(), eq(DiaryOutput.class));
         assertThat(requests.getAllValues().get(1).user()).contains(state.messages().getFirst().content(),
-                compressed.diary(), "새 사실·감정이나 반복 문장으로 채우지", "정확성을 우선");
+                compressed.diary(), "새 사실·감정이나 반복 문장으로 채우지", "정확성을 우선",
+                "한 문장마다 줄바꿈", "맥락이 바뀌는 곳에만 빈 줄 하나");
     }
 
     @Test
