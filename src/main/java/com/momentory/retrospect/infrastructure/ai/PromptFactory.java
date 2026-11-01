@@ -401,7 +401,7 @@ public class PromptFactory {
         StringBuilder sb = new StringBuilder();
         int userSeq = 0;
         for (Message m : state.messages()) {
-            String content = stripOptionLines(m.content());
+            String content = m.isUser() ? (m.content() == null ? "" : m.content().strip()) : stripOptionLines(m.content());
             if (content.isEmpty()) {
                 continue;
             }
