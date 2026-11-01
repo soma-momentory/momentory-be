@@ -65,10 +65,12 @@ class LetterMaterialsReader {
             return Optional.empty();
         }
         Diary diary = found.get();
-        List<Message> messages = retrospectRepository.findById(diary.getRetrospectId())
+        List<Message> messages = Optional.ofNullable(diary.getRetrospectId())
+                .flatMap(retrospectRepository::findById)
                 .map(r -> codec.deserialize(r.getStateJson()).messages())
                 .orElse(List.of());
-        Optional<ActionCard> card = actionCardRepository.findByRetrospectId(diary.getRetrospectId());
+        Optional<ActionCard> card = Optional.ofNullable(diary.getRetrospectId())
+                .flatMap(actionCardRepository::findByRetrospectId);
 
         return Optional.of(new LetterMaterials(
                 letter.getId(),

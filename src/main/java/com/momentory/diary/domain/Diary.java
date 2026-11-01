@@ -35,7 +35,7 @@ public class Diary extends BaseTimeEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "retrospect_id", nullable = false)
+    @Column(name = "retrospect_id")
     private Long retrospectId;
 
     @Column(nullable = false, columnDefinition = "TEXT")
@@ -68,7 +68,7 @@ public class Diary extends BaseTimeEntity {
     private Diary(Long userId, Long retrospectId, String original, Emotion primaryEmotion,
             String emotions) {
         this.userId = Objects.requireNonNull(userId, "userId must not be null");
-        this.retrospectId = Objects.requireNonNull(retrospectId, "retrospectId must not be null");
+        this.retrospectId = retrospectId;
         this.original = Objects.requireNonNull(original, "original must not be null");
         this.primaryEmotion = primaryEmotion;
         this.emotions = emotions;
@@ -76,7 +76,12 @@ public class Diary extends BaseTimeEntity {
 
     public static Diary create(Long userId, Long retrospectId, String original,
             Emotion primaryEmotion, String emotions) {
-        return new Diary(userId, retrospectId, original, primaryEmotion, emotions);
+        return new Diary(userId, Objects.requireNonNull(retrospectId), original, primaryEmotion, emotions);
+    }
+
+    /** 직접 쓴 일기는 대화 세션이나 추론한 감정을 만들지 않는다. */
+    public static Diary write(Long userId, String original, Emotion emotion) {
+        return new Diary(userId, null, original, emotion, emotion == null ? null : emotion.key());
     }
 
     /**

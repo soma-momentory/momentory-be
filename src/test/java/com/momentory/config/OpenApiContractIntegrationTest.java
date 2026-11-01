@@ -65,6 +65,32 @@ class OpenApiContractIntegrationTest {
     }
 
     @Test
+    void documentsDirectDiaryWritingAndEditing() throws Exception {
+        JsonNode docs = getApiDocs();
+        assertResponseSchema(docs, "/api/v1/diaries", "post", "201", "DiaryResponse");
+        assertResponseSchema(docs, "/api/v1/diaries/{id}", "put", "200", "DiaryResponse");
+        for (String path : new String[] { "/api/v1/diaries", "/api/v1/diaries/{id}" }) {
+            String method = path.endsWith("{id}") ? "put" : "post";
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", "bodyRequired", "INVALID_REQUEST", "일기 본문을 입력해주세요.");
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", "bodyTooLong", "INVALID_REQUEST", "일기는 500자까지 쓸 수 있어요.");
+            assertErrorExample(docs, path, method, "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        }
+        assertErrorExample(docs, "/api/v1/diaries", "post", "409", "ApiErrorResponse", "ALREADY_RETROSPECTED_TODAY", "ALREADY_RETROSPECTED_TODAY", "오늘은 이미 회고를 완료했어요. 회고는 하루에 한 번만 할 수 있어요.");
+        assertErrorExample(docs, "/api/v1/diaries/{id}", "put", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
+        assertErrorExample(docs, "/api/v1/retrospect/{id}/messages", "post", "409", "ApiErrorResponse", "ALREADY_RETROSPECTED_TODAY", "ALREADY_RETROSPECTED_TODAY", "오늘은 이미 회고를 완료했어요. 회고는 하루에 한 번만 할 수 있어요.");
+        assertErrorExample(docs, "/api/v1/diaries", "post", "400", "ApiErrorResponse", "invalidEmotion", "INVALID_REQUEST", "감정을 확인해주세요.");
+        JsonNode create = docs.path("components").path("schemas").path("DiaryCreateRequest");
+        assertThat(create.path("properties").size()).isEqualTo(2);
+        assertThat(create.path("properties").has("emotion")).isTrue();
+        assertThat(create.path("required").toString()).doesNotContain("emotion");
+        assertThat(docs.at("/paths/~1api~1v1~1diaries/post/requestBody/content/application~1json/schema/$ref").asText())
+                .endsWith("/DiaryCreateRequest");
+        JsonNode properties = docs.path("components").path("schemas").path("DiaryWriteRequest").path("properties");
+        assertThat(properties.size()).isEqualTo(1);
+        assertThat(properties.path("original").path("maxLength").asInt()).isEqualTo(500);
+    }
+
+    @Test
     void documentsDiaryWeather() throws Exception {
         JsonNode docs = getApiDocs();
         String path = "/api/v1/diaries/{id}/weather";
@@ -668,7 +694,7 @@ class OpenApiContractIntegrationTest {
 
         /** 회고 시작은 "하루 한 번" 가드로 409(오늘 이미 완료)를 낸다. */
         boolean allowsConflict() {
-            return this == RETROSPECT_START;
+            return this == RETROSPECT_START || this == RETROSPECT_MESSAGE;
         }
     }
 }

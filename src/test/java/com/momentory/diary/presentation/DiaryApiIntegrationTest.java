@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -432,6 +433,120 @@ class DiaryApiIntegrationTest {
         var diary = diaryRepository.findById(id).orElseThrow();
         org.junit.jupiter.api.Assertions.assertEquals("본문 유지", diary.getOriginal());
         org.junit.jupiter.api.Assertions.assertNull(diary.getWeather());
+    }
+
+    @Test
+    void writesWithoutAiSessionAndCanReadEditAndDelete() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessions = retrospectRepository.count();
+        mockMvc.perform(post("/api/v1/diaries")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"original\":\"내가 쓴 글\\n둘째 줄\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.retrospectId").doesNotExist())
+                .andExpect(jsonPath("$.emotions").isEmpty())
+                .andExpect(jsonPath("$.original").value("내가 쓴 글\n둘째 줄"));
+        var diary = diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst();
+        org.junit.jupiter.api.Assertions.assertNull(diary.getRetrospectId());
+        org.junit.jupiter.api.Assertions.assertEquals(sessions, retrospectRepository.count());
+        mockMvc.perform(get("/api/v1/diaries/all").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.diaries[0].original").value("내가 쓴 글\n둘째 줄"));
+        mockMvc.perform(put("/api/v1/diaries/{id}", diary.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"original\":\"고친 글\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.original").value("고친 글"));
+        org.junit.jupiter.api.Assertions.assertEquals("고친 글", diaryRepository.findById(diary.getId()).orElseThrow().getOriginal());
+        mockMvc.perform(delete("/api/v1/diaries/{id}", diary.getId()).header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(diaryRepository.existsById(diary.getId()));
+    }
+
+    @Test
+    void directWritingRequiresAuthenticationAndValidBody() throws Exception {
+        mockMvc.perform(post("/api/v1/diaries").contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"글\"}"))
+                .andExpect(status().isUnauthorized());
+        User user = userRepository.saveAndFlush(User.create());
+        for (String invalid : new String[] { "{\"original\":\" \"}", "{}",
+                "{\"original\":\"" + "가".repeat(501) + "\"}" }) {
+            mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                            .contentType(MediaType.APPLICATION_JSON).content(invalid))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).isEmpty());
+        mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"" + "가".repeat(500) + "\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void directWritingCannotDuplicateTodayOrEditAnotherUsersDiary() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        long id = seedDiary(user, "AI 일기", Emotion.CALM, Instant.now());
+        mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"직접 쓴 글\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ALREADY_RETROSPECTED_TODAY"));
+        mockMvc.perform(put("/api/v1/diaries/{id}", id).header(HttpHeaders.AUTHORIZATION, bearer(other))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"남의 글 변경\"}"))
+                .andExpect(status().isNotFound());
+        org.junit.jupiter.api.Assertions.assertEquals("AI 일기", diaryRepository.findById(id).orElseThrow().getOriginal());
+        org.junit.jupiter.api.Assertions.assertEquals(1, diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).size());
+    }
+
+    @Test
+    void selectedPhotoEmotionIsPersistedAndPreservedWhenEditingTheBody() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"original\":\"행복했던 하루\",\"emotion\":\"happy\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.primaryEmotion").value("happy"))
+                .andExpect(jsonPath("$.emotions[0]").value("happy"));
+        var diary = diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst();
+        org.junit.jupiter.api.Assertions.assertEquals(Emotion.HAPPY, diary.getPrimaryEmotion());
+        org.junit.jupiter.api.Assertions.assertEquals("happy", diary.getEmotions());
+        mockMvc.perform(get("/api/v1/diaries/{id}", diary.getId()).header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.emotions[0]").value("happy"));
+        mockMvc.perform(put("/api/v1/diaries/{id}", diary.getId()).header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"고친 본문\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.primaryEmotion").value("happy"));
+        org.junit.jupiter.api.Assertions.assertEquals("happy", diaryRepository.findById(diary.getId()).orElseThrow().getEmotions());
+    }
+
+    @Test
+    void invalidPhotoEmotionDoesNotCreateADiary() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        for (String emotion : new String[] { "unknown", "", "HAPPY" }) {
+            mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"original\":\"본문\",\"emotion\":\"" + emotion + "\"}"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                    .andExpect(jsonPath("$.message").value("감정을 확인해주세요."));
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).isEmpty());
+    }
+
+    @Test
+    void concurrentDirectWritesLeaveOnlyOneDiary() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        String token = bearer(user);
+        try (var workers = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var ready = new java.util.concurrent.CountDownLatch(2);
+            java.util.concurrent.Callable<Integer> write = () -> {
+                ready.countDown();
+                if (!ready.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new AssertionError("requests not ready");
+                return mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, token)
+                                .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"내 글\"}"))
+                        .andReturn().getResponse().getStatus();
+            };
+            var first = workers.submit(write);
+            var second = workers.submit(write);
+            org.assertj.core.api.Assertions.assertThat(java.util.List.of(
+                    first.get(15, java.util.concurrent.TimeUnit.SECONDS),
+                    second.get(15, java.util.concurrent.TimeUnit.SECONDS))).containsExactlyInAnyOrder(201, 409);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(1, diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).size());
     }
 
     // ── 도우미 ───────────────────────────────────────────────────────────

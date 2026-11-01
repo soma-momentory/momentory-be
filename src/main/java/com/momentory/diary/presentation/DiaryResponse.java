@@ -19,7 +19,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record DiaryResponse(
         @Schema(description = "일기 id", example = "1") Long id,
-        @Schema(description = "그날의 회고 id — 행동 카드 조회에 쓴다", example = "10") Long retrospectId,
+        @Schema(description = "그날의 회고 id — 직접 쓴 일기는 생략", example = "10") Long retrospectId,
         @Schema(description = "대표 감정 키 — 없을 수 있음", example = "depressed") String primaryEmotion,
         @Schema(description = "감정 태그 키 목록(일기에서 드러난 감정 전체)", example = "[\"angry\", \"frustrated\"]") List<String> emotions,
         @Schema(description = "일기 본문") String original,

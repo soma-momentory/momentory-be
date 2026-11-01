@@ -378,6 +378,24 @@ class RetrospectApiIntegrationTest {
     }
 
     @Test
+    void manualDiaryPreventsAiCompletionAndRollsBackTheSession() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(user);
+        var before = retrospectRepository.findById(sessionId).orElseThrow().getStateJson();
+        mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"직접 남긴 일기\"}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"이제 그만할래\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ALREADY_RETROSPECTED_TODAY"));
+        assertThat(retrospectRepository.findById(sessionId).orElseThrow().getStateJson()).isEqualTo(before);
+        assertThat(retrospectRepository.findById(sessionId).orElseThrow().getCompletedAt()).isNull();
+        assertThat(diaryRepository.findByRetrospectId(sessionId)).isEmpty();
+        assertThat(diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId())).singleElement()
+                .extracting(Diary::getOriginal).isEqualTo("직접 남긴 일기");
+    }
+
+    @Test
     @DisplayName("완료(그만하기) — 대화 중 「그만할래」면 바람카드 없이 일기로 완료·저장된다")
     void stopRequestCompletesAndPersistsDiaryWithoutCard() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
