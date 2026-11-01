@@ -18,12 +18,14 @@ import com.momentory.retrospect.domain.Need;
  */
 public record LetterMaterials(Long letterId, LocalDate letterDate, String nickname, String diary,
         List<String> userWords, boolean crisis, List<Need> wishNeeds,
-        List<String> todaySchedules, List<String> tomorrowSchedules, String previousAction) {
+        List<String> todaySchedules, List<String> tomorrowSchedules, String previousAction,
+        List<String> events) {
 
     public LetterMaterials {
         userWords = List.copyOf(userWords);
         wishNeeds = List.copyOf(wishNeeds);
         todaySchedules = List.copyOf(todaySchedules);
         tomorrowSchedules = List.copyOf(tomorrowSchedules);
+        events = List.copyOf(events);
     }
 }

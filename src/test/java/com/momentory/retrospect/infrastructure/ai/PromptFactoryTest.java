@@ -73,6 +73,14 @@ class PromptFactoryTest {
     }
 
     @Test
+    void numberedDiaryLinesRemainInTheActualExtractionPrompt() {
+        RetrospectState state = new RetrospectState("written-diary");
+        state.addUserMessage("  1. 친구와 산책했다.\n  2. 회의가 길어 피곤했다.");
+        String prompt = prompts.emotionExtractPrompt(state);
+        assertThat(prompt).contains("[U1] 1. 친구와 산책했다.", "  2. 회의가 길어 피곤했다.");
+    }
+
+    @Test
     @DisplayName("선택지만 있는 메시지는 통째로 빠진다 — 빈 화자 줄을 남기지 않는다")
     void dropsMessageThatIsOnlyOptions() {
         RetrospectState state = new RetrospectState("sess-3");

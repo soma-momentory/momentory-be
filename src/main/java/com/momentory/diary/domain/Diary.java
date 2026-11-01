@@ -35,7 +35,7 @@ public class Diary extends BaseTimeEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "retrospect_id", nullable = false)
+    @Column(name = "retrospect_id")
     private Long retrospectId;
 
     @Column(nullable = false, columnDefinition = "TEXT")
@@ -53,6 +53,19 @@ public class Diary extends BaseTimeEntity {
     @Column(length = 80)
     private String weather;
 
+    @Column(name = "events_json", columnDefinition = "TEXT")
+    private String eventsJson;
+
+    public String getEventsJson() {
+        return eventsJson;
+    }
+
+    /** 직접 쓴 본문과 같은 트랜잭션에서 그 본문의 사건을 교체한다. */
+    public void replaceEvents(String eventsJson) {
+        if (retrospectId != null) throw new IllegalStateException("chat diary events belong to retrospect");
+        this.eventsJson = Objects.requireNonNull(eventsJson);
+    }
+
     public String getWeather() {
         return weather;
     }
@@ -68,7 +81,7 @@ public class Diary extends BaseTimeEntity {
     private Diary(Long userId, Long retrospectId, String original, Emotion primaryEmotion,
             String emotions) {
         this.userId = Objects.requireNonNull(userId, "userId must not be null");
-        this.retrospectId = Objects.requireNonNull(retrospectId, "retrospectId must not be null");
+        this.retrospectId = retrospectId;
         this.original = Objects.requireNonNull(original, "original must not be null");
         this.primaryEmotion = primaryEmotion;
         this.emotions = emotions;
@@ -76,7 +89,12 @@ public class Diary extends BaseTimeEntity {
 
     public static Diary create(Long userId, Long retrospectId, String original,
             Emotion primaryEmotion, String emotions) {
-        return new Diary(userId, retrospectId, original, primaryEmotion, emotions);
+        return new Diary(userId, Objects.requireNonNull(retrospectId), original, primaryEmotion, emotions);
+    }
+
+    /** 직접 쓴 일기는 대화 세션이나 추론한 감정을 만들지 않는다. */
+    public static Diary write(Long userId, String original, Emotion emotion) {
+        return new Diary(userId, null, original, emotion, emotion == null ? null : emotion.key());
     }
 
     /**

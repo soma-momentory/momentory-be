@@ -79,7 +79,7 @@ class GeminiLetterWriterRealIntegrationTest {
 
     private static LetterMaterials sample(long id, String diary, List<String> words, List<String> schedules) {
         return new LetterMaterials(id, LocalDate.of(2026, 10, 26), "하늘", diary, words, false, List.of(),
-                schedules, List.of(), null);
+                schedules, List.of(), null, List.of("발표: 준비한 발표를 마쳤다."));
     }
 
     private static long ms(long startedAt) {

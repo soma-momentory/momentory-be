@@ -32,6 +32,7 @@ class LetterWishCards {
 
     Optional<ActionCard> of(Letter letter) {
         return diaryRepository.findById(letter.getDiaryId())
+                .filter(diary -> diary.getRetrospectId() != null)
                 .flatMap(diary -> actionCardRepository.findByRetrospectId(diary.getRetrospectId()));
     }
 }

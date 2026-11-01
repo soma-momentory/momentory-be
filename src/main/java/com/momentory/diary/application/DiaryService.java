@@ -16,10 +16,33 @@ public class DiaryService {
 
     private final DiaryRepository diaryRepository;
     private final ApplicationEventPublisher events;
+    private final DiaryCreationGuard creationGuard;
 
-    public DiaryService(DiaryRepository diaryRepository, ApplicationEventPublisher events) {
+    public DiaryService(DiaryRepository diaryRepository, ApplicationEventPublisher events,
+            DiaryCreationGuard creationGuard) {
         this.diaryRepository = diaryRepository;
         this.events = events;
+        this.creationGuard = creationGuard;
+    }
+
+    /** 저장 성공 후에만 생성된 일기를 돌려준다. AI 호출이나 대화 세션은 없다. */
+    @Transactional
+    public DiaryView write(Long userId, String original, com.momentory.retrospect.domain.Emotion emotion,
+            String eventsJson) {
+        creationGuard.requireAvailable(userId);
+        Diary diary = Diary.write(userId, original, emotion);
+        diary.replaceEvents(eventsJson);
+        return DiaryView.from(diaryRepository.saveAndFlush(diary));
+    }
+
+    @Transactional
+    public DiaryView updateOriginal(Long userId, Long id, String original, String eventsJson) {
+        Diary diary = diaryRepository.findByIdAndUserId(id, userId)
+                .orElseThrow(DiaryNotFoundException::new);
+        diary.updateOriginal(original);
+        if (eventsJson != null) diary.replaceEvents(eventsJson);
+        events.publishEvent(new DiaryOriginalUpdated(diary.getId()));
+        return DiaryView.from(diary);
     }
 
     /** 외부 조회는 트랜잭션 밖에서 수행하고, 기록 시 소유권과 날짜를 다시 검사한다. */
