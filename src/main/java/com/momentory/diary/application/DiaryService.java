@@ -27,16 +27,20 @@ public class DiaryService {
 
     /** 저장 성공 후에만 생성된 일기를 돌려준다. AI 호출이나 대화 세션은 없다. */
     @Transactional
-    public DiaryView write(Long userId, String original, com.momentory.retrospect.domain.Emotion emotion) {
+    public DiaryView write(Long userId, String original, com.momentory.retrospect.domain.Emotion emotion,
+            String eventsJson) {
         creationGuard.requireAvailable(userId);
-        return DiaryView.from(diaryRepository.saveAndFlush(Diary.write(userId, original, emotion)));
+        Diary diary = Diary.write(userId, original, emotion);
+        diary.replaceEvents(eventsJson);
+        return DiaryView.from(diaryRepository.saveAndFlush(diary));
     }
 
     @Transactional
-    public DiaryView updateOriginal(Long userId, Long id, String original) {
+    public DiaryView updateOriginal(Long userId, Long id, String original, String eventsJson) {
         Diary diary = diaryRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(DiaryNotFoundException::new);
         diary.updateOriginal(original);
+        if (eventsJson != null) diary.replaceEvents(eventsJson);
         events.publishEvent(new DiaryOriginalUpdated(diary.getId()));
         return DiaryView.from(diary);
     }

@@ -42,16 +42,20 @@ public class DiaryController {
 
     private final DiaryQueryService diaryQueryService;
     private final DiaryService diaryService;
+    private final com.momentory.diary.application.WrittenDiaryService writtenDiaries;
     private final com.momentory.diary.application.DiaryWeatherService weatherService;
 
     public DiaryController(DiaryQueryService diaryQueryService, DiaryService diaryService,
-            com.momentory.diary.application.DiaryWeatherService weatherService) {
+            com.momentory.diary.application.DiaryWeatherService weatherService,
+            com.momentory.diary.application.WrittenDiaryService writtenDiaries) {
         this.diaryQueryService = diaryQueryService;
         this.diaryService = diaryService;
         this.weatherService = weatherService;
+        this.writtenDiaries = writtenDiaries;
     }
 
-    @Operation(summary = "오늘 일기 직접 쓰기 — AI 대화 없이 본문 저장")
+    @Operation(summary = "오늘 일기 직접 쓰기 — 본문·선택 감정·사건 저장",
+            description = "본문은 그대로 저장하고, 채팅과 같은 추출기로 사건을 최대 두 개 추출해 보관한다. 사진 감정은 사용자가 선택한 값만 저장한다.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "저장 성공",
@@ -80,7 +84,7 @@ public class DiaryController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public DiaryResponse write(@Login LoginPrincipal principal,
             @Valid @RequestBody DiaryCreateRequest request) {
-        return DiaryResponse.from(diaryService.write(principal.userId(), request.original(),
+        return DiaryResponse.from(writtenDiaries.write(principal.userId(), request.original(),
                 com.momentory.retrospect.domain.Emotion.fromKey(request.emotion()).orElse(null)));
     }
 
@@ -112,7 +116,7 @@ public class DiaryController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     public DiaryResponse updateOriginal(@Login LoginPrincipal principal, @PathVariable Long id,
             @Valid @RequestBody DiaryWriteRequest request) {
-        return DiaryResponse.from(diaryService.updateOriginal(principal.userId(), id, request.original()));
+        return DiaryResponse.from(writtenDiaries.update(principal.userId(), id, request.original()));
     }
 
     @Operation(summary = "오늘 일기에 현재 위치의 날씨 기록",

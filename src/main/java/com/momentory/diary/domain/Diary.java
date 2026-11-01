@@ -53,6 +53,19 @@ public class Diary extends BaseTimeEntity {
     @Column(length = 80)
     private String weather;
 
+    @Column(name = "events_json", columnDefinition = "TEXT")
+    private String eventsJson;
+
+    public String getEventsJson() {
+        return eventsJson;
+    }
+
+    /** 직접 쓴 본문과 같은 트랜잭션에서 그 본문의 사건을 교체한다. */
+    public void replaceEvents(String eventsJson) {
+        if (retrospectId != null) throw new IllegalStateException("chat diary events belong to retrospect");
+        this.eventsJson = Objects.requireNonNull(eventsJson);
+    }
+
     public String getWeather() {
         return weather;
     }

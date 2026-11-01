@@ -194,11 +194,13 @@ public class GeminiLetterWriter {
 
                 [어제 일기]
                 %s
+                [어제의 사건 — 본문에서 추출한 기록]
+                %s
 
                 [어제 사용자가 한 말]
                 %s
                 """.formatted(Needs.ALL.stream().map(Need::word).collect(Collectors.joining(", ")),
-                m.diary(), bullets(m.userWords()));
+                m.diary(), bullets(m.events()), bullets(m.userWords()));
     }
 
     String actionsPrompt(LetterMaterials m, List<Need> needs) {
@@ -210,6 +212,8 @@ public class GeminiLetterWriter {
                 %s
                 [어제 일기]
                 %s
+                [어제의 사건 — 본문에서 추출한 기록]
+                %s
                 [오늘 일정] %s
                 [바람] %s
                 [연결 근거의 한계]
@@ -217,7 +221,7 @@ public class GeminiLetterWriter {
 
                 [후보]
                 %s
-                """.formatted(PromptFactory.ACTION_RULES, m.diary(), joinedOrNone(m.tomorrowSchedules()),
+                """.formatted(PromptFactory.ACTION_RULES, m.diary(), bullets(m.events()), joinedOrNone(m.tomorrowSchedules()),
                 needs.stream().map(n -> n.word() + "(" + n.meaning() + ")").collect(Collectors.joining(", ")),
                 catalog.notesFor(needs), PromptFactory.describeCandidates(catalog.candidatesFor(needs)));
     }

@@ -39,13 +39,14 @@ class LetterMaterialsReader {
     private final UserProfileRepository userProfileRepository;
     private final SafetyPolicy safetyPolicy;
     private final LetterWishCards wishCards;
+    private final com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec;
 
     LetterMaterialsReader(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, DiaryRepository diaryRepository,
             RetrospectRepository retrospectRepository, RetrospectStateCodec codec,
             ActionCardRepository actionCardRepository, ScheduleRepository scheduleRepository,
             UserProfileRepository userProfileRepository, SafetyPolicy safetyPolicy,
-            LetterWishCards wishCards) {
+            LetterWishCards wishCards, com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.diaryRepository = diaryRepository;
@@ -56,6 +57,7 @@ class LetterMaterialsReader {
         this.userProfileRepository = userProfileRepository;
         this.safetyPolicy = safetyPolicy;
         this.wishCards = wishCards;
+        this.diaryEventCodec = diaryEventCodec;
     }
 
     /** 만드는 사이 일기가 지워졌으면 empty. */
@@ -65,10 +67,16 @@ class LetterMaterialsReader {
             return Optional.empty();
         }
         Diary diary = found.get();
-        List<Message> messages = Optional.ofNullable(diary.getRetrospectId())
+        var state = Optional.ofNullable(diary.getRetrospectId())
                 .flatMap(retrospectRepository::findById)
-                .map(r -> codec.deserialize(r.getStateJson()).messages())
-                .orElse(List.of());
+                .map(r -> codec.deserialize(r.getStateJson()));
+        List<Message> messages = state.map(s -> s.messages()).orElse(List.of());
+        List<String> events = diary.getRetrospectId() == null
+                ? diaryEventCodec.deserialize(diary.getEventsJson()).stream()
+                        .map(event -> event.label().equals(event.summary()) ? event.summary()
+                                : event.label() + ": " + event.summary()).toList()
+                : state.map(s -> s.events().stream().map(event -> event.summary())
+                        .filter(java.util.Objects::nonNull).toList()).orElse(List.of());
         Optional<ActionCard> card = Optional.ofNullable(diary.getRetrospectId())
                 .flatMap(actionCardRepository::findByRetrospectId);
 
@@ -88,7 +96,7 @@ class LetterMaterialsReader {
                 schedules(letter, 0).stream()
                         .map(s -> s.getTitle() + (s.isCompleted() ? " (했음)" : " (안 했음)")).toList(),
                 schedules(letter, 1).stream().map(Schedule::getTitle).toList(),
-                previousAction(letter)));
+                previousAction(letter), events));
     }
 
     private List<Schedule> schedules(Letter letter, int daysAfter) {

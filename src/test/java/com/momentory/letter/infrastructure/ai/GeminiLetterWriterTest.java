@@ -91,6 +91,13 @@ class GeminiLetterWriterTest {
         assertThat(sent).doesNotContain("나이").doesNotContain("성별").doesNotContain("관심");
     }
 
+    @Test
+    void savedEventsAreIncludedInNeedsAndActionRecommendations() {
+        var needs = List.of(com.momentory.retrospect.domain.Needs.byWord("휴식").orElseThrow());
+        assertThat(writer.needsPrompt(materials())).contains("[어제의 사건", "발표: 준비한 발표를 마쳤다.");
+        assertThat(writer.actionsPrompt(materials(), needs)).contains("[어제의 사건", "발표: 준비한 발표를 마쳤다.");
+    }
+
     private MockResponse ok(Map<String, Object> inner) {
         try {
             return new MockResponse().addHeader("Content-Type", "application/json")
@@ -104,6 +111,6 @@ class GeminiLetterWriterTest {
     private static LetterMaterials materials() {
         return new LetterMaterials(1L, LocalDate.of(2026, 10, 26), "하늘", "오늘은 발표가 있었다.",
                 List.of("발표 전에 손이 떨렸어요"), false, List.of(), List.of("팀 회의 (했음)"),
-                List.of(), null);
+                List.of(), null, List.of("발표: 준비한 발표를 마쳤다."));
     }
 }

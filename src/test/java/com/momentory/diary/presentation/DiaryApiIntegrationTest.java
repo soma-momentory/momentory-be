@@ -73,14 +73,20 @@ class DiaryApiIntegrationTest {
     @Autowired DiaryRepository diaryRepository;
     @Autowired AccessTokenIssuer accessTokenIssuer;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec;
 
     @org.springframework.test.context.bean.override.mockito.MockitoBean
     com.momentory.diary.application.WeatherProvider weatherProvider;
+
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.momentory.retrospect.domain.assistant.EmotionExtractor emotionExtractor;
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.when(emotionExtractor.extract(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(com.momentory.retrospect.domain.assistant.EmotionExtraction.empty());
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .apply(springSecurity())
                 .build();
@@ -525,6 +531,78 @@ class DiaryApiIntegrationTest {
                     .andExpect(jsonPath("$.message").value("감정을 확인해주세요."));
         }
         org.junit.jupiter.api.Assertions.assertTrue(diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).isEmpty());
+    }
+
+    @Test
+    void writtenEventsAreSavedWithTheDiaryAndReplacedWhenItsBodyChanges() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        var extraction = new com.momentory.retrospect.domain.assistant.EmotionExtraction(
+                java.util.List.of(
+                        new com.momentory.retrospect.domain.ExtractedEvent(1, "친구와 산책", "친구와 산책하며 차분해졌다", java.util.List.of(1)),
+                        new com.momentory.retrospect.domain.ExtractedEvent(2, "회사 회의", "긴 회의로 피곤했다", java.util.List.of(1)),
+                        new com.momentory.retrospect.domain.ExtractedEvent(3, "근거 없는 사건", "본문 밖 사건", java.util.List.of(2))),
+                java.util.List.of(new com.momentory.retrospect.domain.ExtractedEmotion(1, "차분", Emotion.CALM, 2, null, "차분해졌다", java.util.List.of(1))), null);
+        org.mockito.Mockito.when(emotionExtractor.extract(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> {
+            org.junit.jupiter.api.Assertions.assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive());
+            var source = (com.momentory.retrospect.domain.RetrospectState) call.getArgument(0);
+            org.junit.jupiter.api.Assertions.assertEquals("친구와 산책하며 차분해졌다. 회의가 길어 피곤했다.", source.messages().getFirst().content());
+            return extraction;
+        });
+        mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"original\":\"친구와 산책하며 차분해졌다. 회의가 길어 피곤했다.\",\"emotion\":\"happy\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.primaryEmotion").value("happy"));
+        var diary = diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst();
+        var events = diaryEventCodec.deserialize(diary.getEventsJson());
+        org.assertj.core.api.Assertions.assertThat(events).extracting(com.momentory.diary.domain.DiaryEvent::label)
+                .containsExactly("친구와 산책", "회사 회의");
+        org.assertj.core.api.Assertions.assertThat(events.getFirst().emotions()).containsExactly(Emotion.CALM);
+        org.junit.jupiter.api.Assertions.assertEquals(Emotion.HAPPY, diary.getPrimaryEmotion());
+        org.mockito.Mockito.doReturn(
+                new com.momentory.retrospect.domain.assistant.EmotionExtraction(java.util.List.of(
+                        new com.momentory.retrospect.domain.ExtractedEvent(1, "책 읽기", "집에서 책을 읽었다", java.util.List.of(1))), java.util.List.of(), Emotion.CALM))
+                .when(emotionExtractor).extract(org.mockito.ArgumentMatchers.any());
+        mockMvc.perform(put("/api/v1/diaries/{id}", diary.getId()).header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"집에서 책을 읽었다.\"}"))
+                .andExpect(status().isOk());
+        var updated = diaryRepository.findById(diary.getId()).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals("집에서 책을 읽었다.", updated.getOriginal());
+        var updatedEvents = diaryEventCodec.deserialize(updated.getEventsJson());
+        org.assertj.core.api.Assertions.assertThat(updatedEvents).extracting(com.momentory.diary.domain.DiaryEvent::label).containsExactly("책 읽기");
+        org.assertj.core.api.Assertions.assertThat(updatedEvents.getFirst().emotions()).isEmpty();
+        org.junit.jupiter.api.Assertions.assertEquals(Emotion.HAPPY, updated.getPrimaryEmotion());
+    }
+
+    @Test
+    void inferredEmotionDoesNotReplaceTheNeutralPhotoOrBecomeEventEvidence() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        org.mockito.Mockito.when(emotionExtractor.extract(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new com.momentory.retrospect.domain.assistant.EmotionExtraction(java.util.List.of(
+                        new com.momentory.retrospect.domain.ExtractedEvent(1, "산책", "산책했다", java.util.List.of(1))), java.util.List.of(), Emotion.TIRED));
+        mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"산책했다.\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.primaryEmotion").doesNotExist())
+                .andExpect(jsonPath("$.emotions").isEmpty());
+        var diary = diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst();
+        org.junit.jupiter.api.Assertions.assertNull(diary.getPrimaryEmotion());
+        org.assertj.core.api.Assertions.assertThat(diaryEventCodec.deserialize(diary.getEventsJson()).getFirst().emotions()).isEmpty();
+    }
+
+    @Test
+    void eventEmotionsRequireEvidenceInTheWrittenBody() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        org.mockito.Mockito.when(emotionExtractor.extract(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new com.momentory.retrospect.domain.assistant.EmotionExtraction(java.util.List.of(
+                        new com.momentory.retrospect.domain.ExtractedEvent(1, "산책", "산책했다", java.util.List.of(1))),
+                        java.util.List.of(
+                                new com.momentory.retrospect.domain.ExtractedEmotion(1, "화남", Emotion.ANGRY, 2, null, "산책했다", java.util.List.of(2)),
+                                new com.momentory.retrospect.domain.ExtractedEmotion(1, "행복", Emotion.HAPPY, 2, null, "행복했다", java.util.List.of(1)),
+                                new com.momentory.retrospect.domain.ExtractedEmotion(1, "평온", Emotion.CALM, 2, null, "", java.util.List.of(1))), null));
+        mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"산책했다.\"}"))
+                .andExpect(status().isCreated());
+        var diary = diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst();
+        org.assertj.core.api.Assertions.assertThat(diaryEventCodec.deserialize(diary.getEventsJson()).getFirst().emotions()).isEmpty();
     }
 
     @Test
