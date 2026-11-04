@@ -269,7 +269,9 @@ class WishApiIntegrationTest {
         perform(author, delete(BASE + "/" + wish.getId())).andExpect(status().isNoContent());
 
         assertThat(wishRepository.findById(wish.getId()).orElseThrow().getContent()).isEmpty();
-        perform(author, get(BASE + "/mine")).andExpect(jsonPath("$.floating.length()").value(0));
+        perform(author, get(BASE + "/mine"))
+                .andExpect(jsonPath("$.floating.length()").value(0))
+                .andExpect(jsonPath("$.postedToday").value(true));
         perform(author, review("다시 빌래요")).andExpect(status().isConflict());
     }
 

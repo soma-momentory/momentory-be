@@ -33,6 +33,6 @@ public final class WishResults {
     public record PastWish(long id, String content, EndReason endReason, WishOutcome outcome) {
     }
 
-    public record MyWishes(List<FloatingWish> floating, List<PastWish> past) {
+    public record MyWishes(boolean postedToday, List<FloatingWish> floating, List<PastWish> past) {
     }
 }

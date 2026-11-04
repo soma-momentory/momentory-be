@@ -61,7 +61,7 @@ public class WishController {
         return wishService.post(principal.userId(), request.content(), request.reviewToken());
     }
 
-    @Operation(summary = "내 소원 조회", description = "떠 있는 소원과 지나간 소원. 같이 빈 사람 수는 돌려주지 않고 있었는지만 알린다.")
+    @Operation(summary = "내 소원 조회", description = "떠 있는 소원과 지나간 소원. 같이 빈 사람 수는 돌려주지 않고 있었는지만 알린다. postedToday 는 오늘 몫을 썼는지다(지운 소원도 몫을 쓴 것이다).")
     @GetMapping("/mine")
     public MyWishes mine(@Login LoginPrincipal principal) {
         return wishService.myWishes(principal.userId());

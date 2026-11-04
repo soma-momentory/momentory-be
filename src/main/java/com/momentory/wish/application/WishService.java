@@ -204,7 +204,7 @@ public class WishService {
                 .map(wish -> new PastWish(wish.getId(), wish.getContent(),
                         wish.getTakenDownAt() == null ? EndReason.EXPIRED : EndReason.REPORTED, wish.getOutcome()))
                 .toList();
-        return new MyWishes(floating, past);
+        return new MyWishes(wishRepository.existsByUserIdAndWishDate(userId, DayBoundary.today()), floating, past);
     }
 
     private static int daysLeft(Wish wish, Instant now) {
