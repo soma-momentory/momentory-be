@@ -92,6 +92,15 @@ class RestRecordControllerIntegrationTest {
     }
 
     @Test
+    void recordsMeditationVisit() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+
+        mockMvc.perform(postRecord(user, "{\"content\":\"MEDITATION\",\"completed\":true,\"mood\":\"BETTER\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.content").value("MEDITATION"));
+    }
+
+    @Test
     void recordsIncompleteVisitWithoutMood() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
 
