@@ -23,7 +23,9 @@ public enum LlmRole {
     /** 편지 작은 일 번호 고르기 — 연결표 후보 중에서. */
     LETTER_ACTIONS("AI-LETTER-ACTIONS"),
     /** 소원 심사 — 띄우기 전 판별과 이름 · 연락처 고치기. 소원 1건당 1회. */
-    WISH_REVIEW("AI-WISH-REVIEW");
+    WISH_REVIEW("AI-WISH-REVIEW"),
+    /** 주간 리포트의 글(표지 문장 · 바바가 본 한 주 · 좋은 말 · 공통점 문장). 그 주를 처음 열 때 1회. */
+    WEEKLY_REPORT("AI-WEEKLY-REPORT");
 
     private final String key;
 

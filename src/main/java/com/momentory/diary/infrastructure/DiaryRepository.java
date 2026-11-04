@@ -43,4 +43,7 @@ public interface DiaryRepository extends JpaRepository<Diary, Long> {
      * {@code idx_diaries_user_created (user_id, created_at)} 를 탄다.
      */
     List<Diary> findByUserIdOrderByCreatedAtDesc(Long userId);
+
+    /** 그 시각 전의 가장 최근 일기 — 주간 리포트가 처음 열 주를 고른다. */
+    Optional<Diary> findFirstByUserIdAndCreatedAtLessThanOrderByCreatedAtDesc(Long userId, Instant before);
 }

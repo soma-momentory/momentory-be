@@ -381,6 +381,8 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/reports/weekly", "get", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/reports/weekly", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertOperationTag(apiDocs, "/api/v1/reports/weekly", "get", "Reports");
+        assertResponseSchema(apiDocs, "/api/v2/reports/weekly", "get", "200", "WeeklyReportV2Response");
+        assertOperationTag(apiDocs, "/api/v2/reports/weekly", "get", "Reports");
 
         assertResponseSchema(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "200", "ActionCardCompletionResponse");
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "되돌린 상태에서는 느낀 점을 남길 수 없습니다.");
