@@ -81,7 +81,8 @@ public class GeminiWeeklyReportWriter {
 
     private static final String COVER_TASK = """
             - coverLine: 공책 표지에 들어갈 한 문장, 30자 안쪽. 그 주를 알아봐 주는 말로, 일기에 나온 구체적인 일을
-              넣습니다. 예: "면접 스터디 이야기가 가장 많았던 한 주예요". 감정 이름을 평가하듯 말하지 않습니다.
+              넣습니다. 말풍선에 두 줄로 들어가므로 의미가 끊기는 곳에 줄바꿈(\\n) 하나를 넣습니다.
+              예: "면접 스터디 이야기가\\n가장 많았던 한 주예요". 감정 이름을 평가하듯 말하지 않습니다.
             """;
 
     private static String detailedTask(List<DayStory> good) {
