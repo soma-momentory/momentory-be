@@ -33,7 +33,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 class WeeklyWritingService {
 
     private static final Logger log = LoggerFactory.getLogger(WeeklyWritingService.class);
-    static final String PROMPT_VERSION = "v1";
+    static final String PROMPT_VERSION = "v2";
 
     private final WeeklyReportWritingRepository repository;
     private final GeminiWeeklyReportWriter writer;

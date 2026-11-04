@@ -31,8 +31,8 @@ public final class WeeklyReportRules {
     public static final int REST_SO_FAR_MIN = 5;
 
     public static final String QUIET_COVER_LINE = "이 주의 이야기를 남겨 줘서 고마워요";
-    public static final String QUIET_REVIEW = "이 주에는 많이 힘든 날이 있었죠. 지금은 아무것도 하지 않아도 괜찮아요. "
-            + "혼자 버겁게 느껴질 때는 언제든 이야기 나눌 수 있는 곳이 있어요.";
+    public static final String QUIET_REVIEW = "이 주에는 많이 힘든 날이 있었죠. 오늘은 아무것도 해내지 않아도 괜찮아요. "
+            + "혼자 버겁게 느껴질 때는 언제든 전화해도 돼요.";
 
     /** 좋은 말에 쓰지 않는 말 — 평가 · 약속 · 빈 위로 · 지시(good-words-rules). */
     private static final List<String> BANNED_WORDS = List.of("대단", "강한 사람", "성장", "잘될 거", "곧 나아",
