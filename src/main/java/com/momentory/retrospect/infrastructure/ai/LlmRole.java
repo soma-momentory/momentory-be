@@ -21,7 +21,9 @@ public enum LlmRole {
     /** 편지 작은 일에 쓸 욕구 고르기 — 바람카드 욕구가 없을 때만. */
     LETTER_NEEDS("AI-LETTER-NEEDS"),
     /** 편지 작은 일 번호 고르기 — 연결표 후보 중에서. */
-    LETTER_ACTIONS("AI-LETTER-ACTIONS");
+    LETTER_ACTIONS("AI-LETTER-ACTIONS"),
+    /** 소원 심사 — 띄우기 전 판별과 이름 · 연락처 고치기. 소원 1건당 1회. */
+    WISH_REVIEW("AI-WISH-REVIEW");
 
     private final String key;
 
