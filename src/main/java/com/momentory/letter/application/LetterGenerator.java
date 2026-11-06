@@ -52,7 +52,7 @@ public class LetterGenerator {
 
     private static final Logger log = LoggerFactory.getLogger(LetterGenerator.class);
 
-    static final String PROMPT_VERSION = "v1";
+    static final String PROMPT_VERSION = "v2";
     /**
      * 이보다 오래 GENERATING 이면 멈춘 것으로 보고(서버 재시작 등) 다시 들어간다(PRD 6-1). 뒤에서
      * 만들기는 Gemini 가 느린 날 최악 3분쯤 걸려 이 기준을 넘길 수 있다. 그래도 늦게 끝난 쪽은
@@ -213,7 +213,7 @@ public class LetterGenerator {
                 p.source() != NeedsSource.DEFAULT, p.ids());
     }
 
-    private record OpenPick(List<Need> needs, NeedsSource source, Optional<List<String>> ids) {
+    private record OpenPick(List<Need> needs, NeedsSource source, Optional<GeminiLetterWriter.ActionPick> ids) {
     }
 
     private static final OpenPick DEFAULT_PICK = new OpenPick(List.of(DEFAULT_NEED), NeedsSource.DEFAULT, Optional.empty());
@@ -281,16 +281,17 @@ public class LetterGenerator {
     }
 
     /**
-     * 작은 일 세 칸 — AI 가 고른 연결표 행동 → 연결표 순서대로 채우기.
+     * 작은 일 세 칸 — AI 가 고른 연결표 행동 → 연결표 순서대로 채우기. AI 가 첫 번째로 고른 행동이 살아남으면
+     * 1번 칸 제목만 맞춤 제목으로 바꾼다(번호 · 출처는 그대로라 정본과 다른 제목이면 맞춤이다).
      * {@code aiAsked} 가 거짓이면(욕구를 모를 때 · 기본 편지) AI 고르기 없이 대체 규칙만 쓴다.
-     * {@code aiIds} 가 비어 있으면 AI 고르기가 실패한 것이다(「알맞은 후보 없음」은 빈 목록).
+     * {@code aiPick} 이 비어 있으면 AI 고르기가 실패한 것이다(「알맞은 후보 없음」은 빈 목록).
      */
     private Draft withActions(Draft body, LetterMaterials m, List<Need> needs, NeedsSource source,
-            boolean aiAsked, Optional<List<String>> aiIds) {
+            boolean aiAsked, Optional<GeminiLetterWriter.ActionPick> aiPick) {
         List<ActionDraft> slots = new ArrayList<>();
         String fallbackReason = "no_ai"; // 욕구를 모를 때 · 기다리다 보여 주는 기본 편지는 처음부터 대체 규칙이다.
         if (aiAsked) {
-            Optional<List<String>> ids = aiIds;
+            Optional<List<String>> ids = aiPick.map(GeminiLetterWriter.ActionPick::actionIds);
             List<NeedActionCatalog.Action> picked = ids.map(i -> catalog.selectedActions(needs, i))
                     .orElse(List.of());
             fallbackReason = ids.isEmpty() ? "ai_failed"
@@ -300,6 +301,9 @@ public class LetterGenerator {
             }
             for (NeedActionCatalog.Action action : picked) {
                 addIfRoom(slots, action, LetterActionSource.CATALOG);
+            }
+            if (!picked.isEmpty()) {
+                tailorFirst(slots, aiPick.get());
             }
         }
         int beforeFallback = slots.size();
@@ -311,6 +315,32 @@ public class LetterGenerator {
         }
         return new Draft(body.status(), body.quote(), body.insight(), body.tonightQuestion(), needs,
                 source, slots);
+    }
+
+    /**
+     * 맞춤 제목은 모델이 첫 번째로 보낸 번호의 행동을 위해 쓴 문장이다. 그 번호가 탈락해 다른 행동이 1번 칸에
+     * 올라왔으면 엉뚱한 행동에 붙게 되므로 버린다. 맞춤을 허용하지 않는 행동이거나 틀을 어겨도 버리고 정본 제목을 둔다.
+     */
+    private void tailorFirst(List<ActionDraft> slots, GeminiLetterWriter.ActionPick pick) {
+        ActionDraft first = slots.get(0);
+        String firstId = pick.actionIds().isEmpty() || pick.actionIds().get(0) == null ? null
+                : pick.actionIds().get(0).strip();
+        String title = LetterRules.unwrapTailoredTitle(pick.tailoredTitle());
+        String result;
+        if (!first.actionId().equals(firstId)) {
+            result = "first_rejected";
+        } else if (!LetterRules.TAILORABLE_ACTION_IDS.contains(first.actionId())) {
+            result = "not_tailorable";
+        } else if (title == null || title.isEmpty()) {
+            result = "missing";
+        } else if (!LetterRules.isTailoredTitle(title)) {
+            result = "invalid";
+        } else {
+            slots.set(0, new ActionDraft(first.actionId(), title, first.source(),
+                    first.chosen()));
+            result = "applied";
+        }
+        meters.counter("letter.actions.tailored", "result", result).increment();
     }
 
     private static void addIfRoom(List<ActionDraft> slots, NeedActionCatalog.Action action,

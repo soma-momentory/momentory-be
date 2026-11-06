@@ -63,6 +63,7 @@ import com.momentory.letter.domain.NeedsSource;
 import com.momentory.letter.infrastructure.LetterActionRepository;
 import com.momentory.letter.infrastructure.LetterRepository;
 import com.momentory.letter.infrastructure.ai.GeminiLetterWriter;
+import com.momentory.letter.infrastructure.ai.GeminiLetterWriter.ActionPick;
 import com.momentory.letter.infrastructure.ai.GeminiLetterWriter.Body;
 import com.momentory.retrospect.application.RetrospectCompleted;
 import com.momentory.retrospect.domain.Need;
@@ -104,6 +105,8 @@ class LetterIntegrationTest {
     private static final String USER_WORD = "발표 전에 손이 계속 떨렸어요";
     private static final String DIARY = "오늘은 팀 발표가 있었다. 시작 전에 손이 떨렸지만 끝까지 말했다.";
     private static final Need REST = Needs.byWord("휴식").orElseThrow();
+    /** 연결 행동이 모두 맞춤 허용 목록에 있는 욕구. */
+    private static final Need REFLECTION = Needs.byWord("성찰").orElseThrow();
 
     @MockitoBean GeminiLetterWriter writer;
 
@@ -153,7 +156,7 @@ class LetterIntegrationTest {
                 new Body(USER_WORD, "떨렸던 건 그만큼 잘하고 싶었기 때문이었을지도 몰라요.", "오늘 밤엔 발표 뒤 마음부터 물어볼게요.")));
         when(writer.pickNeeds(any())).thenReturn(List.of(REST));
         List<String> restIds = catalog.candidatesFor(List.of(REST)).stream().map(NeedActionCatalog.Action::id).toList();
-        when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(List.of(restIds.get(1), restIds.get(0))));
+        when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(new ActionPick(List.of(restIds.get(1), restIds.get(0)), "")));
         User user = userRepository.saveAndFlush(User.create());
 
         Long diaryId = transaction.execute(status -> {
@@ -168,7 +171,7 @@ class LetterIntegrationTest {
         assertThat(letter.getLetterDate()).isEqualTo(DayBoundary.today());
         assertThat(letter.getQuote()).isEqualTo(USER_WORD);
         assertThat(letter.getNeedsSource()).isEqualTo(NeedsSource.INFERRED);
-        assertThat(letter.getPromptVersion()).isEqualTo("v1");
+        assertThat(letter.getPromptVersion()).isEqualTo("v2");
         assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId()))
                 .extracting(LetterAction::getActionId, LetterAction::getSource)
                 .containsExactly(
@@ -432,7 +435,8 @@ class LetterIntegrationTest {
         });
         when(writer.pickActionIdsOnOpen(any(), anyList())).thenAnswer(inv -> {
             Thread.sleep(350);
-            return Optional.of(List.of(relationIds.get(3), relationIds.get(1)));
+            return Optional.of(new ActionPick(List.of(relationIds.get(3), relationIds.get(1)),
+                    "결혼식 다녀와서 고마운 사람에게 짧게 메시지 보내기"));
         });
         User user = userRepository.saveAndFlush(User.create());
         Letter letter = letterRepository.save(Letter.pending(user.getId(), diaryOf(user, false).getId(), yesterday()));
@@ -451,6 +455,9 @@ class LetterIntegrationTest {
                         org.assertj.core.groups.Tuple.tuple(relationIds.get(3), LetterActionSource.CATALOG),
                         org.assertj.core.groups.Tuple.tuple(relationIds.get(1), LetterActionSource.CATALOG),
                         org.assertj.core.groups.Tuple.tuple(relationIds.get(0), LetterActionSource.FALLBACK));
+        // 열 때도 1번 칸에 맞춤 제목이 붙는다.
+        assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId()).get(0).getTitle())
+                .isEqualTo("결혼식 다녀와서 고마운 사람에게 짧게 메시지 보내기");
         verify(writer, never()).pickActionIds(any(), anyList());
     }
 
@@ -517,7 +524,8 @@ class LetterIntegrationTest {
                 .filter(id -> rest.stream().noneMatch(a -> a.id().equals(id))).findFirst().orElseThrow();
         String valid = rest.get(2).id();
         when(writer.pickActionIds(any(), anyList()))
-                .thenReturn(Optional.of(List.of("Z99", otherNeedId, valid, valid)));
+                .thenReturn(Optional.of(new ActionPick(List.of("Z99", otherNeedId, valid, valid),
+                        "목록 밖 행동을 위해 쓴 제목 적기")));
         User user = userRepository.saveAndFlush(User.create());
         Diary diary = diaryOf(user, false);
         Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
@@ -530,6 +538,81 @@ class LetterIntegrationTest {
                         org.assertj.core.groups.Tuple.tuple(valid, LetterActionSource.CATALOG),
                         org.assertj.core.groups.Tuple.tuple(rest.get(0).id(), LetterActionSource.FALLBACK),
                         org.assertj.core.groups.Tuple.tuple(rest.get(1).id(), LetterActionSource.FALLBACK));
+        // 맞춤 제목은 탈락한 첫 번호(Z99)를 위해 쓴 문장이라, 1번 칸에 올라온 다른 행동에 붙이지 않는다.
+        assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId()).get(0).getTitle())
+                .isEqualTo(rest.get(2).title());
+    }
+
+    @Test
+    void tailoredTitleReplacesOnlyFirstSlotTitleAndKeepsCatalogId() {
+        when(writer.writeBody(any())).thenReturn(Optional.of(new Body("", "관점", "질문")));
+        when(writer.pickNeeds(any())).thenReturn(List.of(REFLECTION));
+        List<NeedActionCatalog.Action> reflection = catalog.candidatesFor(List.of(REFLECTION));
+        assertThat(LetterRules.TAILORABLE_ACTION_IDS).contains(reflection.get(1).id());
+        String tailored = "기획안이 반려된 일의 사실·내 해석·다른 해석을 한 줄씩 적기";
+        when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(new ActionPick(
+                List.of(reflection.get(1).id(), reflection.get(0).id()), " 「" + tailored + "」 ")));
+        User user = userRepository.saveAndFlush(User.create());
+        Diary diary = diaryOf(user, false);
+        Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
+        double appliedBefore = meters.counter("letter.actions.tailored", "result", "applied").count();
+
+        generator.generateForDiary(diary.getId());
+
+        assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId()))
+                .extracting(LetterAction::getActionId, LetterAction::getTitle, LetterAction::getSource)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(reflection.get(1).id(), tailored,
+                                LetterActionSource.CATALOG),
+                        org.assertj.core.groups.Tuple.tuple(reflection.get(0).id(), reflection.get(0).title(),
+                                LetterActionSource.CATALOG),
+                        org.assertj.core.groups.Tuple.tuple(reflection.get(2).id(), reflection.get(2).title(),
+                                LetterActionSource.FALLBACK));
+        assertThat(meters.counter("letter.actions.tailored", "result", "applied").count())
+                .isEqualTo(appliedBefore + 1);
+    }
+
+    @Test
+    void tailoredTitleBreakingFormFallsBackToCatalogTitle() {
+        when(writer.writeBody(any())).thenReturn(Optional.of(new Body("", "관점", "질문")));
+        when(writer.pickNeeds(any())).thenReturn(List.of(REFLECTION));
+        List<NeedActionCatalog.Action> reflection = catalog.candidatesFor(List.of(REFLECTION));
+        when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(new ActionPick(
+                List.of(reflection.get(0).id()), "기획안 반려 일로 나에게 조언을 세 줄 써 보세요.")));
+        User user = userRepository.saveAndFlush(User.create());
+        Diary diary = diaryOf(user, false);
+        Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
+        double invalidBefore = meters.counter("letter.actions.tailored", "result", "invalid").count();
+
+        generator.generateForDiary(diary.getId());
+
+        LetterAction first = letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId()).get(0);
+        assertThat(first.getActionId()).isEqualTo(reflection.get(0).id());
+        assertThat(first.getTitle()).isEqualTo(reflection.get(0).title());
+        assertThat(meters.counter("letter.actions.tailored", "result", "invalid").count())
+                .isEqualTo(invalidBefore + 1);
+    }
+
+    @Test
+    void actionOutsideTailorableListKeepsCatalogTitle() {
+        when(writer.writeBody(any())).thenReturn(Optional.of(new Body("", "관점", "질문")));
+        when(writer.pickNeeds(any())).thenReturn(List.of(REST));
+        NeedActionCatalog.Action nap = catalog.candidatesFor(List.of(REST)).stream()
+                .filter(a -> !LetterRules.TAILORABLE_ACTION_IDS.contains(a.id())).findFirst().orElseThrow();
+        when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(new ActionPick(
+                List.of(nap.id()), "잠을 세 시간밖에 못 잔 날, 오후에 짧게 낮잠 자기")));
+        User user = userRepository.saveAndFlush(User.create());
+        Diary diary = diaryOf(user, false);
+        Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
+        double skippedBefore = meters.counter("letter.actions.tailored", "result", "not_tailorable").count();
+
+        generator.generateForDiary(diary.getId());
+
+        LetterAction first = letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId()).get(0);
+        assertThat(first.getActionId()).isEqualTo(nap.id());
+        assertThat(first.getTitle()).isEqualTo(nap.title());
+        assertThat(meters.counter("letter.actions.tailored", "result", "not_tailorable").count())
+                .isEqualTo(skippedBefore + 1);
     }
 
     @Test
@@ -572,7 +655,7 @@ class LetterIntegrationTest {
     @Test
     void wishCardNeedsAreUsedAndNoSlotIsPreChosen() {
         when(writer.writeBody(any())).thenReturn(Optional.of(new Body("", "관점", "질문")));
-        when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(List.of()));
+        when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(new ActionPick(List.of(), "")));
         User user = userRepository.saveAndFlush(User.create());
         Diary diary = diaryOf(user, false);
         // 회고에서 행동을 고르던 때의 카드여도 편지 칸을 미리 고르지 않는다(임시 규칙 삭제 · 편지 PRD 14-1).

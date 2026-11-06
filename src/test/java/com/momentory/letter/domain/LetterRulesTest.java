@@ -5,10 +5,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 
 import com.momentory.common.time.DayBoundary;
+import com.momentory.retrospect.domain.NeedActionCatalog;
+import com.momentory.retrospect.infrastructure.RetrospectDomainConfiguration;
+
+import tools.jackson.databind.json.JsonMapper;
 
 class LetterRulesTest {
 
@@ -28,6 +34,39 @@ class LetterRulesTest {
         assertThat(LetterRules.isVerbatim("떨렸어요 그래도 끝까지", sources)).isFalse();
         assertThat(LetterRules.isVerbatim("...", sources)).isFalse();
         assertThat(LetterRules.isVerbatim(null, sources)).isFalse();
+    }
+
+    @Test
+    void tailoredTitleMustBeOneLineNounFormWithinLength() {
+        assertThat(LetterRules.isTailoredTitle("팀장님 보고 전에 첫마디 한 문장 적어 두기")).isTrue();
+        assertThat(LetterRules.isTailoredTitle("  점심 먹고 10분 걷기  ")).isTrue();
+        assertThat(LetterRules.isTailoredTitle("가".repeat(LetterRules.TAILORED_TITLE_MAX_LENGTH - 1) + "기")).isTrue();
+
+        assertThat(LetterRules.isTailoredTitle("가".repeat(LetterRules.TAILORED_TITLE_MAX_LENGTH) + "기")).isFalse();
+        assertThat(LetterRules.isTailoredTitle("점심 먹고 10분 걸어 보세요.")).isFalse();
+        assertThat(LetterRules.isTailoredTitle("점심 먹고\n10분 걷기")).isFalse();
+        assertThat(LetterRules.isTailoredTitle("  ")).isFalse();
+        assertThat(LetterRules.isTailoredTitle(null)).isFalse();
+    }
+
+    @Test
+    void tailoredTitleWrappingQuotesAreRemovedButInnerQuotesStay() {
+        assertThat(LetterRules.unwrapTailoredTitle(" 「오후 외근 전에 짧게 낮잠 자기」 ")).isEqualTo("오후 외근 전에 짧게 낮잠 자기");
+        assertThat(LetterRules.unwrapTailoredTitle("\"「점심 먹고 10분 걷기」\"")).isEqualTo("점심 먹고 10분 걷기");
+        assertThat(LetterRules.unwrapTailoredTitle("엄마에게 ‘그때 어떤 뜻이었어?’라고 직접 묻기"))
+                .isEqualTo("엄마에게 ‘그때 어떤 뜻이었어?’라고 직접 묻기");
+        assertThat(LetterRules.unwrapTailoredTitle("」")).isEqualTo("」");
+        assertThat(LetterRules.unwrapTailoredTitle(null)).isNull();
+    }
+
+    @Test
+    void tailorableActionIdsAllExistInCatalog() throws Exception {
+        NeedActionCatalog catalog = new RetrospectDomainConfiguration()
+                .needActionCatalog(JsonMapper.builder().build());
+        Set<String> ids = catalog.snapshot().actions().stream().map(NeedActionCatalog.Action::id)
+                .collect(Collectors.toSet());
+
+        assertThat(ids).containsAll(LetterRules.TAILORABLE_ACTION_IDS);
     }
 
     @Test
