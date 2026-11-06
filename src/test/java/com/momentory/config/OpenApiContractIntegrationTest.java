@@ -91,6 +91,52 @@ class OpenApiContractIntegrationTest {
     }
 
     @Test
+    void documentsWeeklyHappiness() throws Exception {
+        JsonNode docs = getApiDocs();
+        String list = "/api/v1/weekly-happiness";
+        String week = "/api/v1/weekly-happiness/{weekStart}";
+        String invalidWeek = "WEEKLY_HAPPINESS_INVALID_WEEK_START";
+        String futureWeek = "WEEKLY_HAPPINESS_FUTURE_WEEK";
+
+        assertResponseSchema(docs, list, "get", "200", "WeeklyHappinessResponse");
+        assertResponseSchema(docs, week, "put", "200", "WeeklyHappinessResponse");
+        for (String[] operation : new String[][] { { list, "get" }, { week, "put" } }) {
+            String path = operation[0];
+            String method = operation[1];
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", invalidWeek, invalidWeek, "주의 첫날(일요일) 날짜를 보내주세요.");
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", futureWeek, futureWeek, "아직 오지 않은 주입니다.");
+            assertErrorExample(docs, path, method, "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+            assertThat(operationResponses(docs, path, method).size()).isEqualTo(3);
+        }
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "entriesRequired", "INVALID_REQUEST", "적은 칸 목록을 보내주세요.");
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "categoryRequired", "INVALID_REQUEST", "칸을 골라주세요.");
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "duplicateCategory", "INVALID_REQUEST", "같은 칸을 두 번 보낼 수 없습니다.");
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "contentTooLong", "INVALID_REQUEST", "주간 행복 한 칸은 최대 100자입니다.");
+        // 쓰는 것은 이번 주뿐 — 지난 주 거절은 PUT 에만 있고, GET 은 지난 주를 읽는다
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "WEEKLY_HAPPINESS_PAST_WEEK", "WEEKLY_HAPPINESS_PAST_WEEK", "지난 주는 고칠 수 없습니다.");
+        assertThat(response(docs, list, "get", "400").at("/content/application~1json/examples").has("WEEKLY_HAPPINESS_PAST_WEEK")).isFalse();
+
+        assertThat(docs.at("/paths/~1api~1v1~1weekly-happiness~1{weekStart}/put/requestBody/content/application~1json/schema/$ref").asText())
+                .endsWith("/WeeklyHappinessRequest");
+        JsonNode request = docs.at("/components/schemas/WeeklyHappinessRequest/properties");
+        assertThat(request.size()).isEqualTo(1);
+        assertThat(request.has("entries")).isTrue();
+        JsonNode entryRequest = docs.at("/components/schemas/WeeklyHappinessEntryRequest/properties");
+        assertThat(entryRequest.size()).isEqualTo(2);
+        assertThat(entryRequest.path("content").path("maxLength").asInt()).isEqualTo(100);
+        assertThat(entryRequest.path("category").path("enum").toString())
+                .isEqualTo("[\"MOMENT\",\"FOOD\",\"CONTENT\",\"PLACE\",\"PERSON\",\"PROUD\",\"REST\"]");
+        JsonNode response = docs.at("/components/schemas/WeeklyHappinessResponse/properties");
+        assertThat(response.size()).isEqualTo(3);
+        assertThat(response.has("weekStart")).isTrue();
+        assertThat(response.has("entries")).isTrue();
+        assertThat(response.has("firstWeekStart")).isTrue();
+        assertThat(docs.at("/components/schemas/WeeklyHappinessEntryResponse/properties").size()).isEqualTo(2);
+    }
+
+    @Test
     void documentsDiaryWeather() throws Exception {
         JsonNode docs = getApiDocs();
         String path = "/api/v1/diaries/{id}/weather";
