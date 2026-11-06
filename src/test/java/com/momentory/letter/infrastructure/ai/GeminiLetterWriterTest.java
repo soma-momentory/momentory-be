@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
 import com.momentory.letter.domain.LetterMaterials;
+import com.momentory.letter.domain.LetterRules;
 import com.momentory.retrospect.domain.NeedActionCatalog;
 import com.momentory.retrospect.infrastructure.RetrospectDomainConfiguration;
 import com.momentory.retrospect.infrastructure.ai.GeminiApiClient;
@@ -96,6 +97,20 @@ class GeminiLetterWriterTest {
         var needs = List.of(com.momentory.retrospect.domain.Needs.byWord("휴식").orElseThrow());
         assertThat(writer.needsPrompt(materials())).contains("[어제의 사건", "발표: 준비한 발표를 마쳤다.");
         assertThat(writer.actionsPrompt(materials(), needs)).contains("[어제의 사건", "발표: 준비한 발표를 마쳤다.");
+    }
+
+    @Test
+    void actionPickReadsOrderedIdsAndTailoredTitleOfFirst() {
+        server.enqueue(ok(Map.of("actionIds", List.of("A07", "A06"), "tailoredTitle", "발표 끝나고 15분 혼자 있기")));
+        var needs = List.of(com.momentory.retrospect.domain.Needs.byWord("휴식").orElseThrow());
+
+        Optional<GeminiLetterWriter.ActionPick> pick = writer.pickActionIds(materials(), needs);
+
+        assertThat(pick).map(GeminiLetterWriter.ActionPick::actionIds).contains(List.of("A07", "A06"));
+        assertThat(pick).map(GeminiLetterWriter.ActionPick::tailoredTitle).contains("발표 끝나고 15분 혼자 있기");
+        assertThat(writer.actionsPrompt(materials(), needs))
+                .contains("가장 잘 맞는 후보를 첫 번째에", "tailoredTitle",
+                        LetterRules.TAILORED_TITLE_PROMPT_LENGTH + "자 안쪽");
     }
 
     private MockResponse ok(Map<String, Object> inner) {

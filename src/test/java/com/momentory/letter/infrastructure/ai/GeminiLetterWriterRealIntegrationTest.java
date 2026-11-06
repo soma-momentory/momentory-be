@@ -61,17 +61,18 @@ class GeminiLetterWriterRealIntegrationTest {
             List<Need> needs = writer.pickNeeds(m);
             long needsMs = ms(t2);
             long t3 = System.nanoTime();
-            Optional<List<String>> ids = writer.pickActionIds(m, needs.isEmpty() ? List.of() : needs);
+            Optional<GeminiLetterWriter.ActionPick> pick = writer.pickActionIds(m, needs.isEmpty() ? List.of() : needs);
             long actionsMs = ms(t3);
 
             assertThat(body).isPresent();
             String quote = body.get().quote();
             System.out.printf("letter-real sample=%d bodyMs=%d openMs=%d needsMs=%d actionsMs=%d "
-                            + "quoteVerbatim=%s needs=%s picked=%s%n  quote=%s%n  insight=%s%n  tonight=%s%n",
+                            + "quoteVerbatim=%s needs=%s picked=%s tailored=%s%n  quote=%s%n  insight=%s%n  tonight=%s%n",
                     m.letterId(), bodyMs, openMs, needsMs, actionsMs,
                     LetterRules.isVerbatim(quote, m.userWords()), needs.stream().map(Need::word).toList(),
-                    ids.map(i -> catalog.selectedActions(needs, i).stream().map(NeedActionCatalog.Action::title)
-                            .toList()).orElse(null),
+                    pick.map(p -> catalog.selectedActions(needs, p.actionIds()).stream()
+                            .map(NeedActionCatalog.Action::title).toList()).orElse(null),
+                    pick.map(GeminiLetterWriter.ActionPick::tailoredTitle).orElse(null),
                     quote, body.get().insight(), body.get().tonightQuestion());
             assertThat(onOpen).isPresent();
         }

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import io.micrometer.core.instrument.MeterRegistry;
 
 import com.momentory.letter.domain.LetterMaterials;
+import com.momentory.letter.domain.LetterRules;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.NeedActionCatalog;
 import com.momentory.retrospect.domain.Needs;
@@ -59,7 +60,11 @@ public class GeminiLetterWriter {
     record NeedWords(List<String> words) {
     }
 
-    record ActionIds(List<String> actionIds) {
+    /**
+     * 작은 일 고르기 출력 — 번호는 잘 맞는 순서대로, {@code tailoredTitle} 은 첫 번째 번호 행동의 맞춤 제목.
+     * 맞춤 제목이 없거나 규칙을 어기면 부르는 쪽이 정본 제목을 쓴다.
+     */
+    public record ActionPick(List<String> actionIds, String tailoredTitle) {
     }
 
     private static final Map<String, Object> BODY_SCHEMA = object(
@@ -68,8 +73,8 @@ public class GeminiLetterWriter {
     private static final Map<String, Object> NEEDS_SCHEMA = object(
             Map.of("words", Map.of("type", "ARRAY", "items", str())), List.of("words"), List.of());
     private static final Map<String, Object> ACTIONS_SCHEMA = object(
-            Map.of("actionIds", Map.of("type", "ARRAY", "items", str())), List.of("actionIds"),
-            List.of("actionIds"));
+            Map.of("actionIds", Map.of("type", "ARRAY", "items", str()), "tailoredTitle", str()),
+            List.of("actionIds", "tailoredTitle"), List.of("actionIds"));
 
     private final GeminiApiClient background;
     private final GeminiApiClient onOpen;
@@ -110,18 +115,19 @@ public class GeminiLetterWriter {
     }
 
     /**
-     * 욕구에 연결된 후보 중 최대 3개의 번호를 고른다. 실패면 empty — 「알맞은 후보 없음」(빈 목록)과
-     * 구분한다. 번호가 목록 안에 있는지는 부르는 쪽이 {@code NeedActionCatalog} 로 확인한다.
+     * 욕구에 연결된 후보 중 최대 3개의 번호를 잘 맞는 순서로 고르고, 첫 번째의 맞춤 제목을 받는다.
+     * 실패면 empty — 「알맞은 후보 없음」(빈 목록)과 구분한다. 번호가 목록 안에 있는지, 맞춤 제목이
+     * 규칙을 지켰는지는 부르는 쪽이 확인한다.
      */
-    public Optional<List<String>> pickActionIds(LetterMaterials m, List<Need> needs) {
-        return withRetry(request(m, LlmRole.LETTER_ACTIONS, actionsPrompt(m, needs)), ActionIds.class,
-                ACTIONS_SCHEMA).map(ActionIds::actionIds);
+    public Optional<ActionPick> pickActionIds(LetterMaterials m, List<Need> needs) {
+        return withRetry(request(m, LlmRole.LETTER_ACTIONS, actionsPrompt(m, needs)), ActionPick.class,
+                ACTIONS_SCHEMA);
     }
 
     /** 열 때 보충 — 같은 번호 고르기를 8초 한 번만. */
-    public Optional<List<String>> pickActionIdsOnOpen(LetterMaterials m, List<Need> needs) {
-        return onOpen.attempt(request(m, LlmRole.LETTER_ACTIONS, actionsPrompt(m, needs)), ActionIds.class,
-                ACTIONS_SCHEMA).value().map(ActionIds::actionIds);
+    public Optional<ActionPick> pickActionIdsOnOpen(LetterMaterials m, List<Need> needs) {
+        return onOpen.attempt(request(m, LlmRole.LETTER_ACTIONS, actionsPrompt(m, needs)), ActionPick.class,
+                ACTIONS_SCHEMA).value();
     }
 
     private <T> Optional<T> withRetry(LlmRequest request, Class<T> type, Map<String, Object> schema) {
@@ -207,7 +213,26 @@ public class GeminiLetterWriter {
         return """
                 [후보]는 사용자의 바람(욕구)에 연결된 행동 목록입니다.
                 [어제 일기]와 [오늘 일정]을 보고, 사용자가 오늘 실행할 수 있는 후보를 최대 3개 고르세요.
-                행동 문구를 새로 만들지 말고, 후보의 ID만 actionIds 배열로 반환하세요.
+                후보의 ID만 actionIds 배열로 반환하고, 사건과 맥락에 가장 잘 맞는 후보를 첫 번째에 둡니다.
+                후보 행동을 새로 만들지 않습니다. 단, 첫 번째 후보의 제목만 tailoredTitle 로 다시 씁니다.
+                - [어제 일기]와 [어제의 사건]에 나온 일을 행동의 대상(편지를 쓸 나 · 이야기하거나 적을 일)으로 넣어,
+                  이 행동이 무엇에 대한 것인지 드러나게 씁니다. 사용자는 이 제목을 다음 날 아침에 읽고 그날 합니다.
+                - 어제 일을 행동의 때나 조건("~했던 날,")으로 쓰지 않습니다. 쉬기 · 숨쉬기 · 낮잠처럼 대상이 없는
+                  행동이거나 넣을 만한 일이 없으면 원래 제목을 그대로 씁니다.
+                - 언제 할지(시각 · 때 · 일정 · "~전에" · "~하다가" · "~끝나고")는 넣지 않습니다. 시간은 사용자가
+                  따로 정합니다. 원래 제목에 있던 조건(예: "잠이 부족한 날")은 그대로 둡니다.
+                - 원래 제목의 동작과 분량(시간 · 횟수)은 빠짐없이 그대로 둡니다.
+                - 맥락에 나오지 않은 사람 · 장소 · 도구는 넣지 않습니다. 효과를 약속하는 말("~를 위해", "~를 풀기")은
+                  쓰지 않습니다.
+                - 명사형 "~기"로 끝나는 한 문장, %d자 안쪽. 제목 전체를 따옴표나 괄호로 감싸지 않습니다.
+                  원래 제목 안에 있던 따옴표(‘그때 어떤 뜻이었어?’ 등)는 그대로 둡니다.
+                - 좋은 예: "친구를 위로하듯, 실수한 나에게 편지 쓰기" → "기획안이 반려돼 속상했던 나에게, 친구를 위로하듯 편지 쓰기"
+                - 좋은 예: "오늘 일의 사실·내 해석·다른 해석을 한 줄씩 적기" → "엄마와 언성이 높아진 일의 사실·내 해석·다른 해석을 한 줄씩 적기"
+                - 좋은 예: "가까운 사람에게 오늘 기뻤던 일 이야기하기" → "동료에게 칭찬받은 일을 가까운 사람에게 이야기하기"
+                - 피할 예: "보고서 수정하다가 화면·자료에서 떨어져 5–10분 동안 쉬기"(언제 할지를 넣음)
+                - 피할 예: "커피를 네 잔 마셨던 날, 오후에 짧게 낮잠 자기"(지난 날을 조건으로 씀 — 원래 제목 그대로 둡니다)
+                - 피할 예: "오늘 할 행동과 실행할 상황을 한 문장으로 적기" → "발표 일 적기"(동작이 빠짐)
+                - actionIds 가 비어 있으면 tailoredTitle 도 빈 문자열로 둡니다.
 
                 %s
                 [어제 일기]
@@ -221,7 +246,8 @@ public class GeminiLetterWriter {
 
                 [후보]
                 %s
-                """.formatted(PromptFactory.ACTION_RULES, m.diary(), bullets(m.events()), joinedOrNone(m.tomorrowSchedules()),
+                """.formatted(LetterRules.TAILORED_TITLE_PROMPT_LENGTH, PromptFactory.ACTION_RULES, m.diary(),
+                bullets(m.events()), joinedOrNone(m.tomorrowSchedules()),
                 needs.stream().map(n -> n.word() + "(" + n.meaning() + ")").collect(Collectors.joining(", ")),
                 catalog.notesFor(needs), PromptFactory.describeCandidates(catalog.candidatesFor(needs)));
     }
