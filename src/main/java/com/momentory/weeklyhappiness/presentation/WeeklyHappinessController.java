@@ -91,9 +91,9 @@ public class WeeklyHappinessController {
         return WeeklyHappinessResponse.from(weeklyHappinessService.getWeek(principal.userId(), weekStart));
     }
 
-    @Operation(summary = "한 주의 주간 행복 저장",
-            description = "그 주의 기록장을 통째로 바꾼다. 보낸 칸은 적거나 고치고, 보내지 않았거나 비운(공백뿐인) 칸은 지운다. "
-                    + "같은 요청을 다시 보내도 결과가 같다. 지난 주도 고칠 수 있고, 아직 오지 않은 주는 안 된다.")
+    @Operation(summary = "이번 주 주간 행복 저장",
+            description = "이번 주(일요일 04:00 KST 경계)의 기록장을 통째로 바꾼다. 보낸 칸은 적거나 고치고, 보내지 않았거나 비운(공백뿐인) "
+                    + "칸은 지운다. 같은 요청을 다시 보내도 결과가 같다. 쓰는 것은 이번 주뿐이다 — 지난 주는 읽기만 하고, 아직 오지 않은 주도 안 된다.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "저장 성공 — 저장한 뒤의 기록장", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = WeeklyHappinessResponse.class))),
@@ -169,6 +169,15 @@ public class WeeklyHappinessController {
                                       "message": "아직 오지 않은 주입니다."
                                     }
                                     """
+                    ),
+                    @ExampleObject(
+                            name = "WEEKLY_HAPPINESS_PAST_WEEK",
+                            value = """
+                                    {
+                                      "code": "WEEKLY_HAPPINESS_PAST_WEEK",
+                                      "message": "지난 주는 고칠 수 없습니다."
+                                    }
+                                    """
                     )
             })),
             @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
@@ -184,7 +193,7 @@ public class WeeklyHappinessController {
     @PutMapping(value = "/{weekStart}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public WeeklyHappinessResponse replaceWeek(
             @Login LoginPrincipal principal,
-            @Parameter(description = "그 주의 일요일", example = "2026-11-01")
+            @Parameter(description = "이번 주의 일요일", example = "2026-11-01")
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStart,
             @Valid @RequestBody WeeklyHappinessRequest request
     ) {

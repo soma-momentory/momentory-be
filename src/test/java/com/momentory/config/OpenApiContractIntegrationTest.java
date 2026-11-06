@@ -114,6 +114,9 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "categoryRequired", "INVALID_REQUEST", "칸을 골라주세요.");
         assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "duplicateCategory", "INVALID_REQUEST", "같은 칸을 두 번 보낼 수 없습니다.");
         assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "contentTooLong", "INVALID_REQUEST", "주간 행복 한 칸은 최대 100자입니다.");
+        // 쓰는 것은 이번 주뿐 — 지난 주 거절은 PUT 에만 있고, GET 은 지난 주를 읽는다
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "WEEKLY_HAPPINESS_PAST_WEEK", "WEEKLY_HAPPINESS_PAST_WEEK", "지난 주는 고칠 수 없습니다.");
+        assertThat(response(docs, list, "get", "400").at("/content/application~1json/examples").has("WEEKLY_HAPPINESS_PAST_WEEK")).isFalse();
 
         assertThat(docs.at("/paths/~1api~1v1~1weekly-happiness~1{weekStart}/put/requestBody/content/application~1json/schema/$ref").asText())
                 .endsWith("/WeeklyHappinessRequest");

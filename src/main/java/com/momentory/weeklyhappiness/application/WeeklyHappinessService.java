@@ -8,6 +8,7 @@ import com.momentory.weeklyhappiness.infrastructure.WeeklyHappinessEntryReposito
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -29,18 +30,18 @@ public class WeeklyHappinessService {
     @Transactional(readOnly = true)
     public WeeklyHappinessWeek getWeek(Long userId, LocalDate weekStart) {
         requireUser(userId);
-        requireOpenWeek(weekStart);
+        requireReadableWeek(weekStart, Instant.now());
         return read(userId, weekStart);
     }
 
     /**
-     * 그 주의 기록장을 통째로 바꾼다 — 보낸 칸은 적거나 고치고, 보내지 않았거나 비운 칸은 지운다.
-     * 같은 내용을 다시 보내도 결과가 같다.
+     * 이번 주의 기록장을 통째로 바꾼다 — 보낸 칸은 적거나 고치고, 보내지 않았거나 비운 칸은 지운다.
+     * 같은 내용을 다시 보내도 결과가 같다. 지난 주는 읽기만 한다(2026-11-06 제품 결정 · 한 주에 한 권).
      */
     @Transactional
     public WeeklyHappinessWeek replaceWeek(Long userId, LocalDate weekStart, Map<WeeklyHappinessCategory, String> entries) {
         requireUser(userId);
-        requireOpenWeek(weekStart);
+        requireWritableWeek(weekStart, Instant.now());
         repository.lockWeek(userId, weekStart);
         Set<WeeklyHappinessCategory> cleared = EnumSet.allOf(WeeklyHappinessCategory.class);
         entries.forEach((category, content) -> {
@@ -63,13 +64,21 @@ public class WeeklyHappinessService {
         return new WeeklyHappinessWeek(weekStart, entries, repository.findFirstWeekStart(userId));
     }
 
-    /** 주의 첫날(일요일)이고, 지금이 속한 주(일요일 04:00 KST 경계) 이후가 아니어야 한다. */
-    private static void requireOpenWeek(LocalDate weekStart) {
+    /** 읽기 — 주의 첫날(일요일)이고, 지금이 속한 주(일요일 04:00 KST 경계) 이후가 아니어야 한다. */
+    static void requireReadableWeek(LocalDate weekStart, Instant now) {
         if (!WeeklyHappinessEntry.isWeekStart(weekStart)) {
             throw WeeklyHappinessException.invalidWeekStart();
         }
-        if (weekStart.isAfter(WeeklyHappinessEntry.thisWeekStart())) {
+        if (weekStart.isAfter(WeeklyHappinessEntry.weekStartAt(now))) {
             throw WeeklyHappinessException.futureWeek();
+        }
+    }
+
+    /** 쓰기 — 읽을 수 있는 주 가운데 지금이 속한 주 하나뿐이다. */
+    static void requireWritableWeek(LocalDate weekStart, Instant now) {
+        requireReadableWeek(weekStart, now);
+        if (weekStart.isBefore(WeeklyHappinessEntry.weekStartAt(now))) {
+            throw WeeklyHappinessException.pastWeek();
         }
     }
 

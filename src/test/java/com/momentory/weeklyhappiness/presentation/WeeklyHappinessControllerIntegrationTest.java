@@ -165,24 +165,43 @@ class WeeklyHappinessControllerIntegrationTest {
     }
 
     @Test
-    void keepsWeeksApartAndReportsTheFirstWrittenWeek() throws Exception {
+    void readsPastWeeksAndReportsTheFirstWrittenWeek() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         LocalDate threeWeeksAgo = thisWeek.minusWeeks(3);
         LocalDate lastWeek = thisWeek.minusWeeks(1);
-        mockMvc.perform(putWeek(user, threeWeeksAgo, "{\"entries\":[{\"category\":\"PROUD\",\"content\":\"과제 마무리\"}]}"))
-                .andExpect(status().isOk());
-        mockMvc.perform(putWeek(user, lastWeek, "{\"entries\":[{\"category\":\"CONTENT\",\"content\":\"요즘 듣는 노래\"}]}"))
-                .andExpect(status().isOk());
+        // 지난 주는 API 로 쓸 수 없다 — 그 주에 적어 둔 글이 남아 있는 상태를 바로 만든다
+        insertEntry(user, threeWeeksAgo, "PROUD", "과제 마무리");
+        insertEntry(user, lastWeek, "CONTENT", "요즘 듣는 노래");
 
         mockMvc.perform(getWeek(user, lastWeek))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.entries.length()").value(1))
                 .andExpect(jsonPath("$.entries[0].category").value("CONTENT"))
+                .andExpect(jsonPath("$.entries[0].content").value("요즘 듣는 노래"))
                 .andExpect(jsonPath("$.firstWeekStart").value(threeWeeksAgo.toString()));
         mockMvc.perform(getWeek(user, thisWeek))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.entries.length()").value(0))
                 .andExpect(jsonPath("$.firstWeekStart").value(threeWeeksAgo.toString()));
+    }
+
+    @Test
+    void rejectsWritingToAPastWeekAndLeavesItUntouched() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        LocalDate lastWeek = thisWeek.minusWeeks(1);
+        insertEntry(user, lastWeek, "FOOD", "마라탕");
+
+        mockMvc.perform(putWeek(user, lastWeek, "{\"entries\":[{\"category\":\"FOOD\",\"content\":\"떡볶이\"}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("WEEKLY_HAPPINESS_PAST_WEEK"))
+                .andExpect(jsonPath("$.message").value("지난 주는 고칠 수 없습니다."));
+        // 비우는 것도 고치는 것이다
+        mockMvc.perform(putWeek(user, lastWeek, "{\"entries\":[]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("WEEKLY_HAPPINESS_PAST_WEEK"));
+
+        assertThat(contentsOf(user, lastWeek)).containsExactlyEntriesOf(Map.of(WeeklyHappinessCategory.FOOD, "마라탕"));
+        assertThat(entryRepository.count()).isEqualTo(1);
     }
 
     @Test
@@ -338,6 +357,11 @@ class WeeklyHappinessControllerIntegrationTest {
                 .hasMessageContaining("chk_weekly_happiness_entries_category");
         assertThatThrownBy(() -> jdbcTemplate.update(insert, user.getId(), thisWeek, "FOOD", "  "))
                 .hasMessageContaining("chk_weekly_happiness_entries_content_not_blank");
+    }
+
+    private void insertEntry(User user, LocalDate weekStart, String category, String content) {
+        jdbcTemplate.update("INSERT INTO weekly_happiness_entries (user_id, week_start, category, content) VALUES (?, ?, ?, ?)",
+                user.getId(), weekStart, category, content);
     }
 
     private void expectBadRequest(User user, String body, String message) throws Exception {

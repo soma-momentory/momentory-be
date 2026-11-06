@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 
@@ -19,7 +20,7 @@ import java.time.temporal.TemporalAdjusters;
  * 주간 행복 한 칸 — 쉼터 「주간 행복」 기록장에서 한 주의 한 칸에 적은 글.
  *
  * <p>사용자 · 주 · 칸마다 글 하나다. 주는 일~토이고 일요일 04:00(KST · {@link DayBoundary})에 바뀐다 —
- * {@code weekStart} 는 그 주의 일요일이다. 비운 칸은 행이 없다. 본문은 일기와 같은 등급의 사용자 글이라
+ * {@code weekStart} 는 그 주의 일요일이다. <b>쓰는 것은 이번 주뿐이고 지난 주는 읽기만 한다.</b> 비운 칸은 행이 없다. 본문은 일기와 같은 등급의 사용자 글이라
  * 로그에 남기지 않는다. 저장은 저장소의 upsert 가 맡는다(같은 칸을 동시에 고쳐도 한 줄로 모인다).
  */
 @Entity
@@ -53,9 +54,14 @@ public class WeeklyHappinessEntry extends BaseTimeEntity {
         return date.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
     }
 
+    /** 그 순간(04:00 경계)이 속한 주의 일요일 — 토요일 밤의 주는 일요일 04:00 에 지난 주가 된다. */
+    public static LocalDate weekStartAt(Instant at) {
+        return weekStartOf(DayBoundary.toLocalDate(at));
+    }
+
     /** 지금(04:00 경계)이 속한 주의 일요일. */
     public static LocalDate thisWeekStart() {
-        return weekStartOf(DayBoundary.today());
+        return weekStartAt(Instant.now());
     }
 
     public static boolean isWeekStart(LocalDate date) {

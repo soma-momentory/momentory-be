@@ -17,6 +17,10 @@ public class WeeklyHappinessException extends RuntimeException {
         return new WeeklyHappinessException("WEEKLY_HAPPINESS_FUTURE_WEEK", "아직 오지 않은 주입니다.");
     }
 
+    public static WeeklyHappinessException pastWeek() {
+        return new WeeklyHappinessException("WEEKLY_HAPPINESS_PAST_WEEK", "지난 주는 고칠 수 없습니다.");
+    }
+
     public String code() {
         return code;
     }
