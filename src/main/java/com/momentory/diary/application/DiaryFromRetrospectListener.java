@@ -25,9 +25,11 @@ import com.momentory.retrospect.domain.Emotion;
 public class DiaryFromRetrospectListener {
 
     private final DiaryRepository diaryRepository;
+    private final DiaryCreationGuard creationGuard;
 
-    public DiaryFromRetrospectListener(DiaryRepository diaryRepository) {
+    public DiaryFromRetrospectListener(DiaryRepository diaryRepository, DiaryCreationGuard creationGuard) {
         this.diaryRepository = diaryRepository;
+        this.creationGuard = creationGuard;
     }
 
     @EventListener
@@ -36,6 +38,7 @@ public class DiaryFromRetrospectListener {
         if (diary == null || diaryRepository.existsByRetrospectId(event.retrospectId())) {
             return;
         }
+        creationGuard.requireAvailable(event.userId());
         diaryRepository.save(Diary.create(event.userId(), event.retrospectId(),
                 diary.original(), diary.primaryEmotion(), csvEmotions(diary.emotions())));
     }

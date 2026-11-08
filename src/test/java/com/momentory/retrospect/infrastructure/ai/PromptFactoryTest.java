@@ -11,6 +11,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.momentory.retrospect.NeedActionCatalogFixture;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.Needs;
@@ -26,6 +27,16 @@ class PromptFactoryTest {
 
     private final PromptFactory prompts =
             new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT);
+
+    @Test
+    @DisplayName("일기 질문 프롬프트도 서버와 같은 5턴 상한을 안내한다")
+    void diaryPromptUsesFiveTurnLimit() {
+        RetrospectState state = new RetrospectState("sess-five-turns");
+
+        assertThat(prompts.diaryTurnPrompt(state, "오늘 발표했어요"))
+                .contains("일기 작성 채팅은 최대 5턴")
+                .doesNotContain("최대 6턴");
+    }
 
     private static RetrospectState stateWithConversation() {
         RetrospectState state = new RetrospectState("sess-1");
@@ -59,6 +70,14 @@ class PromptFactoryTest {
         assertThat(history).isEqualTo("""
                 (바바) 지금 가장 가까운 감정은 무엇인가요?
                 [U1] 불안함""");
+    }
+
+    @Test
+    void numberedDiaryLinesRemainInTheActualExtractionPrompt() {
+        RetrospectState state = new RetrospectState("written-diary");
+        state.addUserMessage("  1. 친구와 산책했다.\n  2. 회의가 길어 피곤했다.");
+        String prompt = prompts.emotionExtractPrompt(state);
+        assertThat(prompt).contains("[U1] 1. 친구와 산책했다.", "  2. 회의가 길어 피곤했다.");
     }
 
     @Test
@@ -234,17 +253,6 @@ class PromptFactoryTest {
     }
 
     @Test
-    @DisplayName("작은 행동 프롬프트는 카드 상황과 같은 대표 사건 · 한국어 감정 · 뜻을 붙인 바람을 싣는다")
-    void actionsPromptUsesCardSituation() {
-        String prompt = prompts.actionsPrompt(stateForExploration());
-
-        assertThat(prompt).contains("[사건] 팀 발표 자료를 혼자 만듦")
-                .contains("[감정] 답답함")
-                .contains("[바람] 인정(내 노력과 존재를 알아봐 주길 바라는 마음)");
-        assertThat(prompt).doesNotContain("다짐한 것").doesNotContain("frustrated");
-    }
-
-    @Test
     @DisplayName("바람 프롬프트도 같은 대표 사건과 한국어 감정을 싣는다")
     void needsPromptUsesCardSituation() {
         String prompt = prompts.needsPrompt(stateForExploration());
@@ -254,15 +262,16 @@ class PromptFactoryTest {
     }
 
     @Test
-    @DisplayName("감정·바람을 고르지 않았으면 '없음'으로 싣는다")
-    void actionsPromptWithoutEmotionOrNeed() {
-        RetrospectState state = new RetrospectState("sess-y");
-        state.events(List.of(new ExtractedEvent(1, "호수공원", "가족과 호수공원을 걸음", List.of(1))));
+    @DisplayName("편지가 쓰는 작은 일 규칙 · 후보 서술은 분량 · 조건 · 욕구별 한계를 그대로 싣는다")
+    void actionRulesAndCandidatesKeepResearchDoseConditionsAndLimits() {
+        var catalog = NeedActionCatalogFixture.load();
+        String justice = PromptFactory.describeCandidates(
+                catalog.candidatesFor(List.of(Needs.byWord("정의").orElseThrow())));
 
-        assertThat(prompts.actionsPrompt(state))
-                .contains("[사건] 가족과 호수공원을 걸음")
-                .contains("[감정] 없음")
-                .contains("[바람] 없음");
+        assertThat(PromptFactory.ACTION_RULES).contains("빈 배열", "상대·동의·돈·장소·도구");
+        assertThat(justice).contains("A35 ·", "A59 ·").doesNotContain("A01 ·", "A33 ·");
+        assertThat(PromptFactory.describeCandidates(catalog.candidatesFor(List.of(Needs.byWord("사랑").orElseThrow()))))
+                .contains("A32 · 가벼운 질문부터 서로 묻고 답하며 알아가기", "약 45분의 점진적 상호 공개 절차");
     }
 
     @Test
@@ -273,4 +282,71 @@ class PromptFactoryTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("TWO_STAGE");
     }
+
+    @Test
+    void diaryPromptUsesFiveToSixSentencesAndContextParagraphsWithoutInventingFacts() {
+        assertThat(prompts.diaryPrompt(new RetrospectState("diary")))
+                .contains("전체 5~6문장", "한 문장마다 줄바꿈", "같은 맥락의 문장은 빈 줄 없이 다음 줄",
+                        "맥락이 달라지면 빈 줄 하나", "문단 사이는 \\n\\n", "가볍게 언급한 잡일",
+                        "대화에 없는 사실·감정", "재료가 부족하면 있는 내용만")
+                .doesNotContain("최소 5문장", "넉넉하게", "같은 맥락의 문장은 한 문단으로 이어 쓰고");
+    }
+
+    @Test
+    void diaryPromptMovesOnAfterEmotionAndDoesNotProbeForMeaning() {
+        var state = new RetrospectState("emotion-only");
+        state.event("친구와 저녁");
+        state.markEmotionSeen();
+
+        assertThat(prompts.diaryTurnPrompt(state, "반가웠어요"))
+                .contains("구체적인 공감과 위 기준에 맞는 질문을 같은 응답", "감정 표현이 없음", "감정 표현만 있음 + 계기 미확인",
+                        "계기 확인 완료 + 같은 소재의 후속 답변", "자발적으로 말한 해당 사건의 의미만",
+                        "empathy: 반드시 채우세요", "구체적인 장면·행동", "맞장구나 원문 반복으로 끝내지",
+                        "행동·결정·감정·감각을 지어내지")
+                .doesNotContain("예:", "카페", "생일", "회의에서");
+    }
+
+    @Test
+    void pendingScheduleExceptionAsksAboutEarlierActualExperience() {
+        assertThat(prompts.diaryTurnPrompt(new RetrospectState("pending"), "아직 안 만났어"))
+                .contains("eventPending=true", "그전에 실제로 있었던 일을 질문",
+                        "실제 경험도 함께 답하면 eventPending=false", "취소·불참·하지 않기로 한 결정",
+                        "미래 사건은 event/secondaryEvents/meaning에 넣거나 emotionPresent의 근거로 삼지",
+                        "사용자가 실제 경험을 처음", "같은 응답")
+                .doesNotContain("예:");
+    }
+
+    @Test
+    void freeChatJudgesMeaningAndContextRatherThanImitatingOneSpeakingStyle() {
+        assertThat(prompts.system()).contains("사용자가 전한 의미와 맥락", "말투·문장 구조를 흉내 내거나");
+        assertThat(prompts.diaryTurnPrompt(new RetrospectState("styles"), "버스 놓침"))
+                .contains("특정 단어의 일치가 아니라", "앞선 대화와 방금 답변의 의미", "짧거나 간접적인 답변",
+                        "감정의 방향과 강도", "정해진 공감 문구를 반복하지")
+                .doesNotContain("예:", "카페", "유나", "민지");
+    }
+
+    @Test
+    void conversationParagraphsFollowContextInsteadOfEachSentence() {
+        assertThat(prompts.system()).contains("문장마다 줄바꿈하지 않습니다", "같은 맥락의 문장은 한 문단",
+                "공감에서 질문으로 넘어가는 등 맥락이 바뀔 때만 줄바꿈");
+    }
+
+    @Test
+    void topicProgressAndHistoryDriveMeaningInsteadOfDuplicateScriptedInstructions() {
+        var state = new RetrospectState("progress");
+        state.event("면접");
+        state.bumpDiaryTurn();
+        state.bumpDiaryTurn();
+        state.markEmotionSeen();
+        state.addUserMessage("면접에 다녀왔어요.");
+        state.addAssistantMessage("그때 마음은 어떠셨어요?");
+        assertThat(prompts.diaryTurnPrompt(state, "긴장했어요"))
+                .contains("이 소재에서 이전에 진행한 턴: 2", "이 소재의 감정 수집: 예", "그때 마음은 어떠셨어요?")
+                .doesNotContain("서버 진행 지시:");
+        state.event("저녁");
+        assertThat(prompts.diaryTurnPrompt(state, "밥 먹었어요"))
+                .contains("이 소재에서 이전에 진행한 턴: 0", "이 소재의 감정 수집: 아니요")
+                .doesNotContain("이 소재의 의미 수집");
+    }
+
 }

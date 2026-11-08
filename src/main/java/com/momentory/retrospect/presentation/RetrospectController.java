@@ -102,6 +102,9 @@ public class RetrospectController {
                               "message": "인증이 필요합니다."
                             }
                             """))),
+            @ApiResponse(responseCode = "409", description = "다른 작성 경로에서 오늘 일기를 이미 저장함", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
+                    name = "ALREADY_RETROSPECTED_TODAY",
+                    value = "{\"code\":\"ALREADY_RETROSPECTED_TODAY\",\"message\":\"오늘은 이미 회고를 완료했어요. 회고는 하루에 한 번만 할 수 있어요.\"}"))),
             @ApiResponse(responseCode = "404", description = "세션을 찾을 수 없음", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
                     name = "RETROSPECT_SESSION_NOT_FOUND",
                     value = """

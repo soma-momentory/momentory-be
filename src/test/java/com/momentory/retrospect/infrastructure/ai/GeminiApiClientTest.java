@@ -19,6 +19,7 @@ import com.momentory.retrospect.application.metering.CallLog;
 import com.momentory.retrospect.application.metering.LlmCallRecorded;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
+import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -91,6 +92,21 @@ class GeminiApiClientTest {
     }
 
     @Test
+    void needSelectionUsesWordArraySchemaAndParsesWords() throws Exception {
+        String inner = mapper.writeValueAsString(new GeminiNeeds(List.of("휴식", "인정")));
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", inner)))))))));
+
+        Optional<GeminiNeeds> result = client().generate(request("고정 목록에서 바람 고르기"), GeminiNeeds.class);
+
+        assertThat(result).isPresent();
+        assertThat(result.orElseThrow().words()).containsExactly("휴식", "인정");
+        var body = mapper.readTree(server.takeRequest().getBody().readUtf8());
+        var schema = body.path("generationConfig").path("responseSchema");
+        assertThat(schema.path("properties").has("words")).isTrue();
+    }
+
+    @Test
     void returnsEmptyWhenNoCandidateText() throws Exception {
         server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
                 "candidates", List.of(),
@@ -152,6 +168,28 @@ class GeminiApiClientTest {
 
         assertThat(result).isEmpty();
         assertThat(events).isEmpty(); // 유출 응답은 성공 계측을 남기지 않는다
+    }
+
+    @Test
+    void attemptMarksServerErrorAndTimeoutRetryableButSafetyBlockNot() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(429));
+        assertThat(client().attempt(request("q"), DiaryOutput.class, null).retryable()).isTrue();
+
+        server.enqueue(new MockResponse().setResponseCode(400));
+        assertThat(client().attempt(request("q"), DiaryOutput.class, null).retryable()).isFalse();
+
+        // 호출별 읽기 한도 — 한도를 넘기면 시간 초과로 다시 불러 볼 만한 실패다.
+        server.enqueue(jsonResponse("{}").setHeadersDelay(1, java.util.concurrent.TimeUnit.SECONDS));
+        GeminiApiClient.Attempt<DiaryOutput> timedOut = client().withReadTimeout(Duration.ofMillis(200))
+                .attempt(request("q"), DiaryOutput.class, null);
+        assertThat(timedOut.value()).isEmpty();
+        assertThat(timedOut.retryable()).isTrue();
+
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of("finishReason", "SAFETY"))))));
+        GeminiApiClient.Attempt<DiaryOutput> blocked = client().attempt(request("q"), DiaryOutput.class, null);
+        assertThat(blocked.value()).isEmpty();
+        assertThat(blocked.retryable()).isFalse();
     }
 
     private GeminiApiClient client() {

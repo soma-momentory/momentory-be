@@ -95,6 +95,13 @@ public class UserProfile extends BaseTimeEntity {
     @Column(name = "notification_enabled", nullable = false)
     private boolean notificationEnabled;
 
+    /** 바바의 편지 알림 시각 — null 은 아직 고르지 않았다는 뜻이다(앱은 08:30 으로 보여 준다). */
+    @Column(name = "letter_time")
+    private LocalTime letterTime;
+
+    @Column(name = "letter_notification_enabled", nullable = false)
+    private boolean letterNotificationEnabled = true;
+
     protected UserProfile() {
     }
 
@@ -166,12 +173,27 @@ public class UserProfile extends BaseTimeEntity {
             boolean calendarIntegrationEnabled,
             Boolean notificationEnabled
     ) {
-        this.nickname = requireNickname(nickname);
-        this.age = requireValidAge(age);
-        this.gender = Objects.requireNonNull(gender);
+        updateBasicInfo(nickname, age, gender, reflectionTime, calendarIntegrationEnabled, notificationEnabled);
         replaceInterestAreas(interestAreas);
         this.otherInterestDetail = requireOtherDetail(interestAreas.contains(InterestArea.OTHER), otherInterestDetail, "interest area");
         updateRestMethods(restMethods, otherRestMethodDetail);
+    }
+
+    /**
+     * 새 온보딩이 묻는 항목만 고친다. 관심사 · 쉬는 방법은 새 온보딩이 묻지 않으므로
+     * 다시 온보딩하는 기존 사용자의 값을 그대로 둔다.
+     */
+    public void updateBasicInfo(
+            String nickname,
+            Integer age,
+            Gender gender,
+            LocalTime reflectionTime,
+            boolean calendarIntegrationEnabled,
+            Boolean notificationEnabled
+    ) {
+        this.nickname = requireNickname(nickname);
+        this.age = requireValidAge(age);
+        this.gender = Objects.requireNonNull(gender);
         this.reflectionTime = Objects.requireNonNull(reflectionTime);
         this.timeZone = DEFAULT_TIME_ZONE;
         this.calendarIntegrationEnabled = calendarIntegrationEnabled;
@@ -195,10 +217,9 @@ public class UserProfile extends BaseTimeEntity {
         return age;
     }
 
+    // 새 온보딩은 관심사를 묻지 않아 새 가입자는 비어 있다. 비어 있어도 마이페이지 저장이 되게 한다.
     private void replaceInterestAreas(Set<InterestArea> interestAreas) {
-        if (interestAreas == null || interestAreas.isEmpty()) {
-            throw new IllegalArgumentException("At least one interest area is required.");
-        }
+        Objects.requireNonNull(interestAreas);
         this.interestAreas.clear();
         this.interestAreas.addAll(interestAreas);
     }
@@ -262,6 +283,20 @@ public class UserProfile extends BaseTimeEntity {
 
     public String getOtherRestMethodDetail() {
         return otherRestMethodDetail;
+    }
+
+    /** 처음 일기를 저장할 때 · 알림 설정에서 고른 편지 알림 시각과 켜기 여부. */
+    public void changeLetterPreference(LocalTime letterTime, boolean letterNotificationEnabled) {
+        this.letterTime = Objects.requireNonNull(letterTime);
+        this.letterNotificationEnabled = letterNotificationEnabled;
+    }
+
+    public LocalTime getLetterTime() {
+        return letterTime;
+    }
+
+    public boolean isLetterNotificationEnabled() {
+        return letterNotificationEnabled;
     }
 
     public LocalTime getReflectionTime() {

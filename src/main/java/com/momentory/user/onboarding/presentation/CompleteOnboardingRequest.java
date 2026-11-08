@@ -9,7 +9,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -31,8 +30,8 @@ public record CompleteOnboardingRequest(
         @Schema(description = "성별", example = "FEMALE")
         @NotNull(message = "gender는 필수입니다.")
         Gender gender,
-        @Schema(description = "관심 분야", example = "[\"CAREER\", \"RELATIONSHIP\"]")
-        @NotEmpty(message = "interestAreas는 최소 1개 이상이어야 합니다.")
+        @Schema(description = "관심 분야. 비어도 된다", example = "[\"CAREER\", \"RELATIONSHIP\"]")
+        @NotNull(message = "interestAreas는 필수입니다.")
         Set<InterestArea> interestAreas,
         @Schema(description = "관심 분야 기타 직접 입력", example = "에세이 글쓰기", nullable = true)
         @Size(max = UserProfile.OTHER_DETAIL_MAX_LENGTH, message = "otherInterestDetail은 최대 50자입니다.")

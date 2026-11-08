@@ -36,8 +36,4 @@ final class GeminiStructuredOutputs {
     /** 바람(욕구) 후보 — 고정 목록에서 고른 단어들(어댑터가 Needs 로 검증). */
     record GeminiNeeds(List<String> words) {
     }
-
-    /** 작은 행동 후보 — 문자열들. */
-    record GeminiActions(List<String> actions) {
-    }
 }

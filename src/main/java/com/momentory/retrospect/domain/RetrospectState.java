@@ -12,21 +12,21 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * 회고 세션 애그리거트 루트 (채팅흐름_v2).
  *
  * <p>세션 스코프 상태를 전부 소유한다 — 진입 컨텍스트(일정·닉네임·관심사), 진행 위치(phase),
- * 일기 작성 슬롯(사건·감정·의미), 감정 탐색 슬롯(감정·바람·바랐던 모습·작은 행동), 대화 로그, 안전
+ * 일기 작성 슬롯(사건·감정·의미), 감정 탐색 슬롯(감정·바람·바랐던 모습), 대화 로그, 안전
  * 상태. 상태 변경은 이 클래스의 메서드로만 한다.
  *
- * <p>흐름: {@code diary_chat}(≤6턴, 사건·감정·의미 수집) → {@code await_branch}(감정 더 알아볼까)
- * → (선택 시) {@code emotion_exploration}(고정 3턴) → {@code complete}. 종료·다음 슬롯 선택은
- * 서버(엔진)가 이 슬롯 상태로 결정한다.
+ * <p>흐름: {@code diary_chat}(≤5턴, 사건·감정·의미 수집) → (사건이 둘이면 {@code await_branch}: 사건 고르기)
+ * → {@code emotion_exploration}(감정 → 바람, 2턴) → {@code complete}. 작은 행동은 다음 날 바바의 편지에서
+ * 고른다(작은 행동 슬롯은 옛 세션 호환으로만 남는다). 종료·다음 슬롯 선택은 서버(엔진)가 이 슬롯 상태로 결정한다.
  */
 public class RetrospectState {
 
     /** 일기 작성 최대 턴 (채팅흐름_v2). */
-    public static final int DIARY_MAX_TURNS = 6;
+    public static final int DIARY_MAX_TURNS = 5;
     /** 한 세션에서 뽑는 사건 개수 상한 (모델 비교 계획 §3.1). */
     public static final int MAX_EVENTS = 2;
     /**
-     * 일기 작성 권장 최소 턴 — 엔진은 6턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
+     * 일기 작성 권장 최소 턴 — 엔진은 5턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
      * 이 값을 하한으로 알려 "최소 이만큼은 소재를 넓혀가라"는 진행 안내에 쓴다({@code PromptFactory}).
      */
     public static final int DIARY_MIN_TURNS = 4;
@@ -44,6 +44,16 @@ public class RetrospectState {
     /** 그 일정에 사용자가 홈에서 단 감정 — 대화 소재로만 쓴다(없으면 null). */
     private Emotion scheduleEmotion;
     private String interest;
+    /** 구버전은 직접 질문으로 복원한다. */
+    private boolean scheduleHint;
+    private int topicTurn;
+    private boolean topicEmotionSeen;
+    private boolean topicCauseDiscussed;
+    private boolean topicMeaningSeen;
+    private Integer selectedEventId;
+    private boolean awaitingEventSelection;
+    /** 아침 편지에서 고른 오늘의 작은 일 — 없으면 null(옛 스냅샷 포함). */
+    private TodayAction todayAction;
     /** 온보딩 '평소 쉬는 방법' 라벨 — 작은 행동 제안에 선호를 반영한다(없으면 빈 목록). */
     private List<String> restMethods = List.of();
 
@@ -232,6 +242,7 @@ public class RetrospectState {
 
     public void bumpDiaryTurn() {
         diaryTurn++;
+        topicTurn++;
     }
 
     public String event() {
@@ -240,8 +251,101 @@ public class RetrospectState {
 
     public void event(String event) {
         if (event != null && !event.isBlank()) {
-            this.event = event.strip();
+            String next = event.strip();
+            if (!next.equals(this.event)) {
+                if (this.event != null && !secondaryEvents.contains(this.event)) {
+                    secondaryEvents.add(this.event);
+                }
+                secondaryEvents.remove(next);
+                this.topicTurn = 0;
+                this.topicEmotionSeen = false;
+                this.topicCauseDiscussed = false;
+                this.topicMeaningSeen = false;
+            }
+            this.event = next;
         }
+    }
+
+    public boolean scheduleHint() {
+        return scheduleHint;
+    }
+
+    public void scheduleHint(boolean hint) {
+        this.scheduleHint = hint;
+    }
+
+    public int topicTurn() {
+        return topicTurn;
+    }
+
+    public boolean topicEmotionSeen() {
+        return topicEmotionSeen;
+    }
+
+    public boolean topicCauseDiscussed() {
+        return topicCauseDiscussed;
+    }
+
+    public void markTopicCauseDiscussed() {
+        topicCauseDiscussed = true;
+    }
+
+    public boolean topicMeaningSeen() {
+        return topicMeaningSeen;
+    }
+
+    public boolean shouldSwitchTopic() {
+        // 소재의 첫 발화에는 공감만 하고 한 번 더 답할 여지를 둔다. 이후 의미·생각은 더 캐묻지 않는다.
+        return topicTurn >= 2;
+    }
+
+    public TodayAction todayAction() {
+        return todayAction;
+    }
+
+    /** 오늘의 작은 일을 첫 질문으로 물었다 — 답을 받은 뒤 {@code followUp} 을 이어서 묻는다. */
+    public void askTodayAction(TodayAction action, String followUp) {
+        this.todayAction = action.asked(followUp);
+    }
+
+    public boolean awaitingTodayAction() {
+        return todayAction != null && todayAction.awaiting();
+    }
+
+    public void answerTodayAction() {
+        if (todayAction != null) {
+            this.todayAction = todayAction.answered();
+        }
+    }
+
+    public boolean awaitingEventSelection() {
+        return awaitingEventSelection;
+    }
+
+    public void awaitEventSelection() {
+        this.awaitingEventSelection = true;
+    }
+
+    public Integer selectedEventId() {
+        return selectedEventId;
+    }
+
+    public Optional<ExtractedEvent> selectedEvent() {
+        return events.stream().filter(e -> Integer.valueOf(e.id()).equals(selectedEventId)).findFirst();
+    }
+
+    public boolean selectEvent(int id) {
+        if (events.stream().noneMatch(e -> e.id() == id)) {
+            return false;
+        }
+        this.selectedEventId = id;
+        this.awaitingEventSelection = false;
+        return true;
+    }
+
+    public List<ExtractedEmotion> selectedEventEmotions() {
+        return emotions.stream().filter(e -> selectedEventId != null
+                && selectedEventId.equals(e.eventId())).toList();
     }
 
     public List<String> secondaryEvents() {
@@ -307,7 +411,7 @@ public class RetrospectState {
      * 재료로 들어가 행동이 물 한 잔·심호흡 같은 일반론으로 흘렀다(2026-10 바람카드 점검).
      */
     public String cardSituation() {
-        return mainEvent().map(e -> e.summary() != null ? e.summary() : e.topicLabel())
+        return selectedEvent().or(this::mainEvent).map(e -> e.summary() != null ? e.summary() : e.topicLabel())
                 .orElseGet(() -> event != null ? event
                         : hasSchedule() ? schedule() + "에서 있었던 일"
                         : "오늘 하루 있었던 일");
@@ -348,6 +452,7 @@ public class RetrospectState {
 
     public void markEmotionSeen() {
         this.emotionSeen = true;
+        this.topicEmotionSeen = true;
     }
 
     public String meaning() {
@@ -357,6 +462,7 @@ public class RetrospectState {
     public void meaning(String meaning) {
         if (meaning != null && !meaning.isBlank()) {
             this.meaning = meaning.strip();
+            this.topicMeaningSeen = true;
         }
     }
 
@@ -520,7 +626,8 @@ public class RetrospectState {
                 new ArrayList<>(messages),
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
-                List.copyOf(lastOptions), messageSeq);
+                List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
+                topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction, topicCauseDiscussed);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -570,6 +677,18 @@ public class RetrospectState {
         }
         state.lastOptions = s.lastOptions() == null ? List.of() : List.copyOf(s.lastOptions());
         state.messageSeq = s.messageSeq();
+        state.scheduleHint = Boolean.TRUE.equals(s.scheduleHint());
+        state.topicTurn = s.topicTurn() == null ? 0 : s.topicTurn();
+        state.topicEmotionSeen = Boolean.TRUE.equals(s.topicEmotionSeen());
+        state.topicCauseDiscussed = Boolean.TRUE.equals(s.topicCauseDiscussed());
+        state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
+        state.selectedEventId = s.selectedEventId();
+        state.awaitingEventSelection = Boolean.TRUE.equals(s.awaitingEventSelection());
+        state.todayAction = s.todayAction();
+        // 이미 감정 탐색 중이던 구버전 세션은 기존 대표 사건을 유지한다.
+        if (state.explorationEntered && state.selectedEventId == null) {
+            state.mainEvent().ifPresent(e -> state.selectedEventId = e.id());
+        }
         return state;
     }
 }

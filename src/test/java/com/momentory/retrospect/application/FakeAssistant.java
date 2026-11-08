@@ -36,6 +36,8 @@ class FakeAssistant
     boolean turnNoMoreToAsk;
     boolean turnOffTopic;
     boolean turnVague;
+    boolean turnEventPending;
+    boolean turnEmotionCausePresent;
     String turnSafetyLevel = "none";
 
     // 대화 끝 사건·감정 추출 결과
@@ -44,7 +46,6 @@ class FakeAssistant
     Emotion inferredEmotion;
     // 감정 탐색 후보
     final List<Need> needs = new ArrayList<>();
-    final List<String> actions = new ArrayList<>();
 
     // 일기 생성
     boolean failDiary;
@@ -64,7 +65,7 @@ class FakeAssistant
         }
         return Optional.of(new DiaryTurn(turnEvent, List.of(), turnMeaning, turnEmotionPresent,
                 turnQuestion, turnEmpathy, turnSafetyLevel, List.of(), turnNoMoreToAsk, turnOffTopic,
-                turnVague));
+                turnVague, turnEventPending, turnEmotionCausePresent));
     }
 
     @Override
@@ -76,11 +77,6 @@ class FakeAssistant
     @Override
     public List<Need> suggestNeeds(RetrospectState state) {
         return List.copyOf(needs);
-    }
-
-    @Override
-    public List<String> suggestActions(RetrospectState state) {
-        return List.copyOf(actions);
     }
 
     @Override

@@ -13,6 +13,13 @@ import com.momentory.diary.application.DiaryNotFoundException;
 @RestControllerAdvice(assignableTypes = DiaryController.class)
 public class DiaryExceptionHandler {
 
+    @ExceptionHandler(com.momentory.retrospect.application.AlreadyRetrospectedTodayException.class)
+    ResponseEntity<ApiErrorResponse> handleAlreadyWritten() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiErrorResponse("ALREADY_RETROSPECTED_TODAY",
+                        "오늘은 이미 회고를 완료했어요. 회고는 하루에 한 번만 할 수 있어요."));
+    }
+
     @ExceptionHandler(DiaryNotFoundException.class)
     ResponseEntity<ApiErrorResponse> handleDiaryNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

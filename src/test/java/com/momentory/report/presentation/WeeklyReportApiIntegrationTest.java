@@ -31,6 +31,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import com.momentory.auth.token.application.AccessTokenIssuer;
+import com.momentory.common.time.DayBoundary;
 import com.momentory.common.time.TimeZonePolicy;
 import com.momentory.diary.infrastructure.DiaryRepository;
 import com.momentory.retrospect.domain.Emotion;
@@ -232,10 +233,10 @@ class WeeklyReportApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("date 를 빼면 오늘(KST)이 속한 주를 돌려준다")
+    @DisplayName("date 를 빼면 오늘(KST 04:00 경계)이 속한 주를 돌려준다")
     void omittedDateFallsBackToThisWeek() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        LocalDate thisSunday = LocalDate.now(TimeZonePolicy.DEFAULT_ZONE_ID)
+        LocalDate thisSunday = DayBoundary.today()
                 .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
 
         mockMvc.perform(get("/api/v1/reports/weekly")

@@ -65,6 +65,78 @@ class OpenApiContractIntegrationTest {
     }
 
     @Test
+    void documentsDirectDiaryWritingAndEditing() throws Exception {
+        JsonNode docs = getApiDocs();
+        assertResponseSchema(docs, "/api/v1/diaries", "post", "201", "DiaryResponse");
+        assertResponseSchema(docs, "/api/v1/diaries/{id}", "put", "200", "DiaryResponse");
+        for (String path : new String[] { "/api/v1/diaries", "/api/v1/diaries/{id}" }) {
+            String method = path.endsWith("{id}") ? "put" : "post";
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", "bodyRequired", "INVALID_REQUEST", "일기 본문을 입력해주세요.");
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", "bodyTooLong", "INVALID_REQUEST", "일기는 500자까지 쓸 수 있어요.");
+            assertErrorExample(docs, path, method, "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        }
+        assertErrorExample(docs, "/api/v1/diaries", "post", "409", "ApiErrorResponse", "ALREADY_RETROSPECTED_TODAY", "ALREADY_RETROSPECTED_TODAY", "오늘은 이미 회고를 완료했어요. 회고는 하루에 한 번만 할 수 있어요.");
+        assertErrorExample(docs, "/api/v1/diaries/{id}", "put", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
+        assertErrorExample(docs, "/api/v1/retrospect/{id}/messages", "post", "409", "ApiErrorResponse", "ALREADY_RETROSPECTED_TODAY", "ALREADY_RETROSPECTED_TODAY", "오늘은 이미 회고를 완료했어요. 회고는 하루에 한 번만 할 수 있어요.");
+        assertErrorExample(docs, "/api/v1/diaries", "post", "400", "ApiErrorResponse", "invalidEmotion", "INVALID_REQUEST", "감정을 확인해주세요.");
+        JsonNode create = docs.path("components").path("schemas").path("DiaryCreateRequest");
+        assertThat(create.path("properties").size()).isEqualTo(2);
+        assertThat(create.path("properties").has("emotion")).isTrue();
+        assertThat(create.path("required").toString()).doesNotContain("emotion");
+        assertThat(docs.at("/paths/~1api~1v1~1diaries/post/requestBody/content/application~1json/schema/$ref").asText())
+                .endsWith("/DiaryCreateRequest");
+        JsonNode properties = docs.path("components").path("schemas").path("DiaryWriteRequest").path("properties");
+        assertThat(properties.size()).isEqualTo(1);
+        assertThat(properties.path("original").path("maxLength").asInt()).isEqualTo(500);
+    }
+
+    @Test
+    void documentsWeeklyHappiness() throws Exception {
+        JsonNode docs = getApiDocs();
+        String list = "/api/v1/weekly-happiness";
+        String week = "/api/v1/weekly-happiness/{weekStart}";
+        String invalidWeek = "WEEKLY_HAPPINESS_INVALID_WEEK_START";
+        String futureWeek = "WEEKLY_HAPPINESS_FUTURE_WEEK";
+
+        assertResponseSchema(docs, list, "get", "200", "WeeklyHappinessResponse");
+        assertResponseSchema(docs, week, "put", "200", "WeeklyHappinessResponse");
+        for (String[] operation : new String[][] { { list, "get" }, { week, "put" } }) {
+            String path = operation[0];
+            String method = operation[1];
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", invalidWeek, invalidWeek, "주의 첫날(일요일) 날짜를 보내주세요.");
+            assertErrorExample(docs, path, method, "400", "ApiErrorResponse", futureWeek, futureWeek, "아직 오지 않은 주입니다.");
+            assertErrorExample(docs, path, method, "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+            assertThat(operationResponses(docs, path, method).size()).isEqualTo(3);
+        }
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "malformedRequestBody", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "entriesRequired", "INVALID_REQUEST", "적은 칸 목록을 보내주세요.");
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "categoryRequired", "INVALID_REQUEST", "칸을 골라주세요.");
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "duplicateCategory", "INVALID_REQUEST", "같은 칸을 두 번 보낼 수 없습니다.");
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "contentTooLong", "INVALID_REQUEST", "주간 행복 한 칸은 최대 100자입니다.");
+        // 쓰는 것은 이번 주뿐 — 지난 주 거절은 PUT 에만 있고, GET 은 지난 주를 읽는다
+        assertErrorExample(docs, week, "put", "400", "ApiErrorResponse", "WEEKLY_HAPPINESS_PAST_WEEK", "WEEKLY_HAPPINESS_PAST_WEEK", "지난 주는 고칠 수 없습니다.");
+        assertThat(response(docs, list, "get", "400").at("/content/application~1json/examples").has("WEEKLY_HAPPINESS_PAST_WEEK")).isFalse();
+
+        assertThat(docs.at("/paths/~1api~1v1~1weekly-happiness~1{weekStart}/put/requestBody/content/application~1json/schema/$ref").asText())
+                .endsWith("/WeeklyHappinessRequest");
+        JsonNode request = docs.at("/components/schemas/WeeklyHappinessRequest/properties");
+        assertThat(request.size()).isEqualTo(1);
+        assertThat(request.has("entries")).isTrue();
+        JsonNode entryRequest = docs.at("/components/schemas/WeeklyHappinessEntryRequest/properties");
+        assertThat(entryRequest.size()).isEqualTo(2);
+        assertThat(entryRequest.path("content").path("maxLength").asInt()).isEqualTo(100);
+        assertThat(entryRequest.path("category").path("enum").toString())
+                .isEqualTo("[\"MOMENT\",\"FOOD\",\"CONTENT\",\"PLACE\",\"PERSON\",\"PROUD\",\"REST\"]");
+        JsonNode response = docs.at("/components/schemas/WeeklyHappinessResponse/properties");
+        assertThat(response.size()).isEqualTo(3);
+        assertThat(response.has("weekStart")).isTrue();
+        assertThat(response.has("entries")).isTrue();
+        assertThat(response.has("firstWeekStart")).isTrue();
+        assertThat(docs.at("/components/schemas/WeeklyHappinessEntryResponse/properties").size()).isEqualTo(2);
+    }
+
+    @Test
     void documentsDiaryWeather() throws Exception {
         JsonNode docs = getApiDocs();
         String path = "/api/v1/diaries/{id}/weather";
@@ -80,6 +152,86 @@ class OpenApiContractIntegrationTest {
         assertThat(properties.has("latitude")).isTrue();
         assertThat(properties.has("longitude")).isTrue();
         assertThat(docs.path("components").path("schemas").path("DiaryResponse").path("properties").has("weather")).isTrue();
+    }
+
+    @Test
+    void documentsLetters() throws Exception {
+        JsonNode docs = getApiDocs();
+        String auth = "AUTHENTICATION_REQUIRED";
+        String authMessage = "인증이 필요합니다.";
+
+        String current = "/api/v1/letters/current";
+        assertResponseSchema(docs, current, "get", "200", "LetterResponse");
+        assertNoResponseContent(docs, current, "get", "204");
+        assertErrorExample(docs, current, "get", "404", "ApiErrorResponse", "LETTER_NOT_FOUND", "LETTER_NOT_FOUND", "편지를 찾을 수 없습니다.");
+        assertErrorExample(docs, current, "get", "401", "ApiErrorResponse", auth, auth, authMessage);
+        assertOperationTag(docs, current, "get", "Letters");
+
+        String list = "/api/v1/letters";
+        assertResponseSchema(docs, list, "get", "200", "LetterListResponse");
+        assertErrorExample(docs, list, "get", "401", "ApiErrorResponse", auth, auth, authMessage);
+
+        String byDate = "/api/v1/letters/{date}";
+        assertResponseSchema(docs, byDate, "get", "200", "LetterResponse");
+        assertErrorExample(docs, byDate, "get", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, byDate, "get", "401", "ApiErrorResponse", auth, auth, authMessage);
+        assertErrorExample(docs, byDate, "get", "404", "ApiErrorResponse", "LETTER_NOT_FOUND", "LETTER_NOT_FOUND", "편지를 찾을 수 없습니다.");
+
+        String open = "/api/v1/letters/{id}/open";
+        assertNoResponseContent(docs, open, "post", "204");
+        assertErrorExample(docs, open, "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, open, "post", "401", "ApiErrorResponse", auth, auth, authMessage);
+        assertErrorExample(docs, open, "post", "404", "ApiErrorResponse", "LETTER_NOT_FOUND", "LETTER_NOT_FOUND", "편지를 찾을 수 없습니다.");
+
+        String action = "/api/v1/letters/{id}/action";
+        assertResponseSchema(docs, action, "put", "200", "LetterResponse");
+        assertErrorExample(docs, action, "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, action, "put", "400", "ApiErrorResponse", "positionRange", "INVALID_REQUEST", "작은 일 칸은 0부터 2까지입니다.");
+        assertErrorExample(docs, action, "put", "400", "ApiErrorResponse", "whenLabelTooLong", "INVALID_REQUEST", "「언제」는 최대 30자입니다.");
+        assertErrorExample(docs, action, "put", "400", "ApiErrorResponse", "LETTER_ACTION_NOT_FOUND", "LETTER_ACTION_NOT_FOUND", "편지에 그 작은 일이 없습니다.");
+        assertErrorExample(docs, action, "put", "401", "ApiErrorResponse", auth, auth, authMessage);
+        assertErrorExample(docs, action, "put", "404", "ApiErrorResponse", "LETTER_NOT_FOUND", "LETTER_NOT_FOUND", "편지를 찾을 수 없습니다.");
+        assertErrorExample(docs, action, "put", "404", "ApiErrorResponse", "SCHEDULE_NOT_FOUND", "SCHEDULE_NOT_FOUND", "일정을 찾을 수 없습니다.");
+        assertErrorExample(docs, action, "put", "409", "ApiErrorResponse", "LETTER_ACTION_LOCKED", "LETTER_ACTION_LOCKED", "이미 해 본 작은 일은 바꿀 수 없습니다.");
+        JsonNode request = docs.at("/components/schemas/ChooseLetterActionRequest/properties");
+        assertThat(request.size()).isEqualTo(4);
+        assertThat(request.has("position") && request.has("whenLabel") && request.has("scheduleId") && request.has("remindAt")).isTrue();
+        JsonNode response = docs.at("/components/schemas/LetterResponse/properties");
+        assertThat(response.has("isNew")).isTrue();
+        assertThat(response.has("helplines")).isTrue();
+
+        String letterTime = "/api/v1/users/me/letter-time";
+        assertResponseSchema(docs, letterTime, "put", "200", "LetterTimeResponse");
+        assertErrorExample(docs, letterTime, "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, letterTime, "put", "400", "ApiErrorResponse", "letterTimeRequired", "INVALID_REQUEST", "letterTime은 필수입니다.");
+        assertErrorExample(docs, letterTime, "put", "400", "ApiErrorResponse", "letterTimeFormat", "INVALID_REQUEST", "letterTime은 HH:mm 형식이어야 합니다.");
+        assertErrorExample(docs, letterTime, "put", "400", "ApiErrorResponse", "notificationEnabledRequired", "INVALID_REQUEST", "notificationEnabled는 필수입니다.");
+        assertErrorExample(docs, letterTime, "put", "401", "ApiErrorResponse", auth, auth, authMessage);
+        assertErrorExample(docs, letterTime, "put", "409", "ApiErrorResponse", "ONBOARDING_REQUIRED", "ONBOARDING_REQUIRED", "온보딩을 먼저 마쳐 주세요.");
+        assertOperationTag(docs, letterTime, "put", "Users");
+        assertThat(docs.at("/components/schemas/LetterTimeRequest/properties").size()).isEqualTo(2);
+        JsonNode profile = docs.at("/components/schemas/Profile/properties");
+        assertThat(profile.has("letterTime") && profile.has("letterNotificationEnabled")).isTrue();
+        assertThat(docs.at("/components/schemas/LetterResponse/properties/status/enum").toString())
+                .isEqualTo("[\"READY\",\"FALLBACK\",\"QUIET\"]");
+    }
+
+    @Test
+    void documentsCurrentWeather() throws Exception {
+        JsonNode docs = getApiDocs();
+        String path = "/api/v1/weather/current";
+        assertResponseSchema(docs, path, "post", "200", "CurrentWeatherResponse");
+        assertErrorExample(docs, path, "post", "400", "ApiErrorResponse", "INVALID_COORDINATE", "INVALID_COORDINATE", "좌표가 올바르지 않습니다.");
+        assertErrorExample(docs, path, "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(docs, path, "post", "429", "ApiErrorResponse", "TOO_MANY_REQUESTS", "TOO_MANY_REQUESTS", "요청이 너무 많습니다.");
+        assertErrorExample(docs, path, "post", "502", "ApiErrorResponse", "WEATHER_UPSTREAM_FAILED", "WEATHER_UPSTREAM_FAILED", "날씨를 가져오지 못했어요.");
+        assertErrorExample(docs, path, "post", "503", "ApiErrorResponse", "WEATHER_UNAVAILABLE", "WEATHER_UNAVAILABLE", "날씨 기능을 사용할 수 없습니다.");
+        assertErrorExample(docs, path, "post", "504", "ApiErrorResponse", "WEATHER_UPSTREAM_TIMEOUT", "WEATHER_UPSTREAM_TIMEOUT", "날씨를 가져오지 못했어요.");
+        JsonNode request = docs.at("/components/schemas/CurrentWeatherRequest/properties");
+        assertThat(request.size()).isEqualTo(2);
+        assertThat(request.has("latitude")).isTrue();
+        assertThat(request.has("longitude")).isTrue();
+        assertThat(docs.at("/components/schemas/CurrentWeatherResponse/properties").has("latitude")).isFalse();
     }
 
     @Test
@@ -142,6 +294,13 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/users/me/onboarding", "put", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "nickname은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/users/me/onboarding", "put", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/users/me/onboarding", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
+        assertResponseSchema(apiDocs, "/api/v2/users/me/onboarding", "put", "200", "CompleteOnboardingV2Response");
+        assertOnboardingV2Properties(apiDocs);
+        assertErrorExample(apiDocs, "/api/v2/users/me/onboarding", "put", "400", "ApiErrorResponse", "validationError", "INVALID_REQUEST", "nickname은 필수입니다.");
+        assertErrorExample(apiDocs, "/api/v2/users/me/onboarding", "put", "400", "ApiErrorResponse", "unreadableRequest", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(apiDocs, "/api/v2/users/me/onboarding", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertOperationTag(apiDocs, "/api/v2/users/me/onboarding", "put", "Users");
 
         assertResponseSchema(apiDocs, "/api/v1/onboarding/options", "get", "200", "OnboardingOptionsResponse");
         assertErrorExample(apiDocs, "/api/v1/onboarding/options", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
@@ -268,6 +427,8 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/reports/weekly", "get", "400", "ApiErrorResponse", "invalidDateFormat", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/reports/weekly", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertOperationTag(apiDocs, "/api/v1/reports/weekly", "get", "Reports");
+        assertResponseSchema(apiDocs, "/api/v2/reports/weekly", "get", "200", "WeeklyReportV2Response");
+        assertOperationTag(apiDocs, "/api/v2/reports/weekly", "get", "Reports");
 
         assertResponseSchema(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "200", "ActionCardCompletionResponse");
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "되돌린 상태에서는 느낀 점을 남길 수 없습니다.");
@@ -490,6 +651,21 @@ class OpenApiContractIntegrationTest {
         assertThat(properties.has("otherRestMethodDetailValid")).isFalse();
     }
 
+    private void assertOnboardingV2Properties(JsonNode apiDocs) {
+        JsonNode request = apiDocs.at("/components/schemas/CompleteOnboardingV2Request/properties");
+        assertThat(request.has("moodChange")).isTrue();
+        assertThat(request.has("knowWhy")).isTrue();
+        assertThat(request.has("dayEnd")).isTrue();
+        assertThat(request.has("diaryHistory")).isTrue();
+        assertThat(request.has("goals")).isTrue();
+        assertThat(request.has("interestAreas")).isFalse();
+        assertThat(request.has("restMethods")).isFalse();
+        assertThat(apiDocs.at("/components/schemas/CompleteOnboardingV2Response/properties").has("onboardingVersion")).isTrue();
+        JsonNode userMe = apiDocs.at("/components/schemas/UserMeResponse/properties");
+        assertThat(userMe.has("onboardingVersion")).isTrue();
+        assertThat(userMe.has("latestOnboardingVersion")).isTrue();
+    }
+
     private JsonNode response(JsonNode apiDocs, String path, String method, String responseCode) {
         JsonNode response = operationResponses(apiDocs, path, method).path(responseCode);
         assertThat(response.isObject()).isTrue();
@@ -514,6 +690,7 @@ class OpenApiContractIntegrationTest {
         USER_ME("/api/v1/users/me", "get"),
         USER_WITHDRAWAL("/api/v1/users/me", "delete"),
         ONBOARDING_COMPLETE("/api/v1/users/me/onboarding", "put"),
+        ONBOARDING_V2_COMPLETE("/api/v2/users/me/onboarding", "put"),
         ONBOARDING_OPTIONS("/api/v1/onboarding/options", "get"),
         SCHEDULES_GET("/api/v1/schedules", "get"),
         SCHEDULES_PERIOD("/api/v1/schedules/period", "get"),
@@ -565,7 +742,7 @@ class OpenApiContractIntegrationTest {
 
         /** 회고 시작은 "하루 한 번" 가드로 409(오늘 이미 완료)를 낸다. */
         boolean allowsConflict() {
-            return this == RETROSPECT_START;
+            return this == RETROSPECT_START || this == RETROSPECT_MESSAGE;
         }
     }
 }

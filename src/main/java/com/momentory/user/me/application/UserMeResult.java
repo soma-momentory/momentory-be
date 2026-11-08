@@ -12,6 +12,8 @@ public record UserMeResult(
         Long userId,
         UserRole role,
         boolean onboardingRequired,
+        int onboardingVersion,
+        int latestOnboardingVersion,
         /** 온보딩 전에는 프로필이 없다 — 그때만 {@code null} 이다 */
         Profile profile
 ) {
@@ -31,7 +33,10 @@ public record UserMeResult(
             String otherRestMethodDetail,
             LocalTime reflectionTime,
             boolean calendarIntegrationEnabled,
-            boolean notificationEnabled
+            boolean notificationEnabled,
+            /** 아직 고르지 않았으면 {@code null} */
+            LocalTime letterTime,
+            boolean letterNotificationEnabled
     ) {
     }
 }

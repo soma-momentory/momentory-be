@@ -9,12 +9,10 @@ import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
-import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiActions;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
 
 /**
- * 감정 탐색 후보 어댑터 — 바람(욕구)은 고정 목록에서 고르고(G2, 목록 밖 단어는 버림), 작은 행동은
- * 맥락에 맞게 만든다(G2). 실패하면 빈 목록(엔진이 폴백으로 내려간다).
+ * 바람은 고정 욕구 목록에서만 고른다. 작은 행동은 회고가 아니라 바바의 편지에서 고른다(편지 PRD 14-1).
  */
 @Component
 public class GeminiExplorationAssistant implements ExplorationAssistant {
@@ -39,15 +37,5 @@ public class GeminiExplorationAssistant implements ExplorationAssistant {
         }
         // 고정 목록으로 검증 — 목록 밖 단어(환각)는 버린다.
         return words.stream().map(Needs::byWord).flatMap(Optional::stream).toList();
-    }
-
-    @Override
-    public List<String> suggestActions(RetrospectState state) {
-        LlmRequest request = LlmRequest.of(state, LlmRole.G2, prompts.system(),
-                prompts.actionsPrompt(state));
-        List<String> actions = llm.generate(request, GeminiActions.class)
-                .map(GeminiActions::actions)
-                .orElse(List.of());
-        return actions == null ? List.of() : actions;
     }
 }

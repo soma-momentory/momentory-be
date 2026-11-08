@@ -22,6 +22,19 @@ class UserTest {
         user.completeOnboarding();
 
         assertThat(user.requiresOnboarding()).isFalse();
+        assertThat(user.getOnboardingVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void latestOnboardingRaisesVersionAndLegacyOnboardingNeverLowersIt() {
+        User user = User.create();
+        assertThat(user.getOnboardingVersion()).isZero();
+
+        user.completeLatestOnboarding();
+        user.completeOnboarding();
+
+        assertThat(user.requiresOnboarding()).isFalse();
+        assertThat(user.getOnboardingVersion()).isEqualTo(User.LATEST_ONBOARDING_VERSION);
     }
 
     @Test

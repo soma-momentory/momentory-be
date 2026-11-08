@@ -16,6 +16,10 @@ import java.util.Objects;
 @Table(name = "users")
 public class User extends BaseTimeEntity {
 
+    /** 지금 앱이 보여 주는 온보딩 판. 이보다 낮은 판을 마친 사용자는 새 앱에서 온보딩을 다시 한다. */
+    public static final int LATEST_ONBOARDING_VERSION = 2;
+    private static final int LEGACY_ONBOARDING_VERSION = 1;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -26,6 +30,9 @@ public class User extends BaseTimeEntity {
 
     @Column(name = "onboarding_completed", nullable = false)
     private boolean onboardingCompleted;
+
+    @Column(name = "onboarding_version", nullable = false)
+    private int onboardingVersion;
 
     @Column(length = 320)
     private String email;
@@ -51,12 +58,23 @@ public class User extends BaseTimeEntity {
         this.email = requireEmail(email);
     }
 
+    /** 옛 온보딩(v1 API) 완료. 옛 앱은 판을 모르므로 이미 오른 판을 낮추지 않는다. */
     public void completeOnboarding() {
         onboardingCompleted = true;
+        onboardingVersion = Math.max(onboardingVersion, LEGACY_ONBOARDING_VERSION);
+    }
+
+    public void completeLatestOnboarding() {
+        onboardingCompleted = true;
+        onboardingVersion = LATEST_ONBOARDING_VERSION;
     }
 
     public boolean requiresOnboarding() {
         return !onboardingCompleted;
+    }
+
+    public int getOnboardingVersion() {
+        return onboardingVersion;
     }
 
     public Long getId() {

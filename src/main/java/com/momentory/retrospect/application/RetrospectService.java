@@ -53,13 +53,14 @@ public class RetrospectService {
     private final UserProfileRepository userProfileRepository;
     private final ScheduleRepository scheduleRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final TodayActionFinder todayActionFinder;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
             PriorActionCardRecommender priorActionCardRecommender,
             RetrospectStateCodec codec, UserRepository userRepository,
             UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher, TodayActionFinder todayActionFinder) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
@@ -70,6 +71,7 @@ public class RetrospectService {
         this.userProfileRepository = userProfileRepository;
         this.scheduleRepository = scheduleRepository;
         this.eventPublisher = eventPublisher;
+        this.todayActionFinder = todayActionFinder;
     }
 
     /**
@@ -82,7 +84,9 @@ public class RetrospectService {
         requireNoDiaryToday(userId);
 
         RetrospectState state = new RetrospectState(UUID.randomUUID().toString());
-        ReplyDto reply = engine.start(state, command, preferredRestMethods(userId));
+        // 아침 편지에서 고른 오늘의 작은 일이 있으면 첫 질문 앞에서 해 봤는지 묻는다(바바의 편지).
+        ReplyDto reply = engine.start(state, command, preferredRestMethods(userId),
+                todayActionFinder.findFor(userId).orElse(null));
 
         Retrospect entity = Retrospect.start(userId, RetrospectStatus.from(state.phase()),
                 resolveScheduleId(userId, state.scheduleId()), codec.serialize(state));

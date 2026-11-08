@@ -140,4 +140,38 @@ class UserProfileTest {
                 false
         )).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void allowsEmptyInterestAreas() {
+        UserProfile profile = UserProfile.create(
+                User.create(), "모리", null, Gender.UNSPECIFIED, Set.of(), null, null, null,
+                LocalTime.of(22, 30), false, false
+        );
+
+        assertThat(profile.getInterestAreas()).isEmpty();
+        assertThat(profile.getRestMethods()).isEmpty();
+    }
+
+    @Test
+    void updateBasicInfoKeepsInterestAreasRestMethodsAndOtherDetails() {
+        UserProfile profile = UserProfile.create(
+                User.create(), "모리", 25, Gender.FEMALE,
+                Set.of(InterestArea.OTHER), "에세이 글쓰기",
+                Set.of(RestMethod.OTHER), "따뜻한 차 마시기",
+                LocalTime.of(21, 30), true, true
+        );
+
+        profile.updateBasicInfo(" 하늘 ", null, Gender.UNSPECIFIED, LocalTime.of(21, 0), false, false);
+
+        assertThat(profile.getNickname()).isEqualTo("하늘");
+        assertThat(profile.getAge()).isNull();
+        assertThat(profile.getGender()).isEqualTo(Gender.UNSPECIFIED);
+        assertThat(profile.getReflectionTime()).isEqualTo(LocalTime.of(21, 0));
+        assertThat(profile.isCalendarIntegrationEnabled()).isFalse();
+        assertThat(profile.isNotificationEnabled()).isFalse();
+        assertThat(profile.getInterestAreas()).containsExactly(InterestArea.OTHER);
+        assertThat(profile.getOtherInterestDetail()).isEqualTo("에세이 글쓰기");
+        assertThat(profile.getRestMethods()).containsExactly(RestMethod.OTHER);
+        assertThat(profile.getOtherRestMethodDetail()).isEqualTo("따뜻한 차 마시기");
+    }
 }
