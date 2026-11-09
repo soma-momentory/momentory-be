@@ -369,9 +369,13 @@ public class RetrospectEngine {
         if (eventPending) {
             // 일정의 시간 정정은 소재를 풀어낸 답변이 아니다. 그전에 있었던 실제 일로 대화를 연다.
             text = diaryEmpathy(empathy, question, command.content()) + "\n그럼 그전에는 어떤 일을 하셨어요?";
+        } else if (causeProvided && !state.topicEmotionConfirmAsked()) {
+            // 감정과 그 이유까지 들었으면 계기를 다시 묻지 않고, 바바가 이해한 감정이 맞는지 한 번 확인한다.
+            state.markTopicEmotionConfirmAsked();
+            text = diaryEmpathy(empathy, question, command.content()) + "\n" + diaryEmotionConfirmQuestion(question);
         } else if (causeProvided) {
-            // 감정과 그 이유까지 들었으면 새 질문을 붙이지 않고 공감만 보낸다.
-            text = diaryEmpathy(empathy, question, command.content());
+            // 이 소재에서 이미 감정을 확인했으면 같은 확인을 반복하지 않고 공감 뒤 다른 기억으로 넘어간다.
+            text = diaryEmpathy(empathy, question, command.content()) + "\n" + fallbackDiaryQuestion(state);
         } else if (state.topicEmotionSeen() && !state.topicCauseDiscussed()) {
             // 감정을 이미 들었으면 다시 이름을 묻지 않고 그 마음이 든 계기를 한 번 확인한다.
             state.markTopicCauseDiscussed();
@@ -461,6 +465,25 @@ public class RetrospectEngine {
             }
         }
         return "어떤 일 때문에 그런 마음이 드셨나요?";
+    }
+
+    /**
+     * 감정과 이유를 들은 뒤 바바가 이해한 감정이 맞는지 묻는 확인 질문 하나를 쓴다.
+     * 계기·생각·다른 소재를 다시 묻는 질문이나 열린 기분 질문이면 고정 확인 질문으로 대체한다.
+     */
+    private static String diaryEmotionConfirmQuestion(String candidate) {
+        if (candidate != null) {
+            for (String part : candidate.strip().split("(?<=[.!?。！？])\\s*|\\R")) {
+                String question = part.strip();
+                if ((question.endsWith("?") || question.endsWith("？"))
+                        && question.matches(".*(?:맞|그런 거|그렇죠|거죠|건가요|거예요|셨던 거|셨던 게|셨죠|셨군요).*")
+                        && !question.matches(".*(?:왜|계기|원인|어떤 일|무슨 일|무엇|뭐가|어떤 부분|어느 부분|어떤 점|"
+                                + "어느 점|어떻게|어떤 기분|어떤 마음|어떤 감정|생각|의미|다른|앞으로|계획).*")) {
+                    return question;
+                }
+            }
+        }
+        return "제가 이해한 그 마음이 맞을까요?";
     }
 
     /** AI 실패와 체크인 재개 시에도 현재 소재의 진행 상태와 사건 상한을 따른다. */
