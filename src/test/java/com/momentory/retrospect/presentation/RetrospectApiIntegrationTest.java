@@ -278,20 +278,21 @@ class RetrospectApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("감정과 계기를 함께 말하면 공감만 반환하고 확인 상태를 저장한다")
-    void emotionAndCauseGetOnlyEmpathyAndPersistProgress() throws Exception {
+    @DisplayName("감정과 계기를 함께 말하면 공감과 감정 확인 질문을 반환하고 확인 상태를 저장한다")
+    void emotionAndCauseGetEmotionConfirmAndPersistProgress() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         long sessionId = startSession(user);
         when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.of(new DiaryTurn(
-                "친구의 칭찬", List.of(), null, true, "어떤 기분이었나요?", "친구의 칭찬이 기쁘게 다가오셨군요.",
+                "친구의 칭찬", List.of(), null, true, "칭찬받아서 기쁘셨던 거 맞아요?", "친구의 칭찬이 기쁘게 다가오셨군요.",
                 "none", List.of(), false, false, false, false, true)));
 
         mockMvc.perform(message(user, sessionId, "{\"content\":\"친구가 칭찬해줘서 기뻤어요\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.phase").value("diary_chat"))
-                .andExpect(jsonPath("$.text").value("친구의 칭찬이 기쁘게 다가오셨군요."));
+                .andExpect(jsonPath("$.text").value("친구의 칭찬이 기쁘게 다가오셨군요.\n칭찬받아서 기쁘셨던 거 맞아요?"));
         String snapshot = retrospectRepository.findById(sessionId).orElseThrow().getStateJson();
         assertThat((Boolean) JsonPath.read(snapshot, "$.topicCauseDiscussed")).isTrue();
+        assertThat((Boolean) JsonPath.read(snapshot, "$.topicEmotionConfirmAsked")).isTrue();
         assertThat(((Number) JsonPath.read(snapshot, "$.diaryTurn")).intValue()).isEqualTo(1);
     }
 

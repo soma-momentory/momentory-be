@@ -55,7 +55,9 @@ public record RetrospectStateSnapshot(
         // 오늘의 작은 일(바바의 편지) — 옛 스냅샷은 null
         TodayAction todayAction,
         // 같은 소재의 감정 계기 질문 반복 방지 — 옛 스냅샷은 null(false)
-        Boolean topicCauseDiscussed) {
+        Boolean topicCauseDiscussed,
+        // 같은 소재의 감정 확인 질문 반복 방지 — 옛 스냅샷은 null(false)
+        Boolean topicEmotionConfirmAsked) {
 
     /** 안전 상태 스냅샷 — 누적 레벨·플래그·마지막 플래그 메시지 id. */
     public record SafetySnapshot(SafetyLevel level, List<String> flags, String lastFlaggedMsgId) {
