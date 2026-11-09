@@ -307,6 +307,22 @@ class PromptFactoryTest {
     }
 
     @Test
+    void emotionWithCauseIsConfirmedOnceInsteadOfAskingCauseAgain() {
+        var state = new RetrospectState("confirm");
+        state.event("회의");
+        state.markEmotionSeen();
+        state.markTopicEmotionConfirmAsked();
+
+        assertThat(prompts.system()).contains("감정과 이유가 있으면 공감한 뒤 그 감정이 맞는지 한 번 확인");
+        assertThat(prompts.diaryTurnPrompt(state, "응 맞아"))
+                .contains("바바가 이해한 감정이 맞는지 이미 확인했는가: 예",
+                        "맞다/아니다로 답할 수 있는 한 문장", "없어도 true입니다",
+                        "맞다/아니다로만 답했으면 새 이유를 설명한 것이 아니므로 false",
+                        "감정 확인 질문에 대한 맞다/아니다 답은 유효")
+                .doesNotContain("질문 없이 공감만 하세요", "예:");
+    }
+
+    @Test
     void pendingScheduleExceptionAsksAboutEarlierActualExperience() {
         assertThat(prompts.diaryTurnPrompt(new RetrospectState("pending"), "아직 안 만났어"))
                 .contains("eventPending=true", "그전에 실제로 있었던 일을 질문",

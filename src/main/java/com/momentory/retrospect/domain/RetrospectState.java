@@ -49,6 +49,7 @@ public class RetrospectState {
     private int topicTurn;
     private boolean topicEmotionSeen;
     private boolean topicCauseDiscussed;
+    private boolean topicEmotionConfirmAsked;
     private boolean topicMeaningSeen;
     private Integer selectedEventId;
     private boolean awaitingEventSelection;
@@ -260,6 +261,7 @@ public class RetrospectState {
                 this.topicTurn = 0;
                 this.topicEmotionSeen = false;
                 this.topicCauseDiscussed = false;
+                this.topicEmotionConfirmAsked = false;
                 this.topicMeaningSeen = false;
             }
             this.event = next;
@@ -288,6 +290,15 @@ public class RetrospectState {
 
     public void markTopicCauseDiscussed() {
         topicCauseDiscussed = true;
+    }
+
+    /** 감정과 이유를 들은 뒤 바바가 이해한 감정이 맞는지 이 소재에서 이미 확인했는가. */
+    public boolean topicEmotionConfirmAsked() {
+        return topicEmotionConfirmAsked;
+    }
+
+    public void markTopicEmotionConfirmAsked() {
+        topicEmotionConfirmAsked = true;
     }
 
     public boolean topicMeaningSeen() {
@@ -627,7 +638,8 @@ public class RetrospectState {
                 new RetrospectStateSnapshot.SafetySnapshot(
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
                 List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
-                topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction, topicCauseDiscussed);
+                topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction, topicCauseDiscussed,
+                topicEmotionConfirmAsked);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -681,6 +693,7 @@ public class RetrospectState {
         state.topicTurn = s.topicTurn() == null ? 0 : s.topicTurn();
         state.topicEmotionSeen = Boolean.TRUE.equals(s.topicEmotionSeen());
         state.topicCauseDiscussed = Boolean.TRUE.equals(s.topicCauseDiscussed());
+        state.topicEmotionConfirmAsked = Boolean.TRUE.equals(s.topicEmotionConfirmAsked());
         state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
         state.selectedEventId = s.selectedEventId();
         state.awaitingEventSelection = Boolean.TRUE.equals(s.awaitingEventSelection());

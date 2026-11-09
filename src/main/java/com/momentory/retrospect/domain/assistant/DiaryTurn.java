@@ -12,7 +12,8 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * 여기서 다루지 않는다({@link EmotionExtractor} 가 대화 끝에 한 번에 뽑는다).
  *
  * <p>종료 판정·소재 전환은 서버(엔진)가 슬롯 상태로 결정한다. 소재 첫 발화에는 공감과 그때 마음을 묻는 질문을 함께 보내며,
- * 감정이 없으면 기분을 묻고, 감정만 있으면 계기를 한 번 묻는다. 감정과 이유가 있으면 공감만 한다.
+ * 감정이 없으면 기분을 묻고, 감정만 있으면 계기를 한 번 묻는다. 감정과 이유가 있으면 공감한 뒤 그 감정이 맞는지
+ * 소재마다 한 번 확인한다.
  * 계기를 이미 나눈 뒤에는 같은 사건의 의미·생각을 더 묻지 않는다.
  * 의미는 사용자가 자발적으로 말한 것만 추출한다.
  * 아직 일어나지 않은 일정만 답했으면 공감 뒤 그전에 있었던 일을 묻는다.
@@ -22,7 +23,7 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * @param meaning        사용자가 자발적으로 말한 사건의 의미. 없으면 null이며 추가 질문으로 채우지 않는다.
  * @param emotionPresent 이 답변에 감정 표현이 담겼는가 — 현재 소재에서 다른 소재로 넘어가는 신호.
  *                       정규화(raw→Emotion)는 대화 끝에 {@link EmotionExtractor} 가 한 번에 한다.
- * @param question       다음에 물을 질문 한 문장. 감정과 계기를 들은 경우 빈 문자열.
+ * @param question       다음에 물을 질문 한 문장. 감정과 계기를 들은 경우 감정 확인 질문, 이미 확인했으면 빈 문자열.
  * @param empathy        방금 답변의 상황·표현한 감정을 짚는 짧은 공감 1~2문장(질문 없이). 소재 첫 발화에는 감정 질문 앞에
  *                       붙이고, 후속 감정 답변 뒤에는 소재 전환 질문 앞에 붙인다. 없으면 null.
  * @param safetyLevel    none|caution|risk|imminent

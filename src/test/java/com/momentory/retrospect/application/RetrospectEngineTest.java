@@ -164,19 +164,20 @@ class RetrospectEngineTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"친구가 칭찬해줘서 기뻤어요", "오래 기다리게 해서 짜증났어요"})
-    @DisplayName("감정과 이유를 함께 답하면 기분·계기·다른 기억을 묻지 않고 공감만 보낸다")
-    void emotionAndCauseTogetherReceiveOnlyEmpathy(String answer) {
+    @DisplayName("감정과 이유를 함께 답하면 기분·계기·다른 기억 대신 공감 뒤 감정 확인 질문 하나를 보낸다")
+    void emotionAndCauseTogetherReceiveEmpathyAndEmotionConfirm(String answer) {
         start();
         fake.turnEvent = "친구와 대화";
         fake.turnEmotionPresent = true;
         fake.turnEmotionCausePresent = true;
         fake.turnEmpathy = "친구와의 대화가 마음에 남으셨군요.";
-        fake.turnQuestion = "그때 어떤 기분이 드셨나요?";
+        fake.turnQuestion = "그때 어떤 기분이 드셨나요?"; // 열린 기분 질문은 확인 질문이 아니라 대체한다.
 
         ReplyDto reply = engine.handle(state, TurnCommand.text(answer));
 
-        assertThat(reply.text()).isEqualTo(fake.turnEmpathy).doesNotContain("?", "？");
+        assertThat(reply.text()).isEqualTo(fake.turnEmpathy + "\n제가 이해한 그 마음이 맞을까요?");
         assertThat(state.topicCauseDiscussed()).isTrue();
+        assertThat(state.topicEmotionConfirmAsked()).isTrue();
         assertThat(fake.diaryWriteCalls).isZero();
         fake.turnEmotionCausePresent = false;
         fake.turnEmotionPresent = false;
@@ -185,8 +186,82 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("기분 질문 뒤 감정, 계기 질문 뒤 짧은 이유를 들어도 체크인이나 질문을 덧붙이지 않는다")
-    void shortValidCauseBypassesCheckinAndReceivesOnlyEmpathy() {
+    @DisplayName("한 답변에 감정과 이유가 나오면 계기를 다시 묻지 않고 감정을 확인한 뒤, 확인 답에는 다른 기억을 묻는다")
+    void emotionConfirmIsAskedOncePerTopicThenMovesOn() {
+        start();
+        fake.turnEvent = "대추노노 회의";
+        fake.turnEmotionPresent = true;
+        fake.turnEmotionCausePresent = true;
+        fake.turnEmpathy = "회의가 예상보다 빨리 끝나서 홀가분하셨겠어요.";
+        fake.turnQuestion = "회의가 빨리 끝나서 홀가분하셨던 거 맞아요?";
+
+        ReplyDto confirm = engine.handle(state, TurnCommand.text("좋았어. 내 생각보다는 빨리 끝났어."));
+
+        assertThat(confirm.text()).isEqualTo(
+                "회의가 예상보다 빨리 끝나서 홀가분하셨겠어요.\n회의가 빨리 끝나서 홀가분하셨던 거 맞아요?")
+                .doesNotContain("어떤 일 때문에");
+
+        // 확인 답에는 공감 뒤 다른 기억을 묻는다.
+        fake.turnEmotionPresent = false;
+        fake.turnEmotionCausePresent = false;
+        fake.turnEmpathy = "빨리 끝난 회의 덕분에 마음이 가벼우셨군요.";
+        fake.turnQuestion = "";
+        assertThat(engine.handle(state, TurnCommand.text("응 맞아")).text())
+                .isEqualTo("빨리 끝난 회의 덕분에 마음이 가벼우셨군요.\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+    }
+
+    @Test
+    @DisplayName("감정 확인 답을 모델이 다시 이유로 분류해도 같은 확인을 반복하지 않고 다른 기억을 묻는다")
+    void emotionConfirmIsNotRepeatedWhenAnswerIsClassifiedAsCause() {
+        start();
+        fake.turnEvent = "대추노노 회의";
+        fake.turnEmotionPresent = true;
+        fake.turnEmotionCausePresent = true;
+        fake.turnEmpathy = "회의가 예상보다 빨리 끝나서 홀가분하셨겠어요.";
+        fake.turnQuestion = "홀가분하셨던 거 맞아요?";
+        engine.handle(state, TurnCommand.text("좋았어. 내 생각보다는 빨리 끝났어."));
+
+        fake.turnEmotionPresent = false;
+        fake.turnEmpathy = "빨리 끝나서 마음이 가벼우셨군요.";
+        fake.turnQuestion = "홀가분하셨던 거 맞죠?";
+        assertThat(engine.handle(state, TurnCommand.text("빨리 끝났으니까 당연히 좋지")).text())
+                .isEqualTo("빨리 끝나서 마음이 가벼우셨군요.\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+    }
+
+    @Test
+    @DisplayName("감정 확인 질문 후보에서 계기·열린 기분 질문은 쓰지 않는다")
+    void emotionConfirmRejectsCauseQuestions() {
+        start();
+        fake.turnEvent = "대추노노 회의";
+        fake.turnEmotionPresent = true;
+        fake.turnEmotionCausePresent = true;
+        fake.turnEmpathy = "회의가 빨리 끝나서 홀가분하셨겠어요.";
+        fake.turnQuestion = "어떤 일 때문에 그런 마음이 드셨나요? 그게 맞아요?";
+
+        assertThat(engine.handle(state, TurnCommand.text("좋았어. 빨리 끝났어.")).text())
+                .isEqualTo("회의가 빨리 끝나서 홀가분하셨겠어요.\n그게 맞아요?");
+    }
+
+    @Test
+    @DisplayName("새 소재로 넘어가면 감정 확인 여부를 초기화한다")
+    void emotionConfirmResetsOnNewTopic() {
+        start();
+        fake.turnEvent = "대추노노 회의";
+        fake.turnEmotionPresent = true;
+        fake.turnEmotionCausePresent = true;
+        fake.turnEmpathy = "회의가 빨리 끝나서 홀가분하셨겠어요.";
+        engine.handle(state, TurnCommand.text("좋았어. 빨리 끝났어."));
+        assertThat(state.topicEmotionConfirmAsked()).isTrue();
+
+        fake.turnEvent = "저녁 산책";
+        fake.turnEmpathy = "산책길 바람이 시원해서 기분이 좋으셨군요.";
+        assertThat(engine.handle(state, TurnCommand.text("저녁에 산책했는데 바람이 시원해서 좋았어")).text())
+                .isEqualTo("산책길 바람이 시원해서 기분이 좋으셨군요.\n제가 이해한 그 마음이 맞을까요?");
+    }
+
+    @Test
+    @DisplayName("기분 질문 뒤 감정, 계기 질문 뒤 짧은 이유를 들으면 체크인 없이 공감과 감정 확인만 보낸다")
+    void shortValidCauseBypassesCheckinAndReceivesEmotionConfirm() {
         start();
         fake.turnEvent = "외출";
         engine.handle(state, TurnCommand.text("외출했어요"));
@@ -195,10 +270,11 @@ class RetrospectEngineTest {
         fake.turnEmotionPresent = false;
         fake.turnEmotionCausePresent = true;
         fake.turnEmpathy = "비가 오는 날이라 마음이 가라앉으셨군요.";
+        fake.turnQuestion = "비 때문에 우울하셨던 거 맞아요?";
 
         ReplyDto reply = engine.handle(state, TurnCommand.text("비"));
 
-        assertThat(reply.text()).isEqualTo(fake.turnEmpathy);
+        assertThat(reply.text()).isEqualTo(fake.turnEmpathy + "\n비 때문에 우울하셨던 거 맞아요?");
         assertThat(reply.options()).isNull();
         assertThat(reply.phase()).isEqualTo("diary_chat");
         assertThat(state.diaryTurn()).isEqualTo(3);
