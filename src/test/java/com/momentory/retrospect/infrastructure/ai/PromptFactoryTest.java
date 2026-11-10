@@ -284,12 +284,14 @@ class PromptFactoryTest {
     }
 
     @Test
-    void diaryPromptUsesFiveToSixSentencesAndContextParagraphsWithoutInventingFacts() {
+    void diaryPromptKeepsEveryUserStatementInAtLeastFiveSentencesWithoutInventingFacts() {
         assertThat(prompts.diaryPrompt(new RetrospectState("diary")))
-                .contains("전체 5~6문장", "한 문장마다 줄바꿈", "같은 맥락의 문장은 빈 줄 없이 다음 줄",
-                        "맥락이 달라지면 빈 줄 하나", "문단 사이는 \\n\\n", "가볍게 언급한 잡일",
-                        "대화에 없는 사실·감정", "재료가 부족하면 있는 내용만")
-                .doesNotContain("최소 5문장", "넉넉하게", "같은 맥락의 문장은 한 문단으로 이어 쓰고");
+                .contains("최소 5문장", "길어도 8문장", "짧게 요약하지 말고", "사용자가 한 말은 하나도 빼지 말고",
+                        "바바의 말에 보인 반응", "한 문장 이상으로 풀어 씁니다", "한 문장마다 줄바꿈",
+                        "같은 맥락의 문장은 빈 줄 없이 다음 줄", "맥락이 달라지면 빈 줄 하나", "문단 사이는 \\n\\n",
+                        "대화에 없던 사건·인물·장소·행동은 지어내지", "말하지 않은 감정으로 바꾸지는")
+                .doesNotContain("전체 5~6문장", "재료가 부족하면 있는 내용만", "가볍게 언급한 잡일",
+                        "같은 맥락의 문장은 한 문단으로 이어 쓰고");
     }
 
     @Test
