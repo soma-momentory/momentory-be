@@ -33,6 +33,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import com.momentory.diary.application.DiaryService;
 import com.momentory.diary.domain.Diary;
 import com.momentory.diary.infrastructure.DiaryRepository;
 import com.momentory.letter.application.LetterService;
@@ -119,6 +120,7 @@ class B0ReplayHarness {
     @Autowired RetrospectRepository retrospectRepository;
     @Autowired RetrospectStateCodec codec;
     @Autowired DiaryRepository diaryRepository;
+    @Autowired DiaryService diaryService;
     @Autowired LetterRepository letterRepository;
     @Autowired LetterService letterService;
     @Autowired UserRepository userRepository;
@@ -133,6 +135,7 @@ class B0ReplayHarness {
     private volatile String diaryText;
     private volatile JsonNode datasetLetter;
     private volatile boolean failLetter;
+    private volatile String editedDiary;
     private final List<String> llmLevels = new CopyOnWriteArrayList<>();
 
     @Test
@@ -140,7 +143,9 @@ class B0ReplayHarness {
         Path data = Path.of(required("eval.data"));
         Path out = Path.of(required("eval.out"));
         String system = System.getProperty("eval.system", "B0-pre");
-        String commit = git("rev-parse", "HEAD");
+        // codeCommit 은 운영 코드(src/main)를 마지막으로 바꾼 커밋이다. 하네스 커밋이 그 위에 얹혀도 B0 버전은 그대로다.
+        String commit = git("log", "-1", "--format=%H", "--", "src/main");
+        String harnessCommit = git("rev-parse", "HEAD");
         boolean dirty = !git("status", "--porcelain", "--", "src/main").isEmpty();
         stub();
 
@@ -157,6 +162,7 @@ class B0ReplayHarness {
             Map<String, Object> row = replayOne(item, items);
             row.put("system", system);
             row.put("codeCommit", commit);
+            row.put("harnessCommit", harnessCommit);
             row.put("codeDirty", dirty);
             lines.add(json.writeValueAsString(row));
         }
@@ -200,6 +206,13 @@ class B0ReplayHarness {
         JsonNode today = days.get(days.size() - 1);
         List<String> turns = userTurns(today.path("chatTurns"));
         diaryText = today.path("diary").asString("");
+        // 데이터셋 칸 diaryEditedAfterRetro: 회고는 diaryBeforeEdit 를 일기로 만들고, 사용자가 그 뒤 diary 로 고쳤다.
+        editedDiary = null;
+        if (today.path("diaryEditedAfterRetro").asBoolean(false)) {
+            editedDiary = diaryText;
+            diaryText = today.path("diaryBeforeEdit").asString("");
+        }
+        row.put("explorationTurnsSkipped", today.path("explorationTurns").size());
         // 선택 칸 simulateLetterFailure: 편지 본문 생성이 실패한 경우(기본 편지 · 인용 조건, P0-4 사례).
         failLetter = item.path("simulateLetterFailure").asBoolean(false);
         llmLevels.clear();
@@ -299,10 +312,19 @@ class B0ReplayHarness {
         row.put("policy", guidance ? "QUIET" : "NORMAL");
         long letterStarted = System.nanoTime();
         Duration wait = REAL ? Duration.ofSeconds(120) : Duration.ofSeconds(15);
-        Letter letter = await().atMost(wait).pollInterval(Duration.ofMillis(100))
+        Letter first = await().atMost(wait).pollInterval(Duration.ofMillis(100))
                 .until(() -> letterRepository.findByDiaryId(diary.get().getId()).orElse(null),
                         l -> l != null && (l.getStatus().isDone() || "FAILED".equals(l.getStatus().name())));
+        Letter letter = first;
         row.put("backgroundStatus", letter.getStatus().name());
+        if (editedDiary != null) {
+            // 회고 뒤 일기 고치기 — 운영 리스너가 열기 전 편지를 stale 로 표시하고 고친 일기로 다시 만든다.
+            diaryService.updateOriginalByRetrospect(user.getId(), retrospectId, editedDiary);
+            letter = await().atMost(wait).pollInterval(Duration.ofMillis(100))
+                    .until(() -> letterRepository.findById(first.getId()).orElse(null),
+                            l -> !l.isStale() && (l.getStatus().isDone() || "FAILED".equals(l.getStatus().name())));
+            row.put("diaryEditedAfterRetro", true);
+        }
         // 다음 날 아침 열기 — 편지 날짜를 하루 당겨 「오늘 전」 편지로 만들고 열기 경로(실패면 그 자리에서 보충)를 탄다.
         jdbc.update("update letters set letter_date = letter_date - 1 where id = ?", letter.getId());
         LetterView view = letterService.current(user.getId()).orElseThrow();
@@ -347,7 +369,7 @@ class B0ReplayHarness {
 
     /** 설계서 6절의 ruleToday — 오늘 일기 본문과 오늘 회고의 사용자 말 하나하나를 scan 한 최댓값. */
     private SafetyLevel ruleToday(List<String> turns) {
-        SafetyLevel level = safetyPolicy.scan(diaryText).level();
+        SafetyLevel level = safetyPolicy.scan(editedDiary != null ? editedDiary : diaryText).level();
         for (String turn : turns) {
             level = SafetyLevel.max(level, safetyPolicy.scan(turn).level());
         }
@@ -385,7 +407,8 @@ class B0ReplayHarness {
     private List<String> mocked() {
         List<String> m = new ArrayList<>(List.of(
                 "emotionExtractor=empty(감정 탐색 생략 · 편지 events 빈 목록)",
-                "diaryWriter=dataset diary 원문",
+                "diaryWriter=dataset diary 원문(고친 사례는 diaryBeforeEdit 뒤 diary 로 고침)",
+                "explorationTurns=재생 안 함(B0 는 감정 탐색 단계를 scan 하지 않음)",
                 "clock=오늘 회고로 재생 · 편지는 하루 당겨 열기 경로로 확인",
                 "multiDay=마지막 날만 재생"));
         if (!REAL) {
