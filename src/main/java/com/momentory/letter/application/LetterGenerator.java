@@ -32,6 +32,8 @@ import com.momentory.letter.infrastructure.ai.GeminiLetterWriter;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.NeedActionCatalog;
 import com.momentory.retrospect.domain.Needs;
+import com.momentory.retrospect.domain.safety.SafetyLevel;
+import com.momentory.retrospect.domain.safety.SafetyPolicy;
 
 /**
  * 편지를 만든다 — 회고 커밋 뒤(뒤에서)와 열 때 보충(그 자리에서) 두 길(PRD 6-1).
@@ -74,11 +76,12 @@ public class LetterGenerator {
     private final NeedActionCatalog catalog;
     private final TransactionTemplate transaction;
     private final MeterRegistry meters;
+    private final SafetyPolicy safetyPolicy;
 
     public LetterGenerator(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, LetterMaterialsReader materialsReader,
             GeminiLetterWriter writer, NeedActionCatalog catalog, TransactionTemplate transaction,
-            MeterRegistry meters) {
+            MeterRegistry meters, SafetyPolicy safetyPolicy) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.materialsReader = materialsReader;
@@ -86,6 +89,7 @@ public class LetterGenerator {
         this.catalog = catalog;
         this.transaction = transaction;
         this.meters = meters;
+        this.safetyPolicy = safetyPolicy;
     }
 
     /** 다 만든 편지 내용 — 저장 전 한 벌. */
@@ -163,6 +167,7 @@ public class LetterGenerator {
      */
     Optional<Draft> ensureShowable(Letter letter) {
         if (letter.isShowable()) {
+            quietIfRiskAfterDiary(letter);
             return Optional.empty();
         }
         Optional<Instant> claimedAt = claim(letter.getId());
@@ -194,6 +199,26 @@ public class LetterGenerator {
         }
         record("open", saved ? draft.status().name() : "SKIPPED", letter.getId(), startedAt);
         return Optional.empty();
+    }
+
+    /**
+     * 열 때 다시 확인 — 아직 열지 않은 편지인데 일기 날 이후 위기 안내 기록이 생겼으면, 행을 잠근 채 조용한 편지로
+     * 바꾸고 인용 · 작은 일을 지운다. 이미 연 편지는 사용자가 읽었으므로 바꾸지 않는다(화면이 갑자기 달라진다).
+     */
+    private void quietIfRiskAfterDiary(Letter letter) {
+        if (letter.getOpenedAt() != null || letter.getStatus() == LetterStatus.QUIET
+                || !materialsReader.riskSinceDiaryDay(letter)) {
+            return;
+        }
+        transaction.executeWithoutResult(status -> letterRepository.findForUpdate(letter.getId())
+                .filter(l -> l.getOpenedAt() == null && l.getStatus().isDone() && l.getStatus() != LetterStatus.QUIET)
+                .ifPresent(l -> {
+                    l.complete(LetterStatus.QUIET, null, LetterRules.quietBody(), null, null, null, PROMPT_VERSION,
+                            Instant.now());
+                    letterActionRepository.deleteByLetterId(l.getId());
+                    log.info("letter quieted on open letterId={} reason=risk_after_diary", l.getId());
+                    meters.counter("letter.quieted_on_open").increment();
+                }));
     }
 
     /**
@@ -360,8 +385,18 @@ public class LetterGenerator {
         return withActions(fallbackBody(m), m, quickNeeds(m), quickSource(m), false, Optional.empty());
     }
 
-    private static Draft fallbackBody(LetterMaterials m) {
-        return new Draft(LetterStatus.FALLBACK, LetterRules.fallbackQuote(m.diary()),
+    /**
+     * 기본 편지 본문. 인용은 일기 첫 문장을 거르지 않고 자르므로, 규칙 검사에 아무것도 걸리지 않을 때만 둔다
+     * (자책 · 위기 표현을 안전하게 닫으려는 편지가 그대로 인용하지 않게).
+     */
+    private Draft fallbackBody(LetterMaterials m) {
+        String quote = LetterRules.fallbackQuote(m.diary());
+        if (quote != null && safetyPolicy.scan(quote).level() != SafetyLevel.NONE) {
+            log.info("letter quote dropped letterId={} reason=fallback_unsafe", m.letterId());
+            meters.counter("letter.fallback.quote.dropped").increment();
+            quote = null;
+        }
+        return new Draft(LetterStatus.FALLBACK, quote,
                 LetterRules.defaultBody(m.letterDate()), LetterRules.DEFAULT_TONIGHT_QUESTION,
                 List.of(), null, List.of());
     }

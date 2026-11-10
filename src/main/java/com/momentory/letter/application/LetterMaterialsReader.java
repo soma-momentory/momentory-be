@@ -8,6 +8,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 import com.momentory.actioncard.domain.ActionCard;
+import com.momentory.common.time.DayBoundary;
 import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 import com.momentory.diary.domain.Diary;
 import com.momentory.diary.infrastructure.DiaryRepository;
@@ -20,6 +21,7 @@ import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
+import com.momentory.retrospect.infrastructure.persistence.SafetyEventRepository;
 import com.momentory.schedule.domain.Schedule;
 import com.momentory.schedule.infrastructure.ScheduleRepository;
 import com.momentory.user.domain.UserProfile;
@@ -40,13 +42,15 @@ class LetterMaterialsReader {
     private final SafetyPolicy safetyPolicy;
     private final LetterWishCards wishCards;
     private final com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec;
+    private final SafetyEventRepository safetyEvents;
 
     LetterMaterialsReader(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, DiaryRepository diaryRepository,
             RetrospectRepository retrospectRepository, RetrospectStateCodec codec,
             ActionCardRepository actionCardRepository, ScheduleRepository scheduleRepository,
             UserProfileRepository userProfileRepository, SafetyPolicy safetyPolicy,
-            LetterWishCards wishCards, com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec) {
+            LetterWishCards wishCards, com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec,
+            SafetyEventRepository safetyEvents) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.diaryRepository = diaryRepository;
@@ -58,6 +62,7 @@ class LetterMaterialsReader {
         this.safetyPolicy = safetyPolicy;
         this.wishCards = wishCards;
         this.diaryEventCodec = diaryEventCodec;
+        this.safetyEvents = safetyEvents;
     }
 
     /** 만드는 사이 일기가 지워졌으면 empty. */
@@ -88,15 +93,23 @@ class LetterMaterialsReader {
                 diary.getOriginal(),
                 messages.stream().filter(Message::isUser).map(Message::content)
                         .filter(c -> c != null && !c.isBlank()).toList(),
-                // 「이어서 얘기하기」가 누적 안전 상태를 지우므로, 남은 안내 문구로 판정한다.
+                // 「이어서 얘기하기」가 누적 안전 상태를 지우므로, 남은 안내 문구로 판정한다. 위기 안내 뒤 나갔다가
+                // 같은 날 새로 회고하면 새 대화에는 안내가 없으므로, 일기 날 이후의 안전 기록도 함께 본다.
                 messages.stream().filter(Message::isAssistant).map(Message::content)
-                        .anyMatch(safetyPolicy::isGuidance),
+                        .anyMatch(safetyPolicy::isGuidance)
+                        || riskSinceDiaryDay(letter),
                 card.map(ActionCard::getNeeds).map(LetterMaterialsReader::csv).orElse(List.of())
                         .stream().map(Needs::byWord).flatMap(Optional::stream).toList(),
                 schedules(letter, 0).stream()
                         .map(s -> s.getTitle() + (s.isCompleted() ? " (했음)" : " (안 했음)")).toList(),
                 schedules(letter, 1).stream().map(Schedule::getTitle).toList(),
                 previousAction(letter), events));
+    }
+
+    /** 이 편지의 일기 날(04:00 경계) 시작 이후 위기 안내 기록이 있는가 — 열 때 다시 확인할 때도 쓴다. */
+    boolean riskSinceDiaryDay(Letter letter) {
+        return safetyEvents.existsByUserIdAndOccurredAtGreaterThanEqual(letter.getUserId(),
+                DayBoundary.startOfDay(letter.getLetterDate()));
     }
 
     private List<Schedule> schedules(Letter letter, int daysAfter) {
