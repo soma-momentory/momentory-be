@@ -1,10 +1,12 @@
 package com.momentory.retrospect.application;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -107,6 +109,25 @@ public class RetrospectService {
         return scheduleRepository.findByIdAndUserId(scheduleId, userId)
                 .map(s -> scheduleId)
                 .orElse(null);
+    }
+
+    /**
+     * 오늘(KST · 04:00 경계) 시작해 아직 끝나지 않은 가장 최근 회고. 앱을 다시 켜도 새 세션을 만들지 않고
+     * 이어서 하게 한다. 오늘 일기가 이미 있으면(다른 경로로 저장) 이어서 할 회고가 없다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<CurrentRetrospectDto> current(Long userId) {
+        LocalDate today = DayBoundary.today();
+        if (diaryQueryService.hasDiaryOn(userId, today)) {
+            return Optional.empty();
+        }
+        return retrospectRepository
+                .findFirstByUserIdAndStatusAndCreatedAtGreaterThanEqualOrderByCreatedAtDescIdDesc(userId,
+                        RetrospectStatus.IN_PROGRESS, DayBoundary.startOfDay(today))
+                .map(entity -> {
+                    RetrospectState state = codec.deserialize(entity.getStateJson());
+                    return new CurrentRetrospectDto(entity.getId(), engine.transcript(state), engine.current(state));
+                });
     }
 
     /** 한 턴 진행 — 세션을 불러 엔진을 돌리고 갱신된 상태를 저장한다. */
