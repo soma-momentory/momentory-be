@@ -17,6 +17,7 @@ import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
+import com.momentory.retrospect.domain.safety.SafetyLevel;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 
 /**
@@ -841,6 +842,43 @@ class RetrospectEngineTest {
 
         assertThat(reply.phase()).isEqualTo("await_branch");
         assertThat(reply.options()).extracting("label").containsExactly("팀원이 말을 끊었던 일");
+    }
+
+    @Test
+    @DisplayName("규칙이 RISK 를 잡으면 대화 AI 가 실패해도 위기 안내로 간다")
+    void ruleRiskStopsEvenWhenDiaryChatFails() {
+        start();
+        fake.failDiaryChat = true;
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("요즘은 정말 살기 싫어요."));
+
+        assertThat(reply.phase()).isEqualTo("safety_hold");
+        assertThat(reply.safetyLevel()).isEqualTo("risk");
+        assertThat(reply.text()).startsWith("잠깐 여기서 함께 멈춰볼게요");
+    }
+
+    @Test
+    @DisplayName("규칙 RISK 는 대화 AI 가 정상이어도 같은 위기 안내다 — AI 를 부르기 전에 멈춘다")
+    void ruleRiskStopsBeforeCallingDiaryChat() {
+        start();
+        int callsBefore = fake.diaryTurnCalls;
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("요즘은 정말 살기 싫어요."));
+
+        assertThat(reply.phase()).isEqualTo("safety_hold");
+        assertThat(fake.diaryTurnCalls).isEqualTo(callsBefore);
+    }
+
+    @Test
+    @DisplayName("위험 표현이 없는 말은 대화 AI 가 실패해도 위기 안내 없이 대화가 이어진다")
+    void plainTextKeepsChattingWhenDiaryChatFails() {
+        start();
+        fake.failDiaryChat = true;
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("팀원이 말을 끊어서 속상했어요."));
+
+        assertThat(reply.phase()).isEqualTo("diary_chat");
+        assertThat(state.safety().level()).isEqualTo(SafetyLevel.NONE);
     }
 
     @Test
