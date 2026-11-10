@@ -46,3 +46,22 @@ dependencies {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+
+// >>> eval: 안전성 평가 하네스(src/test/.../eval, @Tag("eval"))는 기본 test 에서 빼고 evalB0 로만 돌린다.
+tasks.test {
+    useJUnitPlatform { excludeTags("eval") }
+}
+
+tasks.register<Test>("evalB0") {
+    description = "B0 재생 하네스: ./gradlew evalB0 -Peval.data=<jsonl> -Peval.out=<jsonl> [-Peval.system=B0-pre] [-Peval.mode=mock|real]"
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("eval") }
+    outputs.upToDateWhen { false }
+    testLogging { showStandardStreams = true }
+    listOf("eval.data", "eval.out", "eval.system", "eval.mode").forEach { key ->
+        providers.gradleProperty(key).orNull?.let { systemProperty(key, it) }
+    }
+}
+// <<< eval
