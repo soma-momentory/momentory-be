@@ -281,7 +281,10 @@ public class RetrospectEngine {
 
         SafetyPolicy.ScanResult scan = safetyPolicy.scan(command.content());
         mergeSafety(state, scan.level(), scan.flags(), userMessage.id());
-        if (state.safety().level() == SafetyLevel.IMMINENT) {
+        // 규칙이 RISK 이상을 잡으면 AI 를 부르기 전에 바로 위기 안내로 간다. 예전에는 IMMINENT 만 여기서 멈추고
+        // RISK 는 AI 응답이 온 뒤에 멈췄는데, AI 호출이 실패하면 그 분기를 건너뛰어 위기 안내 없이 대화가 이어졌다.
+        // AI 가 규칙 등급을 낮출 수는 없으므로(누적은 최댓값) 앞당겨도 성공했을 때의 결과는 같다.
+        if (state.safety().level().stopsRetrospect()) {
             return safetyReply(state);
         }
         Optional<PromptGuard.Category> attack = PromptGuard.inspect(command.content());
