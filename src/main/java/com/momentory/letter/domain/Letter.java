@@ -81,6 +81,11 @@ public class Letter extends BaseTimeEntity {
     @Column(name = "opened_at")
     private Instant openedAt;
 
+    /** 안전 게이트가 고른 정책 — 게이트가 꺼져 있던 편지는 null. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "safety_policy", length = 10)
+    private LetterPolicy safetyPolicy;
+
     protected Letter() {
     }
 
@@ -108,6 +113,11 @@ public class Letter extends BaseTimeEntity {
         this.needsSource = needsSource;
         this.promptVersion = promptVersion;
         this.generatedAt = now;
+    }
+
+    /** 안전 게이트가 고른 정책을 남긴다 — 만들기가 실패해도 열 때 같은 정책으로 다시 만든다. */
+    public void recordPolicy(LetterPolicy policy) {
+        this.safetyPolicy = policy;
     }
 
     /** 뒤에서 만들기가 실패했다 — 열 때 다시 만든다. */
@@ -190,6 +200,10 @@ public class Letter extends BaseTimeEntity {
 
     public String getPromptVersion() {
         return promptVersion;
+    }
+
+    public LetterPolicy getSafetyPolicy() {
+        return safetyPolicy;
     }
 
     public Instant getGenerationStartedAt() {

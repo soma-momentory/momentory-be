@@ -23,11 +23,13 @@ import com.momentory.letter.domain.Letter;
 import com.momentory.letter.domain.LetterAction;
 import com.momentory.letter.domain.LetterActionSource;
 import com.momentory.letter.domain.LetterMaterials;
+import com.momentory.letter.domain.LetterPolicy;
 import com.momentory.letter.domain.LetterRules;
 import com.momentory.letter.domain.LetterStatus;
 import com.momentory.letter.domain.NeedsSource;
 import com.momentory.letter.infrastructure.LetterActionRepository;
 import com.momentory.letter.infrastructure.LetterRepository;
+import com.momentory.letter.infrastructure.ai.GeminiLetterVerifier;
 import com.momentory.letter.infrastructure.ai.GeminiLetterWriter;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.NeedActionCatalog;
@@ -77,11 +79,15 @@ public class LetterGenerator {
     private final TransactionTemplate transaction;
     private final MeterRegistry meters;
     private final SafetyPolicy safetyPolicy;
+    private final LetterGateProperties gate;
+    private final LetterSafetyAssessor assessor;
+    private final GeminiLetterVerifier verifier;
 
     public LetterGenerator(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, LetterMaterialsReader materialsReader,
             GeminiLetterWriter writer, NeedActionCatalog catalog, TransactionTemplate transaction,
-            MeterRegistry meters, SafetyPolicy safetyPolicy) {
+            MeterRegistry meters, SafetyPolicy safetyPolicy, LetterGateProperties gate,
+            LetterSafetyAssessor assessor, GeminiLetterVerifier verifier) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.materialsReader = materialsReader;
@@ -90,11 +96,18 @@ public class LetterGenerator {
         this.transaction = transaction;
         this.meters = meters;
         this.safetyPolicy = safetyPolicy;
+        this.gate = gate;
+        this.assessor = assessor;
+        this.verifier = verifier;
     }
 
     /** 다 만든 편지 내용 — 저장 전 한 벌. */
     record Draft(LetterStatus status, String quote, String insight, String tonightQuestion,
-            List<Need> needs, NeedsSource needsSource, List<ActionDraft> actions) {
+            List<Need> needs, NeedsSource needsSource, List<ActionDraft> actions, LetterPolicy policy) {
+
+        Draft withActions(List<ActionDraft> replaced) {
+            return new Draft(status, quote, insight, tonightQuestion, needs, needsSource, replaced, policy);
+        }
     }
 
     record ActionDraft(String actionId, String title, LetterActionSource source, boolean chosen) {
@@ -121,7 +134,11 @@ public class LetterGenerator {
                 return; // 만드는 사이 일기가 지워졌다 — 편지도 함께 지워졌다.
             }
             LetterMaterials m = materials.get();
-            draft = m.crisis() ? Optional.of(quiet(m)) : fullDraft(m);
+            draft = switch (gate.mode()) {
+                case OFF -> m.crisis() ? Optional.of(quiet(m)) : fullDraft(m);
+                case SHADOW -> shadowDraft(letter, m);
+                case ON -> guardedDraft(letter, claimedAt.get(), m);
+            };
             saved = draft.isPresent() ? save(letter.getId(), claimedAt.get(), draft.get())
                     : failIfOwner(letter.getId(), claimedAt.get());
         } catch (RuntimeException e) {
@@ -158,6 +175,239 @@ public class LetterGenerator {
                 askAi ? writer.pickActionIds(m, needs) : Optional.empty()));
     }
 
+    // ── 안전 게이트(설계서 5 · 6절) ────────────────────────────────────────
+
+    /**
+     * 게이트 ON · 뒤에서 — 결정표로 정책을 고르고, 그 정책으로 쓰고, 전달 전에 검증해 닫는다. 정책은 본문을 쓰기
+     * 전에 먼저 남긴다 — 본문이 실패해 FAILED 가 되어도 열 때 보충이 판정을 다시 부르지 않고 같은 정책을 쓴다.
+     */
+    private Optional<Draft> guardedDraft(Letter letter, Instant claimedAt, LetterMaterials m) {
+        LetterSafetyAssessor.Assessment a = assessor.assess(letter, m, true);
+        LetterPolicy policy = a.policy();
+        if (policy == LetterPolicy.QUIET) {
+            logGate("on", m, a, "QUIET", "-", 0);
+            return Optional.of(quiet(m, LetterPolicy.QUIET));
+        }
+        recordPolicyIfOwner(letter.getId(), claimedAt, policy);
+        Optional<Draft> draft = fullDraft(m, policy, List.of());
+        if (draft.isEmpty()) {
+            logGate("on", m, a, "FAILED", "-", 0);
+            return Optional.empty();
+        }
+        Closed closed = close(m, policy, draft.get(), true);
+        logGate("on", m, a, closed.draft().status().name(), closed.verdict(), closed.regenerations());
+        return Optional.of(closed.draft());
+    }
+
+    /**
+     * 게이트 SHADOW — 판정 · 검증을 돌려 기록만 하고, 사용자에게는 지금 경로의 편지를 그대로 보낸다(V6).
+     * 실제 일기를 판정자에 한 번 더 보내므로 켜기 전에 처리방침 범위를 확인한다(설계서 5.9절).
+     */
+    private Optional<Draft> shadowDraft(Letter letter, LetterMaterials m) {
+        LetterSafetyAssessor.Assessment a = assessor.assess(letter, m, true);
+        Optional<Draft> current = m.crisis() ? Optional.of(quiet(m)) : fullDraft(m);
+        String verdict = "-";
+        if (current.isPresent() && current.get().status() == LetterStatus.READY) {
+            verdict = verifier.verify(m, LetterPolicy.NORMAL, verifierDraft(current.get())).outcome().name();
+        }
+        logGate("shadow", m, a, current.map(d -> d.status().name()).orElse("FAILED"), verdict, 0);
+        return current;
+    }
+
+    /** 게이트 ON · 열 때 보충 — 판정자를 부르지 않는다(8초). 뒤에서 남긴 정책이 있으면 그것을 쓴다. */
+    private Draft guardedOpenDraft(Letter letter, LetterMaterials m) {
+        LetterPolicy policy = openPolicy(letter, m);
+        if (policy == LetterPolicy.QUIET) {
+            return quiet(m, LetterPolicy.QUIET);
+        }
+        CompletableFuture<OpenPick> pick = CompletableFuture
+                .supplyAsync(() -> openPick(m), OPEN_CALLS)
+                .completeOnTimeout(DEFAULT_PICK, OPEN_WAIT.toMillis(), TimeUnit.MILLISECONDS)
+                .exceptionally(e -> DEFAULT_PICK);
+        Optional<Draft> body = writer.writeBodyOnOpen(m, policy).flatMap(b -> checkedBody(b, m))
+                .map(b -> applyPolicy(b, policy));
+        OpenPick p = pick.join();
+        if (body.isEmpty()) { // 본문 실패 — AI 글이 없으니 검증할 것도 없다. 기본 편지로.
+            return withActions(applyPolicy(fallbackBody(m), policy), m, p.needs(), p.source(),
+                    p.source() != NeedsSource.DEFAULT, p.ids());
+        }
+        Draft draft = withActions(body.get(), m, p.needs(), p.source(), p.source() != NeedsSource.DEFAULT, p.ids());
+        return close(m, policy, draft, false).draft();
+    }
+
+    /** 게이트 ON · 다른 쪽이 만드는 중이라 이번에만 보여 주는 편지. */
+    private Draft unsavedDraft(Letter letter, LetterMaterials m) {
+        if (gate.mode() != LetterGateProperties.Mode.ON) {
+            return m.crisis() ? quiet(m) : fallback(m);
+        }
+        LetterPolicy policy = openPolicy(letter, m);
+        return policy == LetterPolicy.QUIET ? quiet(m, LetterPolicy.QUIET)
+                : withActions(applyPolicy(fallbackBody(m), policy), m, quickNeeds(m), quickSource(m), false,
+                        Optional.empty());
+    }
+
+    private LetterPolicy openPolicy(Letter letter, LetterMaterials m) {
+        if (m.crisis()) { // 안전 기록은 뒤에서 남긴 정책보다 늦게 생겼을 수 있다(P0-2 · P0-3)
+            return LetterPolicy.QUIET;
+        }
+        LetterPolicy stored = letter.getSafetyPolicy();
+        return stored != null ? stored : assessor.assess(letter, m, false).policy();
+    }
+
+    private Optional<Draft> fullDraft(LetterMaterials m, LetterPolicy policy, List<String> fixes) {
+        Optional<Draft> body = writer.writeBody(m, policy, fixes).flatMap(b -> checkedBody(b, m))
+                .map(b -> applyPolicy(b, policy));
+        if (body.isEmpty()) {
+            return Optional.empty();
+        }
+        List<Need> needs;
+        NeedsSource source;
+        if (!m.wishNeeds().isEmpty()) {
+            needs = m.wishNeeds();
+            source = NeedsSource.WISH_CARD;
+        } else {
+            needs = writer.pickNeeds(m);
+            source = needs.isEmpty() ? NeedsSource.DEFAULT : NeedsSource.INFERRED;
+        }
+        if (needs.isEmpty()) {
+            needs = List.of(DEFAULT_NEED);
+        }
+        boolean askAi = source != NeedsSource.DEFAULT;
+        return Optional.of(withActions(body.get(), m, needs, source, askAi,
+                askAi ? writer.pickActionIds(m, needs) : Optional.empty()));
+    }
+
+    /** 정책을 본문에 새긴다 — GENTLE 은 인용 없이 기본 첫 질문(모델이 지시를 어겨도 서버가 지킨다). */
+    private static Draft applyPolicy(Draft body, LetterPolicy policy) {
+        boolean gentle = policy == LetterPolicy.GENTLE;
+        return new Draft(body.status(), gentle ? null : body.quote(), body.insight(),
+                gentle ? LetterRules.DEFAULT_TONIGHT_QUESTION : body.tonightQuestion(), body.needs(),
+                body.needsSource(), body.actions(), policy);
+    }
+
+    record Closed(Draft draft, String verdict, int regenerations) {
+    }
+
+    /**
+     * 생성 뒤 검증과 닫기(설계서 6.4절). 검증되지 않은 편지는 그대로 나가지 않고, 다시 쓰기는 한 번뿐이며, 그다음은
+     * 인용 없는 고정 기본 편지다. 설계서와 다른 점: 위반이 작은 일 맞춤 제목에만 있으면 본문을 다시 쓰지 않고
+     * 정본 제목으로 바꿔 닫는다 — 정본 제목은 연결표에서 검토를 마친 문장이라 다시 쓰기보다 싸고 확실하다.
+     */
+    private Closed close(LetterMaterials m, LetterPolicy policy, Draft draft, boolean background) {
+        LetterVerification v = verify(m, policy, draft, background);
+        if (background && v.outcome() == LetterVerification.Outcome.UNUSABLE) {
+            pause(); // V4 — 문제가 편지가 아니라 검증 호출에 있으니 검증만 한 번 더
+            v = verify(m, policy, draft, true);
+        }
+        String verdict = v.outcome().name() + "(" + v.rules() + ")";
+        switch (v.outcome()) {
+            case PASS:
+                return new Closed(draft, verdict, 0);
+            case UNUSABLE:
+                return new Closed(fixedFallback(m, policy, draft), verdict, 0);
+            default:
+                break;
+        }
+        if (v.closesQuiet()) { // V2 — 게이트가 위험을 놓쳤다는 신호
+            return new Closed(quiet(m, LetterPolicy.QUIET), verdict, 0);
+        }
+        if (v.onlyActionTitles()) {
+            return new Closed(canonicalTitles(draft), verdict, 0);
+        }
+        if (!background) { // 열 때는 다시 쓸 시간이 없다
+            return new Closed(fixedFallback(m, policy, draft), verdict, 0);
+        }
+        List<String> fixes = v.violations().stream()
+                .map(x -> x.rule() + ": " + (x.fix() == null || x.fix().isBlank() ? "그 부분을 빼고 다시 씁니다" : x.fix()))
+                .distinct().toList();
+        boolean titlesFlagged = v.violations().stream()
+                .anyMatch(x -> x.target() == LetterVerification.Target.ACTION_TITLE);
+        Optional<Draft> body = writer.writeBody(m, policy, fixes).flatMap(b -> checkedBody(b, m))
+                .map(b -> applyPolicy(b, policy));
+        if (body.isEmpty()) {
+            return new Closed(fixedFallback(m, policy, draft), verdict + ">regen_failed", 1);
+        }
+        Draft second = new Draft(LetterStatus.READY, body.get().quote(), body.get().insight(),
+                body.get().tonightQuestion(), draft.needs(), draft.needsSource(), draft.actions(), policy);
+        if (titlesFlagged) {
+            second = canonicalTitles(second);
+        }
+        LetterVerification again = verify(m, policy, second, true);
+        String both = verdict + ">" + again.outcome().name() + "(" + again.rules() + ")";
+        if (again.outcome() == LetterVerification.Outcome.PASS) {
+            return new Closed(second, both, 1);
+        }
+        if (again.closesQuiet()) {
+            return new Closed(quiet(m, LetterPolicy.QUIET), both, 1);
+        }
+        return new Closed(fixedFallback(m, policy, second), both, 1);
+    }
+
+    private LetterVerification verify(LetterMaterials m, LetterPolicy policy, Draft draft, boolean background) {
+        GeminiLetterVerifier.Draft target = verifierDraft(draft);
+        return background ? verifier.verify(m, policy, target) : verifier.verifyOnOpen(m, policy, target);
+    }
+
+    /** 검증기에 넘기는 글 — 작은 일은 모델이 다시 쓴 맞춤 제목만(정본 제목은 연결표에서 검토를 마쳤다). */
+    private GeminiLetterVerifier.Draft verifierDraft(Draft d) {
+        List<String> tailored = d.actions().stream().filter(a -> !a.title().equals(canonicalTitle(a.actionId())))
+                .map(ActionDraft::title).toList();
+        return new GeminiLetterVerifier.Draft(d.quote(), d.insight(), d.tonightQuestion(), tailored);
+    }
+
+    private Draft canonicalTitles(Draft d) {
+        return d.withActions(d.actions().stream()
+                .map(a -> new ActionDraft(a.actionId(), canonicalTitle(a.actionId()), a.source(), a.chosen()))
+                .toList());
+    }
+
+    private String canonicalTitle(String actionId) {
+        return catalog.snapshot().actions().stream().filter(a -> a.id().equals(actionId))
+                .map(NeedActionCatalog.Action::title).findFirst().orElse(actionId);
+    }
+
+    /** 고정 기본 편지(V5) — 인용 없음 · 기본 본문 · 기본 첫 질문 · 작은 일은 정책 규칙대로 정본 제목만. */
+    private Draft fixedFallback(LetterMaterials m, LetterPolicy policy, Draft draft) {
+        Draft fixed = new Draft(LetterStatus.FALLBACK, null, LetterRules.defaultBody(m.letterDate()),
+                LetterRules.DEFAULT_TONIGHT_QUESTION, draft.needs(), draft.needsSource(), draft.actions(), policy);
+        return canonicalTitles(fixed);
+    }
+
+    private static Draft quiet(LetterMaterials m, LetterPolicy policy) {
+        return new Draft(LetterStatus.QUIET, null, LetterRules.quietBody(), null, List.of(), null, List.of(), policy);
+    }
+
+    private static boolean gentleAction(NeedActionCatalog.Action action) {
+        return LetterRules.GENTLE_ACTION_IDS.contains(action.id());
+    }
+
+    private static void pause() {
+        try {
+            Thread.sleep(Duration.ofSeconds(2));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** 정책을 먼저 남긴다 — 내 시도일 때만. */
+    private void recordPolicyIfOwner(Long letterId, Instant claimedAt, LetterPolicy policy) {
+        transaction.executeWithoutResult(status -> ownedForUpdate(letterId, claimedAt)
+                .ifPresent(l -> l.recordPolicy(policy)));
+    }
+
+    /** 기록 — 등급 · 결정표 줄 · 정책 · 검증 결과 · 지연만. 일기 · 편지 · 근거 문구는 남기지 않는다. */
+    private void logGate(String mode, LetterMaterials m, LetterSafetyAssessor.Assessment a, String result,
+            String verdict, int regenerations) {
+        String judge = a.judgment().map(j -> j.todayCurrent().key() + "/" + j.todayMentioned().key() + "/"
+                + j.historyRisk().key() + "/" + j.trajectory().name().toLowerCase(java.util.Locale.ROOT)
+                + (a.usable() ? "" : "/unusable")).orElse("none");
+        log.info("letter gate mode={} letterId={} row={} policy={} ruleToday={} ruleHistory={} pastDiaries={} "
+                        + "judge={} judgeMs={} verdict={} regenerations={} result={}",
+                mode, m.letterId(), a.decision().row(), a.policy(), a.ruleToday().key(), a.ruleHistory().key(),
+                a.pastDiaries(), judge, a.judgeMillis(), verdict, regenerations, result);
+        meters.counter("letter.gate", "mode", mode, "row", a.decision().row(), "result", result).increment();
+    }
+
     // ── 열 때 ────────────────────────────────────────────────────────────
 
     /**
@@ -178,7 +428,7 @@ public class LetterGenerator {
             // 다른 쪽이 실패로 끝났으면 기다림을 멈추고 그 자리에서 이어받는다.
             claimedAt = claim(letter.getId());
             if (claimedAt.isEmpty()) {
-                return materialsReader.read(letter).map(m -> m.crisis() ? quiet(m) : fallback(m));
+                return materialsReader.read(letter).map(m -> unsavedDraft(letter, m));
             }
         }
         long startedAt = System.nanoTime();
@@ -190,7 +440,8 @@ public class LetterGenerator {
                 return Optional.empty();
             }
             LetterMaterials m = materials.get();
-            draft = m.crisis() ? quiet(m) : openDraft(m);
+            draft = gate.mode() == LetterGateProperties.Mode.ON ? guardedOpenDraft(letter, m)
+                    : m.crisis() ? quiet(m) : openDraft(m);
             saved = save(letter.getId(), claimedAt.get(), draft);
         } catch (RuntimeException e) {
             // 들어간 채 예외로 끝나면 60초 동안 GENERATING 에 묶인다 — 실패로 돌려 다음 요청이 바로 다시 만들게 한다.
@@ -302,7 +553,7 @@ public class LetterGenerator {
         if (question.length() > LetterRules.TONIGHT_QUESTION_MAX_LENGTH || !LetterRules.isTonightForm(question)) {
             question = LetterRules.DEFAULT_TONIGHT_QUESTION;
         }
-        return Optional.of(new Draft(LetterStatus.READY, quote, insight, question, List.of(), null, List.of()));
+        return Optional.of(new Draft(LetterStatus.READY, quote, insight, question, List.of(), null, List.of(), null));
     }
 
     /**
@@ -314,11 +565,17 @@ public class LetterGenerator {
     private Draft withActions(Draft body, LetterMaterials m, List<Need> needs, NeedsSource source,
             boolean aiAsked, Optional<GeminiLetterWriter.ActionPick> aiPick) {
         List<ActionDraft> slots = new ArrayList<>();
+        boolean gentle = body.policy() == LetterPolicy.GENTLE;
         String fallbackReason = "no_ai"; // 욕구를 모를 때 · 기다리다 보여 주는 기본 편지는 처음부터 대체 규칙이다.
         if (aiAsked) {
             Optional<List<String>> ids = aiPick.map(GeminiLetterWriter.ActionPick::actionIds);
             List<NeedActionCatalog.Action> picked = ids.map(i -> catalog.selectedActions(needs, i))
-                    .orElse(List.of());
+                    .orElse(List.of()).stream().filter(a -> !gentle || gentleAction(a)).toList();
+            if (gentle && ids.isPresent() && ids.get().isEmpty()) {
+                // 조심스러운 편지에서 AI 가 「알맞은 후보 없음」이라고 했으면 채우지 않는다(설계서 5.8절).
+                return new Draft(body.status(), body.quote(), body.insight(), body.tonightQuestion(), needs,
+                        source, List.of(), body.policy());
+            }
             fallbackReason = ids.isEmpty() ? "ai_failed"
                     : !ids.get().isEmpty() && picked.isEmpty() ? "rejected" : "short";
             if ("rejected".equals(fallbackReason)) {
@@ -327,19 +584,28 @@ public class LetterGenerator {
             for (NeedActionCatalog.Action action : picked) {
                 addIfRoom(slots, action, LetterActionSource.CATALOG);
             }
-            if (!picked.isEmpty()) {
+            if (!picked.isEmpty() && !gentle) { // 조심스러운 편지는 맞춤 제목 없이 정본 제목만
                 tailorFirst(slots, aiPick.get());
             }
         }
         int beforeFallback = slots.size();
         for (NeedActionCatalog.Action action : catalog.candidatesFor(needs)) {
-            addIfRoom(slots, action, LetterActionSource.FALLBACK);
+            if (!gentle || gentleAction(action)) {
+                addIfRoom(slots, action, LetterActionSource.FALLBACK);
+            }
+        }
+        if (gentle && slots.isEmpty()) { // 그 욕구에 낮은 부담 행동이 없으면 「휴식」의 것으로
+            for (NeedActionCatalog.Action action : catalog.candidatesFor(List.of(DEFAULT_NEED))) {
+                if (gentleAction(action)) {
+                    addIfRoom(slots, action, LetterActionSource.FALLBACK);
+                }
+            }
         }
         if (slots.size() > beforeFallback) {
             meters.counter("letter.actions.fallback", "reason", fallbackReason).increment();
         }
         return new Draft(body.status(), body.quote(), body.insight(), body.tonightQuestion(), needs,
-                source, slots);
+                source, slots, body.policy());
     }
 
     /**
@@ -398,13 +664,13 @@ public class LetterGenerator {
         }
         return new Draft(LetterStatus.FALLBACK, quote,
                 LetterRules.defaultBody(m.letterDate()), LetterRules.DEFAULT_TONIGHT_QUESTION,
-                List.of(), null, List.of());
+                List.of(), null, List.of(), null);
     }
 
     /** 조용한 편지 — 인용 · 작은 일 · 첫 질문 예고가 없다. */
     private static Draft quiet(LetterMaterials m) {
         return new Draft(LetterStatus.QUIET, null, LetterRules.quietBody(), null,
-                List.of(), null, List.of());
+                List.of(), null, List.of(), null);
     }
 
     private static List<Need> quickNeeds(LetterMaterials m) {
@@ -453,6 +719,9 @@ public class LetterGenerator {
             letter.complete(draft.status(), draft.quote(), draft.insight(), draft.tonightQuestion(),
                     words.isEmpty() ? null : String.join(",", words), draft.needsSource(), PROMPT_VERSION,
                     Instant.now());
+            if (draft.policy() != null) {
+                letter.recordPolicy(draft.policy());
+            }
             letterActionRepository.deleteByLetterId(letterId);
             for (int i = 0; i < draft.actions().size(); i++) {
                 ActionDraft a = draft.actions().get(i);

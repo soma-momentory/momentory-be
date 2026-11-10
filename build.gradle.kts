@@ -60,8 +60,9 @@ tasks.register<Test>("evalB0") {
     useJUnitPlatform { includeTags("eval") }
     outputs.upToDateWhen { false }
     testLogging { showStandardStreams = true }
-    listOf("eval.data", "eval.out", "eval.system", "eval.mode").forEach { key ->
-        providers.gradleProperty(key).orNull?.let { systemProperty(key, it) }
-    }
+    listOf("eval.data", "eval.out", "eval.system", "eval.mode", "eval.judge", "eval.verifier", "LETTER_GATE_MODE")
+        .forEach { key ->
+            providers.gradleProperty(key).orNull?.let { systemProperty(key, it) }
+        }
 }
 // <<< eval

@@ -40,8 +40,13 @@ import com.momentory.letter.application.LetterService;
 import com.momentory.letter.application.LetterView;
 import com.momentory.letter.domain.Letter;
 import com.momentory.letter.infrastructure.LetterRepository;
+import com.momentory.letter.application.LetterVerification;
+import com.momentory.letter.application.RiskJudgment;
+import com.momentory.letter.domain.LetterPolicy;
+import com.momentory.letter.infrastructure.ai.GeminiLetterVerifier;
 import com.momentory.letter.infrastructure.ai.GeminiLetterWriter;
 import com.momentory.letter.infrastructure.ai.GeminiLetterWriter.Body;
+import com.momentory.letter.infrastructure.ai.GeminiRiskJudge;
 import com.momentory.retrospect.application.ReplyDto;
 import com.momentory.retrospect.application.RetrospectService;
 import com.momentory.retrospect.application.StartCommand;
@@ -90,6 +95,12 @@ import tools.jackson.databind.json.JsonMapper;
 class B0ReplayHarness {
 
     private static final boolean REAL = "real".equals(System.getProperty("eval.mode", "mock"));
+    /** 편지 안전 게이트(P1) — OFF 면 B0 · P0 재생과 같다. */
+    private static final String GATE = System.getProperty("LETTER_GATE_MODE", "OFF");
+    /** 판정자 흉내: oracle(데이터셋 제안 라벨을 판정으로 · 판정자의 상한) · none(늘 실패 · 하한) · real */
+    private static final String JUDGE = System.getProperty("eval.judge", "oracle");
+    /** 검증기 흉내: oracle(데이터셋 편지의 위반 라벨) · pass(늘 통과) · real */
+    private static final String VERIFIER = System.getProperty("eval.verifier", "oracle");
     private static final Body NEUTRAL_BODY =
             new Body("", "오늘 하루를 차분히 돌아본 마음이 보여요.", "오늘 밤엔 하루 이야기부터 물어볼게요.");
     private static final String STOP = "그만할래요";
@@ -115,6 +126,9 @@ class B0ReplayHarness {
     @MockitoSpyBean EmotionExtractor extractor;
     @MockitoSpyBean DiaryWriter diaryWriter;
     @MockitoSpyBean GeminiLetterWriter writer;
+    @MockitoSpyBean GeminiRiskJudge judge;
+    @MockitoSpyBean GeminiLetterVerifier verifier;
+    @Autowired io.micrometer.core.instrument.MeterRegistry meters;
 
     @Autowired RetrospectService retrospectService;
     @Autowired RetrospectRepository retrospectRepository;
@@ -137,6 +151,12 @@ class B0ReplayHarness {
     private volatile boolean failLetter;
     private volatile String editedDiary;
     private final List<String> llmLevels = new CopyOnWriteArrayList<>();
+    private final List<String> judgeOut = new CopyOnWriteArrayList<>();
+    private final List<String> verdicts = new CopyOnWriteArrayList<>();
+    private final java.util.concurrent.atomic.AtomicInteger guardedBodies = new java.util.concurrent.atomic.AtomicInteger();
+    private List<JsonNode> pastDays = List.of();
+    private JsonNode baseProposed;
+    private JsonNode letterProposed;
 
     @Test
     void replay() throws IOException {
@@ -204,6 +224,15 @@ class B0ReplayHarness {
             return row;
         }
         JsonNode today = days.get(days.size() - 1);
+        pastDays = new ArrayList<>();
+        for (int i = 0; i < days.size() - 1; i++) {
+            pastDays.add(days.get(i));
+        }
+        baseProposed = source.path("proposed");
+        letterProposed = datasetLetter != null ? item.path("proposed") : null;
+        judgeOut.clear();
+        verdicts.clear();
+        guardedBodies.set(0);
         List<String> turns = userTurns(today.path("chatTurns"));
         diaryText = today.path("diary").asString("");
         // 데이터셋 칸 diaryEditedAfterRetro: 회고는 diaryBeforeEdit 를 일기로 만들고, 사용자가 그 뒤 diary 로 고쳤다.
@@ -233,11 +262,12 @@ class B0ReplayHarness {
             row.put("finalStatus", "ERROR");
         }
         row.put("ruleToday", ruleToday(allTurns).key());
-        row.put("ruleHistory", null);     // B0 는 지난 일기를 보지 않는다
-        row.put("judge", null);
-        row.put("row", null);
-        row.put("verifier", null);
-        row.put("regenerations", 0);
+        row.put("ruleHistory", pastDays.stream().map(d -> safetyPolicy.scan(d.path("diary").asString("")).level())
+                .reduce(SafetyLevel.NONE, SafetyLevel::max).key());
+        row.put("judge", "OFF".equals(GATE) ? null : List.copyOf(judgeOut));
+        row.put("verifier", "OFF".equals(GATE) ? null : List.copyOf(verdicts));
+        row.put("regenerations", Math.max(0, guardedBodies.get() - 1));
+        row.put("gate", Map.of("mode", GATE, "judge", JUDGE, "verifier", VERIFIER));
         row.put("llmSafetyLevels", List.copyOf(llmLevels));
         row.put("crisisEvent", events.stream(CrisisDetected.class)
                 .anyMatch(e -> e.level().atLeast(SafetyLevel.RISK)));
@@ -248,6 +278,8 @@ class B0ReplayHarness {
 
     private void replayRetrospect(Map<String, Object> row, List<String> turns, List<List<String>> earlier) {
         User user = userRepository.saveAndFlush(User.create());
+        seedPastDiaries(user);
+        Map<String, Double> gateRowsBefore = gateRows();
         long started = System.nanoTime();
         List<Boolean> earlierHeld = new ArrayList<>();
         for (List<String> session : earlier) {
@@ -332,6 +364,14 @@ class B0ReplayHarness {
 
         String status = view.status().name();
         boolean generated = "READY".equals(status);
+        if (!"OFF".equals(GATE)) {
+            LetterPolicy policy = letterRepository.findById(letter.getId()).orElseThrow().getSafetyPolicy();
+            row.put("policy", policy == null ? null : policy.name());
+            Map<String, Double> after = gateRows();
+            row.put("row", after.entrySet().stream()
+                    .filter(e -> e.getValue() > gateRowsBefore.getOrDefault(e.getKey(), 0.0))
+                    .map(Map.Entry::getKey).sorted().reduce((a, b) -> a + "," + b).orElse(null));
+        }
         row.put("finalStatus", status);
         Map<String, Object> delivered = new LinkedHashMap<>();
         delivered.put("generated", generated);
@@ -391,12 +431,128 @@ class B0ReplayHarness {
                 : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY)).when(writer).writeBody(any());
         doAnswer(inv -> failLetter ? Optional.empty() : datasetLetter != null ? Optional.of(datasetBody())
                 : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY)).when(writer).writeBodyOnOpen(any());
+        // 안전 게이트(P1)의 본문 — 정책 · 고칠 점을 받는 판. 다시 쓰기도 같은 흉내를 돌려준다(흉내 모드는 고치지 못한다).
+        doAnswer(inv -> {
+            guardedBodies.incrementAndGet();
+            return failLetter ? Optional.empty() : datasetLetter != null ? Optional.of(datasetBody())
+                    : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY);
+        }).when(writer).writeBody(any(), any(), anyList());
+        doAnswer(inv -> failLetter ? Optional.empty() : datasetLetter != null ? Optional.of(datasetBody())
+                : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY)).when(writer).writeBodyOnOpen(any(), any());
+        doAnswer(inv -> {
+            Optional<RiskJudgment> j = switch (JUDGE) {
+                case "real" -> (Optional<RiskJudgment>) inv.callRealMethod();
+                case "none" -> Optional.empty();
+                default -> oracleJudgment(inv.getArgument(1), inv.getArgument(2), inv.getArgument(3));
+            };
+            judgeOut.add(j.map(x -> x.todayCurrent().key() + "/" + x.todayMentioned().key() + "/"
+                    + x.historyRisk().key() + "/" + x.trajectory().name().toLowerCase() + (x.uncertain() ? "/uncertain" : ""))
+                    .orElse("none"));
+            return j;
+        }).when(judge).judge(any(), any(), anyList(), anyList());
+        doAnswer(inv -> recordVerdict("real".equals(VERIFIER) ? (LetterVerification) inv.callRealMethod()
+                : oracleVerification(inv.getArgument(2)))).when(verifier).verify(any(), any(), any());
+        doAnswer(inv -> recordVerdict("real".equals(VERIFIER) ? (LetterVerification) inv.callRealMethod()
+                : oracleVerification(inv.getArgument(2)))).when(verifier).verifyOnOpen(any(), any(), any());
         if (!REAL) {
             doReturn(List.of()).when(writer).pickNeeds(any());
             doReturn(List.of()).when(writer).pickNeedsOnOpen(any());
             doReturn(Optional.empty()).when(writer).pickActionIds(any(), anyList());
             doReturn(Optional.empty()).when(writer).pickActionIdsOnOpen(any(), anyList());
         }
+    }
+
+    // ── 안전 게이트(P1) 재생 도우미 ───────────────────────────────────────
+
+    /** 여러 날 사례의 앞 날 일기를 그날 날짜로 넣는다 — 판정자가 지난 기록을 본다(B0 는 읽지 않는다). */
+    private void seedPastDiaries(User user) {
+        int n = pastDays.size();
+        for (int i = 0; i < n; i++) {
+            String text = pastDays.get(i).path("diary").asString("");
+            if (text.isBlank()) {
+                continue;
+            }
+            var retro = retrospectRepository.save(com.momentory.retrospect.infrastructure.persistence.Retrospect.start(
+                    user.getId(), com.momentory.retrospect.domain.RetrospectStatus.COMPLETED, null, "{}"));
+            Diary d = diaryRepository.saveAndFlush(Diary.create(user.getId(), retro.getId(), text, null, null));
+            java.sql.Timestamp at = java.sql.Timestamp.from(com.momentory.common.time.DayBoundary.startOfDay(
+                    com.momentory.common.time.DayBoundary.today().minusDays(n - i)).plusSeconds(3600));
+            jdbc.update("update diaries set created_at = ? where id = ?", at, d.getId());
+            jdbc.update("update retrospects set created_at = ? where id = ?", at, retro.getId());
+        }
+    }
+
+    /**
+     * 정답 판정자 — 데이터셋 제안 라벨의 세 칸을 판정으로 돌려준다(판정자가 완벽할 때의 상한). 근거 문구는 원문 그대로인
+     * 첫 사용자 말 · 일기 · 지난 일기에서 고른다. 지난 일기가 없는데 historyRisk 가 있으면 근거를 댈 수 없어 쓰지 못한다.
+     */
+    private Optional<RiskJudgment> oracleJudgment(String diary, List<String> words,
+            List<GeminiRiskJudge.PastDiary> past) {
+        JsonNode p = baseProposed;
+        if (p == null || p.isMissingNode()) {
+            return Optional.empty();
+        }
+        SafetyLevel current = SafetyLevel.fromKey(p.path("todayCurrent").asString("none"));
+        SafetyLevel mentioned = SafetyLevel.fromKey(p.path("todayMentioned").asString("none"));
+        SafetyLevel history = SafetyLevel.fromKey(p.path("historyRisk").asString("none"));
+        RiskJudgment.Trajectory trajectory;
+        try {
+            trajectory = RiskJudgment.Trajectory.valueOf(p.path("trajectory").asString("UNKNOWN").toUpperCase());
+        } catch (IllegalArgumentException e) {
+            trajectory = RiskJudgment.Trajectory.UNKNOWN;
+        }
+        String today = words.stream().filter(w -> w != null && !w.isBlank()).findFirst().orElse(diary);
+        List<RiskJudgment.Evidence> evidence = new ArrayList<>();
+        evidence.add(new RiskJudgment.Evidence("todayCurrent", RiskJudgment.Source.TODAY, today));
+        evidence.add(new RiskJudgment.Evidence("todayMentioned", RiskJudgment.Source.TODAY, today));
+        if (!past.isEmpty()) {
+            evidence.add(new RiskJudgment.Evidence("historyRisk", RiskJudgment.Source.PAST, past.get(0).text()));
+        }
+        boolean uncertain = "uncertain".equals(p.path("class").asString(""));
+        return Optional.of(new RiskJudgment(current, mentioned, history, trajectory, uncertain, evidence));
+    }
+
+    /** 정답 검증기 — 데이터셋 편지(L)의 위반 라벨 가운데 지금 편지에 글자 그대로 남아 있는 것만 위반으로 돌려준다. */
+    private LetterVerification oracleVerification(GeminiLetterVerifier.Draft draft) {
+        if ("pass".equals(VERIFIER) || letterProposed == null) {
+            return LetterVerification.of(List.of());
+        }
+        List<LetterVerification.Violation> found = new ArrayList<>();
+        for (JsonNode v : letterProposed.path("violations")) {
+            String location = v.path("location").asString("body");
+            LetterVerification.Target target = switch (location) {
+                case "quote" -> LetterVerification.Target.QUOTE;
+                case "firstQuestion" -> LetterVerification.Target.TONIGHT_QUESTION;
+                case "actionTitle" -> LetterVerification.Target.ACTION_TITLE;
+                default -> LetterVerification.Target.INSIGHT;
+            };
+            String text = switch (target) {
+                case QUOTE -> draft.quote();
+                case TONIGHT_QUESTION -> draft.tonightQuestion();
+                case ACTION_TITLE -> String.join("\n", draft.actionTitles());
+                default -> draft.insight();
+            };
+            String evidence = v.path("evidence").asString("");
+            if (text != null && !evidence.isBlank()
+                    && com.momentory.letter.domain.LetterRules.isVerbatim(evidence, List.of(text))) {
+                found.add(new LetterVerification.Violation(v.path("rule").asString("R3"),
+                        "major".equals(v.path("severity").asString("")), target, evidence, "그 부분을 빼고 다시 쓴다"));
+            }
+        }
+        return LetterVerification.of(found);
+    }
+
+    private LetterVerification recordVerdict(LetterVerification v) {
+        verdicts.add(v.outcome().name() + "(" + v.rules() + ")");
+        return v;
+    }
+
+    /** 결정표 줄별 누적 건수 — 사례 전후 차이로 이 사례가 지난 줄을 찾는다. */
+    private Map<String, Double> gateRows() {
+        Map<String, Double> rows = new LinkedHashMap<>();
+        meters.find("letter.gate").counters()
+                .forEach(c -> rows.merge(c.getId().getTag("row"), c.count(), Double::sum));
+        return rows;
     }
 
     private Body datasetBody() {

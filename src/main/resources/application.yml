@@ -91,6 +91,18 @@ gemini:
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
 
 momentory:
+  safety:
+    # 편지 안전 게이트(AI 안전성 설계서 5 · 6절). OFF 면 지금 경로 그대로다. 실제 사용자 일기를 판정자에
+    # 한 번 더 보내게 되므로, SHADOW · ON 으로 켜기 전에 처리방침 범위를 먼저 확인한다(설계서 5.9 · 12절).
+    letter-gate:
+      mode: ${LETTER_GATE_MODE:OFF}               # OFF | SHADOW(기록만) | ON(적용)
+      experiment: false                           # true 일 때만 past-only-policy NORMAL 허용(평가 하네스 전용)
+      past-only-policy: ${LETTER_GATE_PAST_ONLY_POLICY:GENTLE}
+      judge-model: ${LETTER_GATE_JUDGE_MODEL:gemini-flash-latest}      # 생성기(lite)와 다른 모델
+      verifier-model: ${LETTER_GATE_VERIFIER_MODEL:gemini-flash-latest}
+      past-diary-days: 7
+      past-diary-chars: 400
+      open-verify-timeout: 4s
   gate:
     reask-cap: ${RETRO_REASK_CAP:1}
   prompt:
