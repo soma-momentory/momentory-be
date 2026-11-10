@@ -21,6 +21,7 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
+import com.momentory.retrospect.infrastructure.persistence.SafetyEventRepository;
 import com.momentory.schedule.infrastructure.ScheduleRepository;
 import com.momentory.user.infrastructure.UserProfileRepository;
 import tools.jackson.databind.json.JsonMapper;
@@ -43,7 +44,7 @@ class LetterMaterialsReaderTest {
         var reader = new LetterMaterialsReader(mock(LetterRepository.class), mock(LetterActionRepository.class),
                 diaries, retrospects, mock(RetrospectStateCodec.class), cards,
                 mock(ScheduleRepository.class), mock(UserProfileRepository.class), mock(SafetyPolicy.class),
-                mock(LetterWishCards.class), eventCodec);
+                mock(LetterWishCards.class), eventCodec, mock(SafetyEventRepository.class));
 
         var materials = reader.read(letter).orElseThrow();
         assertThat(materials.events()).containsExactly("친구와 산책: 친구와 걸으며 편안해졌다");

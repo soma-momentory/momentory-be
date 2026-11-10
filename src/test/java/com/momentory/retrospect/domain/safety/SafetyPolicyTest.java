@@ -72,6 +72,17 @@ class SafetyPolicyTest {
     }
 
     @Test
+    @DisplayName("줄바꿈 · 탭 · 전각 공백 · NBSP 를 끼워 넣어도 위기 표현을 잡는다")
+    void whitespaceOtherThanSpaceDoesNotHideCrisis() {
+        assertThat(policy.scan("죽고\n싶어").level()).isEqualTo(SafetyLevel.IMMINENT);
+        assertThat(policy.scan("죽고\r\n싶어").level()).isEqualTo(SafetyLevel.IMMINENT);
+        assertThat(policy.scan("살기\t싫어").level()).isEqualTo(SafetyLevel.RISK);
+        assertThat(policy.scan("사라지고\u3000싶다").level()).isEqualTo(SafetyLevel.IMMINENT);
+        assertThat(policy.scan("다\u00A0끝내고 싶다").level()).isEqualTo(SafetyLevel.RISK);
+        assertThat(policy.scan("오늘은\n그냥 피곤했다").isClean()).isTrue();
+    }
+
+    @Test
     @DisplayName("[알려진 오탐] 부분일치라 '손목'이 든 무해한 문장도 imminent 로 잡힌다")
     void knownFalsePositive() {
         // 원본 docstring 이 밝힌 대로 키워드 목록은 임상 검수 전 시드다.

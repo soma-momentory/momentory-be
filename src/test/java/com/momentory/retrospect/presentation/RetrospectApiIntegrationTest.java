@@ -558,6 +558,47 @@ class RetrospectApiIntegrationTest {
 
     // ── 도우미 ───────────────────────────────────────────────────────────
 
+    @Test
+    @DisplayName("안전 기록 — 위기 턴 · 같은 말 재전송(이어서 얘기하기) · 재상승을 거쳐도 회고 하나에 한 줄만 남는다")
+    void crisisTurnRecordsSafetyEventOnce() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(user);
+        String crisis = "{\"content\":\"요즘은 그냥 죽고 싶어요\"}";
+
+        mockMvc.perform(message(user, sessionId, crisis))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("safety_hold"));
+        assertThat(safetyEvents(sessionId)).containsExactly("IMMINENT");
+
+        // 위기 안내 중에 같은 턴이 다시 오면 「이어서 얘기하기」로 처리되어 누적 등급이 지워진다.
+        mockMvc.perform(message(user, sessionId, crisis)).andExpect(status().isOk());
+        // 그 뒤 다시 위기 표현 — 같은 회고 · 같은 등급이라 줄이 늘지 않는다.
+        mockMvc.perform(message(user, sessionId, crisis))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("safety_hold"));
+
+        assertThat(safetyEvents(sessionId)).containsExactly("IMMINENT");
+        assertThat(jdbcTemplate.queryForObject("select user_id from safety_events where retrospect_id = ?",
+                Long.class, sessionId)).isEqualTo(user.getId());
+    }
+
+    @Test
+    @DisplayName("안전 기록 — 위기 안내가 나가지 않는 caution(욕설)은 남기지 않는다")
+    void cautionDoesNotRecordSafetyEvent() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(user);
+
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"아 진짜 시발 오늘 짜증났어요\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(safetyEvents(sessionId)).isEmpty();
+    }
+
+    private List<String> safetyEvents(long retrospectId) {
+        return jdbcTemplate.queryForList("select level from safety_events where retrospect_id = ? order by id",
+                String.class, retrospectId);
+    }
+
     private long startSession(User user) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/retrospect")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user))

@@ -3,6 +3,7 @@ package com.momentory.retrospect.domain.safety;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 규칙 층 안전 탐지 — 도메인 서비스 (원본 safety.py).
@@ -55,12 +56,15 @@ public class SafetyPolicy {
         }
     }
 
+    /** 스페이스뿐 아니라 줄바꿈 · 탭 · 전각 공백 · NBSP 까지 — 「죽고\n싶」처럼 끼워 넣어도 잡힌다. */
+    private static final Pattern WHITESPACE = Pattern.compile("(?U)\\s+");
+
     /**
      * 원본 {@code safety.scan()}. 공백을 모두 제거한 뒤 부분일치로 본다.
      * imminent 와 risk 는 배타(elif), profanity 는 별도 축이라 caution 으로 병합된다.
      */
     public ScanResult scan(String text) {
-        String t = (text == null ? "" : text).replace(" ", "");
+        String t = withoutWhitespace(text == null ? "" : text);
         List<String> flags = new ArrayList<>();
         SafetyLevel level = SafetyLevel.NONE;
 
@@ -81,11 +85,15 @@ public class SafetyPolicy {
     /** 키워드도 공백을 제거해서 비교한다(사용자가 "죽 고 싶 다"처럼 띄어써도 잡힌다). */
     private static boolean containsAny(String spaceless, List<String> keywords) {
         for (String k : keywords) {
-            if (spaceless.contains(k.replace(" ", ""))) {
+            if (spaceless.contains(withoutWhitespace(k))) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static String withoutWhitespace(String text) {
+        return WHITESPACE.matcher(text).replaceAll("");
     }
 
     /**
