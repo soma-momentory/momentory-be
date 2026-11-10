@@ -25,9 +25,11 @@ import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.TopicType;
 import com.momentory.retrospect.domain.WishSentiment;
+import com.momentory.retrospect.domain.safety.SafetyLevel;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
+import com.momentory.retrospect.infrastructure.persistence.SafetyEventRepository;
 import com.momentory.schedule.infrastructure.ScheduleRepository;
 import com.momentory.user.application.AuthenticatedUserNotFoundException;
 import com.momentory.user.domain.RestMethod;
@@ -56,13 +58,15 @@ public class RetrospectService {
     private final ScheduleRepository scheduleRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final TodayActionFinder todayActionFinder;
+    private final SafetyEventRepository safetyEvents;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
             PriorActionCardRecommender priorActionCardRecommender,
             RetrospectStateCodec codec, UserRepository userRepository,
             UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
-            ApplicationEventPublisher eventPublisher, TodayActionFinder todayActionFinder) {
+            ApplicationEventPublisher eventPublisher, TodayActionFinder todayActionFinder,
+            SafetyEventRepository safetyEvents) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
@@ -74,6 +78,7 @@ public class RetrospectService {
         this.scheduleRepository = scheduleRepository;
         this.eventPublisher = eventPublisher;
         this.todayActionFinder = todayActionFinder;
+        this.safetyEvents = safetyEvents;
     }
 
     /**
@@ -139,6 +144,7 @@ public class RetrospectService {
         // 행동 추천 스텝에서만(지연) 부른다 — actioncard 컨텍스트가 비슷한 상황 이전 카드를 찾는다.
         state.priorCardFinder(situation -> priorActionCardRecommender.findSimilar(userId, situation));
         ReplyDto reply = engine.handle(state, command);
+        recordCrisis(entity, state);
         sync(entity, state, reply);
 
         // 완료 턴이면 방금 저장된 일기·행동 카드의 id 를 응답에 실어 보낸다 — sync 가 발행한 이벤트가
@@ -162,6 +168,18 @@ public class RetrospectService {
                     actionCardQueryService.findIdByRetrospect(retrospectId).orElse(null));
         }
         return enriched;
+    }
+
+    /**
+     * 위기 안내가 나간 상태(RISK 이상)면 같은 트랜잭션에서 안전 기록을 남긴다. 「이어서 얘기하기」가 누적 등급을
+     * 지우고, 위기 안내 뒤 나가 버리면 이 회고로는 일기도 편지도 생기지 않으므로, 같은 날 새로 시작한 회고의
+     * 편지가 이 기록을 보고 조용한 편지가 된다. 같은 회고 · 같은 등급은 저장소가 한 줄로 막는다.
+     */
+    private void recordCrisis(Retrospect entity, RetrospectState state) {
+        SafetyLevel level = state.safety().level();
+        if (level.stopsRetrospect()) {
+            safetyEvents.record(entity.getUserId(), entity.getId(), level.name());
+        }
     }
 
     private void sync(Retrospect entity, RetrospectState state, ReplyDto reply) {

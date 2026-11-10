@@ -828,6 +828,107 @@ class LetterIntegrationTest {
                 .andExpect(jsonPath("$.message").value("편지에 그 작은 일이 없습니다."));
     }
 
+    // ── 안전 기록(위기 안내) 뒤의 편지 ──────────────────────────────────────
+
+    @Test
+    void sameDayRestartAfterCrisisGetsQuietLetter() {
+        User user = userRepository.saveAndFlush(User.create());
+        // 위기 안내에서 나가 버린 회고 — 일기 · 편지가 없고, 안전 기록만 남는다.
+        recordRiskEvent(user, java.time.Instant.now());
+        // 같은 날 새로 시작해 마친 회고 — 대화에는 위기 안내가 없다.
+        Diary diary = diaryOf(user, false);
+        Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), DayBoundary.today()));
+
+        generator.generateForDiary(diary.getId());
+
+        verifyNoInteractions(writer);
+        Letter saved = letterRepository.findById(letter.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(LetterStatus.QUIET);
+        assertThat(saved.getQuote()).isNull();
+        assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId())).isEmpty();
+    }
+
+    @Test
+    void riskEventBeforeDiaryDayDoesNotQuietLetter() {
+        when(writer.writeBody(any())).thenReturn(Optional.of(new Body(USER_WORD, "관점", "질문")));
+        User user = userRepository.saveAndFlush(User.create());
+        recordRiskEvent(user, DayBoundary.startOfDay(yesterday()).minusSeconds(1));
+        Diary diary = diaryOf(user, false);
+        Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
+
+        generator.generateForDiary(diary.getId());
+
+        assertThat(letterRepository.findById(letter.getId()).orElseThrow().getStatus()).isEqualTo(LetterStatus.READY);
+    }
+
+    @Test
+    void unopenedReadyLetterBecomesQuietWhenRiskEventAfterDiary() throws Exception {
+        when(writer.writeBody(any())).thenReturn(Optional.of(new Body(USER_WORD, "관점", "오늘 밤엔 발표부터 물어볼게요.")));
+        User user = userRepository.saveAndFlush(User.create());
+        Diary diary = diaryOf(user, false);
+        Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
+        generator.generateForDiary(diary.getId());
+        assertThat(letterRepository.findById(letter.getId()).orElseThrow().getStatus()).isEqualTo(LetterStatus.READY);
+        assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId())).hasSize(3);
+        // 편지를 다 만든 뒤 · 열기 전에 다른 회고에서 위기 안내가 나갔다.
+        recordRiskEvent(user, java.time.Instant.now());
+
+        mockMvc.perform(authed(get("/api/v1/letters/" + yesterday()), user))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("QUIET"))
+                .andExpect(jsonPath("$.quote").doesNotExist())
+                .andExpect(jsonPath("$.tonightQuestion").doesNotExist())
+                .andExpect(jsonPath("$.actions.length()").value(0))
+                .andExpect(jsonPath("$.helplines[0]").value(safetyPolicy.resources().get(0)));
+
+        Letter saved = letterRepository.findById(letter.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(LetterStatus.QUIET);
+        assertThat(saved.getInsight()).isEqualTo(LetterRules.quietBody());
+        assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId())).isEmpty();
+    }
+
+    @Test
+    void openedLetterIsNotChangedByLaterRiskEvent() throws Exception {
+        when(writer.writeBody(any())).thenReturn(Optional.of(new Body(USER_WORD, "관점", "오늘 밤엔 발표부터 물어볼게요.")));
+        User user = userRepository.saveAndFlush(User.create());
+        Diary diary = diaryOf(user, false);
+        Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
+        generator.generateForDiary(diary.getId());
+        mockMvc.perform(authed(post("/api/v1/letters/" + letter.getId() + "/open"), user))
+                .andExpect(status().is2xxSuccessful());
+        recordRiskEvent(user, java.time.Instant.now());
+
+        mockMvc.perform(authed(get("/api/v1/letters/" + yesterday()), user))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.quote").value(USER_WORD))
+                .andExpect(jsonPath("$.actions.length()").value(3));
+    }
+
+    @Test
+    void fallbackLetterDropsQuoteWithRiskWords() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        Retrospect retrospect = retrospectRepository.save(Retrospect.start(user.getId(),
+                RetrospectStatus.COMPLETED, null, codec.serialize(new RetrospectState(UUID.randomUUID().toString()))));
+        Diary diary = diaryRepository.save(Diary.create(user.getId(), retrospect.getId(),
+                "그냥 다 사라지고 싶었다. 그래도 저녁은 챙겨 먹었다.", null, null));
+        letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
+
+        mockMvc.perform(authed(get("/api/v1/letters/" + yesterday()), user))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FALLBACK"))
+                .andExpect(jsonPath("$.quote").doesNotExist())
+                .andExpect(jsonPath("$.insight").value(LetterRules.defaultBody(yesterday())));
+    }
+
+    /** 다른 회고(위기 안내에서 멈춘 세션)의 안전 기록 한 줄. */
+    private void recordRiskEvent(User user, java.time.Instant occurredAt) {
+        Retrospect held = retrospectRepository.save(Retrospect.start(user.getId(), RetrospectStatus.IN_PROGRESS,
+                null, codec.serialize(new RetrospectState(UUID.randomUUID().toString()))));
+        jdbc.update("insert into safety_events (user_id, retrospect_id, level, occurred_at) values (?, ?, 'RISK', ?)",
+                user.getId(), held.getId(), java.sql.Timestamp.from(occurredAt));
+    }
+
     // ── 도우미 ───────────────────────────────────────────────────────────
 
     /** 회고 한 벌 + 일기. {@code crisis} 면 대화에 위기 안내가 남아 있다(「이어서 얘기하기」로 상태는 지워짐). */
