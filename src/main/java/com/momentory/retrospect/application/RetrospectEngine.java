@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -1012,6 +1013,39 @@ public class RetrospectEngine {
     private static String clamp(String s) {
         String t = s.strip();
         return t.length() > CUSTOM_MAX_LENGTH ? t.substring(0, CUSTOM_MAX_LENGTH) : t;
+    }
+
+    // ── 이어서 하기 ───────────────────────────────────────────────────────
+
+    /** 바바의 말 끝에 {@link #optionLines} 가 붙인 선택지 줄들. */
+    private static final Pattern TRAILING_OPTION_LINES = Pattern.compile("(\\n  \\d+\\. [^\\n]*)+$");
+
+    /** 저장된 대화를 화면에 다시 쌓을 순서대로 준다. 선택지는 버튼으로 다시 그리므로 말에서 뺀다. */
+    public List<CurrentRetrospectDto.MessageDto> transcript(RetrospectState state) {
+        return state.messages().stream()
+                .map(m -> new CurrentRetrospectDto.MessageDto(m.role(),
+                        m.isUser() ? m.content() : TRAILING_OPTION_LINES.matcher(m.content()).replaceFirst("")))
+                .toList();
+    }
+
+    /**
+     * 마지막 바바의 말과 남아 있는 선택지로 그때 받은 응답을 다시 만든다. AI를 부르지 않고 상태도 바꾸지 않는다.
+     * 선택지는 마지막 말에 그 선택지 줄이 그대로 붙어 있을 때만 살린다(지난 질문의 선택지가 남는 일을 막는다).
+     */
+    public ReplyDto current(RetrospectState state) {
+        String last = state.messages().stream().filter(m -> !m.isUser()).map(Message::content)
+                .reduce((a, b) -> b).orElse("");
+        SafetyLevel safety = state.safety().level();
+        if (state.phase() == Phase.SAFETY_HOLD) {
+            return ReplyDto.safetyHold(last, safety);
+        }
+        List<Choice> options = state.lastOptions();
+        String optionSuffix = "\n" + optionLines(options);
+        if (!options.isEmpty() && last.endsWith(optionSuffix)) {
+            return ReplyDto.choices(last.substring(0, last.length() - optionSuffix.length()), state.phase(),
+                    toOptionDtos(options), safety);
+        }
+        return ReplyDto.question(last, state.phase(), safety);
     }
 
     private static List<ReplyDto.OptionDto> toOptionDtos(List<Choice> options) {

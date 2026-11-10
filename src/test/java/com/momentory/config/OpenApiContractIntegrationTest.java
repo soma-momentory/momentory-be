@@ -408,6 +408,10 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/retrospect", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "currentEmotion은 필수입니다.");
         assertErrorExample(apiDocs, "/api/v1/retrospect", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
 
+        assertResponseSchema(apiDocs, "/api/v1/retrospect/current", "get", "200", "CurrentRetrospectDto");
+        assertNoResponseContent(apiDocs, "/api/v1/retrospect/current", "get", "204");
+        assertErrorExample(apiDocs, "/api/v1/retrospect/current", "get", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+
         assertResponseSchema(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "200", "ReplyDto");
         assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
         assertErrorExample(apiDocs, "/api/v1/retrospect/{id}/messages", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
