@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -457,6 +458,99 @@ class RetrospectApiIntegrationTest {
         mockMvc.perform(post("/api/v1/retrospect")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    @DisplayName("이어서 하기 — 오늘 진행 중인 회고의 대화와 마지막 응답을 주고, 그 세션으로 턴을 이어 간다")
+    void currentReturnsInProgressSessionWithTranscriptAndLastReply() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(user);
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"팀원이 말을 끊어서 속상했어요.\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionId").value(sessionId))
+                .andExpect(jsonPath("$.messages.length()").value(3))
+                .andExpect(jsonPath("$.messages[0].role").value("assistant"))
+                .andExpect(jsonPath("$.messages[0].text", Matchers.containsString("면접 스터디")))
+                .andExpect(jsonPath("$.messages[1].role").value("user"))
+                .andExpect(jsonPath("$.messages[1].text").value("팀원이 말을 끊어서 속상했어요."))
+                .andExpect(jsonPath("$.reply.phase").value("diary_chat"))
+                .andExpect(jsonPath("$.reply.done").value(false))
+                .andExpect(jsonPath("$.reply.options").doesNotExist());
+
+        // 조회는 상태를 바꾸지 않는다 — 같은 세션으로 다음 턴을 그대로 보낼 수 있다.
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"그래도 끝까지 말했어요.\"}"))
+                .andExpect(status().isOk());
+        assertThat(retrospectRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("이어서 하기 — 선택지 질문에서 멈췄으면 같은 선택지를 다시 주고 말에서는 선택지 줄을 뺀다")
+    void currentRestoresPendingOptionsWithoutOptionLinesInText() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(user);
+        String phase = driveDiaryToBranch(user, sessionId);
+        MvcResult last = mockMvc.perform(
+                        message(user, sessionId, "{\"content\":\"팀원이 말을 끊어서 속상했어요.\"}"))
+                .andReturn();
+        String lastBody = last.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        List<String> labels = JsonPath.read(lastBody, "$.options[*].label");
+        assertThat(labels).as(phase + " " + lastBody).isNotEmpty();
+
+        MvcResult current = mockMvc.perform(get("/api/v1/retrospect/current")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reply.text").value(JsonPath.<String>read(lastBody, "$.text")))
+                .andExpect(jsonPath("$.reply.phase").value(JsonPath.<String>read(lastBody, "$.phase")))
+                .andExpect(jsonPath("$.reply.options[*].label").value(Matchers.contains(labels.toArray())))
+                .andReturn();
+        List<String> texts = JsonPath.read(current.getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.messages[*].text");
+        assertThat(texts).noneMatch(t -> t.contains("\n  1. "));
+
+        mockMvc.perform(message(user, sessionId, "{\"optionIds\":[\"1\"]}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("이어서 하기 — 진행 중인 회고가 없거나 어제 것 · 끝난 것 · 남의 것뿐이면 204")
+    void currentIsNoContentWithoutTodaysInProgressSession() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNoContent())
+                .andExpect(result -> assertThat(result.getResponse().getContentLength()).isZero());
+
+        long yesterday = startSession(user);
+        jdbcTemplate.update("UPDATE retrospects SET created_at = ? WHERE id = ?",
+                java.time.OffsetDateTime.ofInstant(Instant.now().minus(java.time.Duration.ofDays(1)),
+                        java.time.ZoneOffset.UTC), yesterday);
+        retrospectRepository.saveAndFlush(Retrospect.start(user.getId(), RetrospectStatus.COMPLETED, null, "{}"));
+        startSession(other);
+
+        mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @DisplayName("이어서 하기 — 오늘 일기를 다른 경로로 이미 저장했으면 진행 중인 회고가 있어도 204")
+    void currentIsNoContentWhenTodayDiaryAlreadyExists() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long sessionId = startSession(user);
+        diaryRepository.saveAndFlush(Diary.create(user.getId(), sessionId, "오늘 일기", Emotion.DEPRESSED, null));
+
+        mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @DisplayName("이어서 하기 — 인증 없으면 401")
+    void currentRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/v1/retrospect/current"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     }

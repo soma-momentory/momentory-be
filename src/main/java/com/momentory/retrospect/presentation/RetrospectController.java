@@ -2,6 +2,8 @@ package com.momentory.retrospect.presentation;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.momentory.auth.security.Login;
 import com.momentory.auth.security.LoginPrincipal;
 import com.momentory.common.presentation.ApiErrorResponse;
+import com.momentory.retrospect.application.CurrentRetrospectDto;
 import com.momentory.retrospect.application.ReplyDto;
 import com.momentory.retrospect.application.RetrospectService;
 
@@ -80,6 +83,22 @@ public class RetrospectController {
             @Valid @RequestBody StartRetrospectRequest request) {
         return StartRetrospectResponse.from(
                 retrospectService.start(principal.userId(), request.toDomain()));
+    }
+
+    @Operation(summary = "오늘 진행 중인 회고", description = "앱을 다시 켰을 때 이어서 할 회고를 찾는다. 오늘(04:00 경계) 시작해 아직 끝나지 않은 가장 최근 세션의 대화와 마지막 응답을 준다. 없거나 오늘 일기가 이미 있으면 204.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "이어서 할 회고 있음", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = CurrentRetrospectDto.class))),
+            @ApiResponse(responseCode = "204", description = "이어서 할 회고 없음", content = @Content),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(
+                    name = "AUTHENTICATION_REQUIRED",
+                    value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}")))
+    })
+    @GetMapping(value = "/current", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<CurrentRetrospectDto> current(@Login LoginPrincipal principal) {
+        return retrospectService.current(principal.userId())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @Operation(summary = "회고 한 턴 진행", description = "자유 텍스트·선택지·슬라이더 값 중 그 턴에 맞는 것을 보낸다.")
