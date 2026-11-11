@@ -194,7 +194,8 @@ public class LetterGenerator {
             logGate("on", m, a, "FAILED", "-", 0);
             return Optional.empty();
         }
-        Closed closed = close(m, policy, draft.get(), true);
+        Closed closed = gate.ablation().verify() ? close(m, policy, draft.get(), true)
+                : new Closed(draft.get(), "SKIPPED", 0); // 비교 실험 P − 검증기
         logGate("on", m, a, closed.draft().status().name(), closed.verdict(), closed.regenerations());
         return Optional.of(closed.draft());
     }
@@ -232,7 +233,7 @@ public class LetterGenerator {
                     p.source() != NeedsSource.DEFAULT, p.ids());
         }
         Draft draft = withActions(body.get(), m, p.needs(), p.source(), p.source() != NeedsSource.DEFAULT, p.ids());
-        return close(m, policy, draft, false).draft();
+        return gate.ablation().verify() ? close(m, policy, draft, false).draft() : draft;
     }
 
     /** 게이트 ON · 다른 쪽이 만드는 중이라 이번에만 보여 주는 편지. */

@@ -58,11 +58,17 @@ tasks.register<Test>("evalB0") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform { includeTags("eval") }
+    // -Peval.harness=verifier 면 실험 A(검증기 단독), 아니면 실험 B(시스템 재생)
+    filter {
+        includeTestsMatching(
+            if (providers.gradleProperty("eval.harness").orNull == "verifier") "*VerifierEvalHarness"
+            else "*B0ReplayHarness")
+    }
     outputs.upToDateWhen { false }
     testLogging { showStandardStreams = true }
-    listOf("eval.data", "eval.out", "eval.system", "eval.mode", "eval.judge", "eval.verifier", "LETTER_GATE_MODE")
-        .forEach { key ->
-            providers.gradleProperty(key).orNull?.let { systemProperty(key, it) }
-        }
+    // eval.* · 게이트 모드 · 비교 실험 스위치(momentory.safety.letter-gate.*)를 하네스 JVM 으로 넘긴다
+    project.properties.filterKeys { it.startsWith("eval.") || it.startsWith("momentory.") || it == "LETTER_GATE_MODE" }
+        .forEach { (key, value) -> systemProperty(key, value.toString()) }
+    environment("GEMINI_API_KEY", System.getenv("GEMINI_API_KEY") ?: "")
 }
 // <<< eval

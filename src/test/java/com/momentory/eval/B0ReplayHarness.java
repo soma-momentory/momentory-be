@@ -101,6 +101,17 @@ class B0ReplayHarness {
     private static final String JUDGE = System.getProperty("eval.judge", "oracle");
     /** 검증기 흉내: oracle(데이터셋 편지의 위반 라벨) · pass(늘 통과) · real */
     private static final String VERIFIER = System.getProperty("eval.verifier", "oracle");
+    /** 같은 사례를 몇 번 돌릴까(설계서 8.2절 k=3). */
+    private static final int RUNS = Integer.parseInt(System.getProperty("eval.runs", "1"));
+    /** 앞에서부터 몇 건만 돌릴까(시험 실행용). 0 이면 전부. */
+    private static final int LIMIT = Integer.parseInt(System.getProperty("eval.limit", "0"));
+    /** 이 split 만 돌린다(dev | final). 비어 있으면 전부. */
+    private static final String SPLIT = System.getProperty("eval.split", "");
+    /**
+     * 실제 호출 모드에서 시스템끼리 같은 초안 · 같은 회고 응답을 쓰게 하는 캐시 파일(설계서 8.2절 「같은 초안 재사용」).
+     * 키는 (사례, 반복 번호, 정책 또는 턴). 다시 생성 초안은 캐시하지 않는다.
+     */
+    private static final String CACHE = System.getProperty("eval.cache", "");
     private static final Body NEUTRAL_BODY =
             new Body("", "오늘 하루를 차분히 돌아본 마음이 보여요.", "오늘 밤엔 하루 이야기부터 물어볼게요.");
     private static final String STOP = "그만할래요";
@@ -152,6 +163,11 @@ class B0ReplayHarness {
     private volatile String editedDiary;
     private final List<String> llmLevels = new CopyOnWriteArrayList<>();
     private final List<String> judgeOut = new CopyOnWriteArrayList<>();
+    private final Map<String, String> cache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicInteger cacheHits = new java.util.concurrent.atomic.AtomicInteger();
+    private String itemKey = "";
+    private int run = 1;
+    private int turnIndex = 0;
     private final List<String> verdicts = new CopyOnWriteArrayList<>();
     private final java.util.concurrent.atomic.AtomicInteger guardedBodies = new java.util.concurrent.atomic.AtomicInteger();
     private List<JsonNode> pastDays = List.of();
@@ -178,13 +194,29 @@ class B0ReplayHarness {
         }
         Files.createDirectories(out.toAbsolutePath().getParent());
         List<String> lines = new ArrayList<>();
-        for (JsonNode item : items.values()) {
-            Map<String, Object> row = replayOne(item, items);
-            row.put("system", system);
-            row.put("codeCommit", commit);
-            row.put("harnessCommit", harnessCommit);
-            row.put("codeDirty", dirty);
-            lines.add(json.writeValueAsString(row));
+        if (!CACHE.isBlank() && Files.exists(Path.of(CACHE))) {
+            json.readTree(Files.readString(Path.of(CACHE))).properties()
+                    .forEach(e -> cache.put(e.getKey(), e.getValue().asString()));
+        }
+        List<JsonNode> chosen = items.values().stream()
+                .filter(i -> SPLIT.isBlank() || SPLIT.equals(text(i, "split"))).toList();
+        if (LIMIT > 0) {
+            chosen = chosen.subList(0, Math.min(LIMIT, chosen.size()));
+        }
+        for (run = 1; run <= RUNS; run++) {
+            for (JsonNode item : chosen) {
+                itemKey = item.get("itemId").asString();
+                Map<String, Object> row = replayOne(item, items);
+                row.put("run", run);
+                row.put("system", system);
+                row.put("codeCommit", commit);
+                row.put("harnessCommit", harnessCommit);
+                row.put("codeDirty", dirty);
+                lines.add(json.writeValueAsString(row));
+                if (!CACHE.isBlank()) {
+                    Files.writeString(Path.of(CACHE), json.writeValueAsString(cache), StandardCharsets.UTF_8);
+                }
+            }
         }
         Files.write(out, lines, StandardCharsets.UTF_8);
         System.out.println("[eval] " + lines.size() + " rows -> " + out);
@@ -197,7 +229,6 @@ class B0ReplayHarness {
         row.put("bundle", text(item, "bundle"));
         row.put("kind", text(item, "kind"));
         row.put("split", text(item, "split"));
-        row.put("run", 1);
         JsonNode label = item.path("label");
         boolean reviewed = label.isObject() && !"unreviewed".equals(label.path("status").asString(""));
         row.put("gold", reviewed ? label : item.path("proposed"));
@@ -246,6 +277,8 @@ class B0ReplayHarness {
         failLetter = item.path("simulateLetterFailure").asBoolean(false);
         llmLevels.clear();
         events.clear();
+        cacheHits.set(0);
+        turnIndex = 0;
 
         // 선택 칸 earlierSessions: 같은 날 먼저 했다가 위기 안내에서 멈춘 채 나간 회고들의 사용자 말(P0-2 사례).
         List<List<String>> earlier = new ArrayList<>();
@@ -273,6 +306,8 @@ class B0ReplayHarness {
                 .anyMatch(e -> e.level().atLeast(SafetyLevel.RISK)));
         row.put("model", Map.of("chat", REAL ? "gemini" : "mock", "generator", REAL ? "gemini" : "mock"));
         row.put("mocked", mocked());
+        row.put("llm", llmUsage());
+        row.put("cacheHits", cacheHits.get());
         return row;
     }
 
@@ -421,20 +456,27 @@ class B0ReplayHarness {
         doReturn(EmotionExtraction.empty()).when(extractor).extract(any());
         doAnswer(inv -> Optional.of(new DiaryOutput(diaryText, null))).when(diaryWriter).write(any());
         doAnswer(inv -> {
-            Optional<DiaryTurn> turn = REAL ? (Optional<DiaryTurn>) inv.callRealMethod()
+            Optional<DiaryTurn> turn = REAL
+                    ? cached("chat|" + itemKey + "|" + run + "|" + (turnIndex++) + "|" + inv.getArgument(1),
+                            DiaryTurn.class, () -> (Optional<DiaryTurn>) inv.callRealMethod())
                     : Optional.of(new DiaryTurn(inv.getArgument(1), List.of(), null, false, null, null,
                             "none", List.of(), false, false, false, false, false));
             llmLevels.add(turn.map(t -> t.safetyLevelOrNone().key()).orElse("unavailable"));
             return turn;
         }).when(chat).turn(any(), any());
         doAnswer(inv -> failLetter ? Optional.empty() : datasetLetter != null ? Optional.of(datasetBody())
-                : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY)).when(writer).writeBody(any());
+                : REAL ? cached("body|" + itemKey + "|" + run + "|NORMAL", Body.class,
+                        () -> (Optional<Body>) inv.callRealMethod())
+                : Optional.of(NEUTRAL_BODY)).when(writer).writeBody(any());
         doAnswer(inv -> failLetter ? Optional.empty() : datasetLetter != null ? Optional.of(datasetBody())
                 : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY)).when(writer).writeBodyOnOpen(any());
         // 안전 게이트(P1)의 본문 — 정책 · 고칠 점을 받는 판. 다시 쓰기도 같은 흉내를 돌려준다(흉내 모드는 고치지 못한다).
         doAnswer(inv -> {
             guardedBodies.incrementAndGet();
+            List<String> fixes = inv.getArgument(2);
             return failLetter ? Optional.empty() : datasetLetter != null ? Optional.of(datasetBody())
+                    : REAL && fixes.isEmpty() ? cached("body|" + itemKey + "|" + run + "|" + inv.getArgument(1),
+                            Body.class, () -> (Optional<Body>) inv.callRealMethod())
                     : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY);
         }).when(writer).writeBody(any(), any(), anyList());
         doAnswer(inv -> failLetter ? Optional.empty() : datasetLetter != null ? Optional.of(datasetBody())
@@ -450,6 +492,18 @@ class B0ReplayHarness {
                     .orElse("none"));
             return j;
         }).when(judge).judge(any(), any(), anyList(), anyList());
+        doAnswer(inv -> {
+            Optional<RiskJudgment> j = switch (JUDGE) {
+                case "real" -> (Optional<RiskJudgment>) inv.callRealMethod();
+                case "none" -> Optional.empty();
+                default -> oracleJudgment("", inv.getArgument(1), List.of()).map(x -> new RiskJudgment(
+                        x.todayCurrent(), x.todayCurrent(), SafetyLevel.NONE, RiskJudgment.Trajectory.UNKNOWN,
+                        x.uncertain(), x.evidence()));
+            };
+            judgeOut.add(j.map(x -> "single/" + x.todayCurrent().key() + (x.uncertain() ? "/uncertain" : ""))
+                    .orElse("none"));
+            return j;
+        }).when(judge).judgeSingle(any(), anyList());
         doAnswer(inv -> recordVerdict("real".equals(VERIFIER) ? (LetterVerification) inv.callRealMethod()
                 : oracleVerification(inv.getArgument(2)))).when(verifier).verify(any(), any(), any());
         doAnswer(inv -> recordVerdict("real".equals(VERIFIER) ? (LetterVerification) inv.callRealMethod()
@@ -540,6 +594,39 @@ class B0ReplayHarness {
             }
         }
         return LetterVerification.of(found);
+    }
+
+    /** 실제 호출 결과를 캐시에서 꺼내거나, 없으면 불러서 넣는다. 실패(empty)는 캐시하지 않는다. */
+    interface Call<T> {
+        Optional<T> get() throws Throwable;
+    }
+
+    private <T> Optional<T> cached(String key, Class<T> type, Call<T> call) throws Throwable {
+        if (CACHE.isBlank()) {
+            return call.get();
+        }
+        String hit = cache.get(key);
+        if (hit != null) {
+            cacheHits.incrementAndGet();
+            return Optional.of(json.readValue(hit, type));
+        }
+        Optional<T> value = call.get();
+        value.ifPresent(v -> cache.put(key, json.writeValueAsString(v)));
+        return value;
+    }
+
+    /** 이 사례에서 나간 실제 Gemini 호출 — 역할별 횟수 · 입력 · 출력 토큰 · 지연 합. 캐시로 아낀 호출은 들어가지 않는다. */
+    private Map<String, Map<String, Long>> llmUsage() {
+        Map<String, Map<String, Long>> byRole = new java.util.TreeMap<>();
+        events.stream(com.momentory.retrospect.application.metering.LlmCallRecorded.class).forEach(e -> {
+            var log = e.log();
+            Map<String, Long> m = byRole.computeIfAbsent(log.role() + "@" + log.model(), k -> new LinkedHashMap<>());
+            m.merge("calls", 1L, Long::sum);
+            m.merge("in", (long) log.inTokens(), Long::sum);
+            m.merge("out", (long) log.outTokens(), Long::sum);
+            m.merge("ms", log.latencyMs(), Long::sum);
+        });
+        return byRole;
     }
 
     private LetterVerification recordVerdict(LetterVerification v) {

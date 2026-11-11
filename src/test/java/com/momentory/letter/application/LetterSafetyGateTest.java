@@ -126,6 +126,18 @@ class LetterSafetyGateTest {
     }
 
     @Test
+    @DisplayName("비교 실험 스위치는 운영 설정(experiment=false)에서 쓰면 기동을 막는다")
+    void ablationNeedsExperiment() {
+        LetterGateProperties.Ablation b1 = new LetterGateProperties.Ablation(false, false, false, true);
+        assertThatThrownBy(() -> new LetterGateProperties(LetterGateProperties.Mode.ON, false, LetterPolicy.GENTLE,
+                null, null, 7, 400, Duration.ofSeconds(4), b1)).isInstanceOf(IllegalStateException.class);
+        assertThat(new LetterGateProperties(LetterGateProperties.Mode.ON, true, LetterPolicy.GENTLE, null, null, 7,
+                400, Duration.ofSeconds(4), b1).ablation().simplePolicy()).isTrue();
+        assertThat(new LetterGateProperties(null, false, null, null, null, 0, 0, null).ablation())
+                .isEqualTo(LetterGateProperties.Ablation.NONE);
+    }
+
+    @Test
     @DisplayName("판정이 무엇이든 정책은 B0(위기 안내 · 안전 기록)보다 덜 막지 않는다")
     void neverLooserThanCurrentSystem() {
         for (SafetyLevel rule : SafetyLevel.values()) {
