@@ -36,6 +36,8 @@ import com.momentory.retrospect.domain.assistant.DiaryWriter;
 import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
+import com.momentory.retrospect.domain.assistant.TurnJudge;
+import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.AbuseGate;
 import com.momentory.retrospect.domain.safety.Guidance;
 import com.momentory.retrospect.domain.safety.PromptGuard;
@@ -87,6 +89,7 @@ public class RetrospectEngine {
     private final EmotionExtractor emotionExtractor;
     private final ExplorationAssistant explorationAssistant;
     private final DiaryWriter diaryWriter;
+    private final TurnJudge turnJudge;
     private final LlmUsageLogger usage;
     private final ApplicationEventPublisher events;
     private final int reaskCap;
@@ -94,7 +97,8 @@ public class RetrospectEngine {
 
     public RetrospectEngine(SafetyPolicy safetyPolicy, DiaryChatAssistant diaryChatAssistant,
             EmotionExtractor emotionExtractor, ExplorationAssistant explorationAssistant,
-            DiaryWriter diaryWriter, LlmUsageLogger usage, ApplicationEventPublisher events,
+            DiaryWriter diaryWriter, TurnJudge turnJudge, LlmUsageLogger usage,
+            ApplicationEventPublisher events,
             @Value("${momentory.gate.reask-cap:1}") int reaskCap,
             @Value("${momentory.gate.abuse-cap:3}") int abuseCap) {
         this.safetyPolicy = safetyPolicy;
@@ -102,6 +106,7 @@ public class RetrospectEngine {
         this.emotionExtractor = emotionExtractor;
         this.explorationAssistant = explorationAssistant;
         this.diaryWriter = diaryWriter;
+        this.turnJudge = turnJudge;
         this.usage = usage;
         this.events = events;
         this.reaskCap = reaskCap;
@@ -320,6 +325,8 @@ public class RetrospectEngine {
         boolean eventPending = false;
         boolean causeProvided = false;
 
+        judgeTurn(state, userMessage, command.content());
+
         String question = null;
         String empathy = null;
         Optional<DiaryTurn> ai = diaryChatAssistant.turn(state, command.content());
@@ -395,6 +402,18 @@ public class RetrospectEngine {
         }
         state.addAssistantMessage(text);
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
+    }
+
+    /**
+     * 대상 계정이면 방금 답변의 상태를 판단해 기록으로 남긴다. 지금은 기록만 하고 대화 흐름에는 쓰지 않는다.
+     * 판단이 실패해도 실패한 턴으로 남기고 대화는 그대로 이어간다.
+     */
+    private void judgeTurn(RetrospectState state, Message userMessage, String content) {
+        if (!state.turnJudgingEnabled()) {
+            return;
+        }
+        state.logJudgment(new TurnJudgmentLog(userMessage.id(), state.diaryTurn() + 1,
+                turnJudge.judge(state, content).orElse(null)));
     }
 
     /** 질문은 빼되 상황을 짚는 공감 문장을 살린다. 장애 때도 맥락 없는 맞장구로 끝내지 않는다. */

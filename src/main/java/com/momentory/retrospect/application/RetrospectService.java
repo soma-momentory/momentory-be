@@ -7,8 +7,10 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +32,7 @@ import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
 import com.momentory.retrospect.infrastructure.persistence.SafetyEventRepository;
+import com.momentory.retrospect.infrastructure.persistence.TurnJudgmentRecorder;
 import com.momentory.schedule.infrastructure.ScheduleRepository;
 import com.momentory.user.application.AuthenticatedUserNotFoundException;
 import com.momentory.user.domain.RestMethod;
@@ -59,6 +62,8 @@ public class RetrospectService {
     private final ApplicationEventPublisher eventPublisher;
     private final TodayActionFinder todayActionFinder;
     private final SafetyEventRepository safetyEvents;
+    private final TurnJudgmentRecorder turnJudgments;
+    private final Set<Long> judgeUserIds;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
@@ -66,7 +71,8 @@ public class RetrospectService {
             RetrospectStateCodec codec, UserRepository userRepository,
             UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
             ApplicationEventPublisher eventPublisher, TodayActionFinder todayActionFinder,
-            SafetyEventRepository safetyEvents) {
+            SafetyEventRepository safetyEvents, TurnJudgmentRecorder turnJudgments,
+            @Value("${momentory.judge.user-ids:}") Set<Long> judgeUserIds) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
@@ -79,6 +85,8 @@ public class RetrospectService {
         this.eventPublisher = eventPublisher;
         this.todayActionFinder = todayActionFinder;
         this.safetyEvents = safetyEvents;
+        this.turnJudgments = turnJudgments;
+        this.judgeUserIds = Set.copyOf(judgeUserIds);
     }
 
     /**
@@ -143,8 +151,13 @@ public class RetrospectService {
         RetrospectState state = codec.deserialize(entity.getStateJson());
         // 행동 추천 스텝에서만(지연) 부른다 — actioncard 컨텍스트가 비슷한 상황 이전 카드를 찾는다.
         state.priorCardFinder(situation -> priorActionCardRecommender.findSimilar(userId, situation));
+        // 턴 판단은 대상 계정에만 켠다 — 대화 원문이 외부 판단 모델로 나가기 때문이다.
+        if (judgeUserIds.contains(userId)) {
+            state.enableTurnJudging();
+        }
         ReplyDto reply = engine.handle(state, command);
         recordCrisis(entity, state);
+        turnJudgments.record(entity.getUserId(), entity.getId(), state.drainJudgmentLogs());
         sync(entity, state, reply);
 
         // 완료 턴이면 방금 저장된 일기·행동 카드의 id 를 응답에 실어 보낸다 — sync 가 발행한 이벤트가

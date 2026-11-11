@@ -90,7 +90,21 @@ gemini:
     # action_cards.situation_embedding vector(768) 에 맞춘다(GeminiSituationEmbedder).
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
 
+# 턴 판단 모델(TypeSafe Jev). 키가 비어 있으면 판단을 하지 않는다. 모델은 별칭이 아닌 고정 버전을 쓴다 —
+# 판단 기록을 버전별로 비교해야 한다. 판단은 매 턴 문장 생성 앞에 끼어들므로 read-timeout 이 짧다.
+typesafe:
+  api:
+    base-url: ${TYPESAFE_API_BASE_URL:https://api.typesafe.ai}
+    api-key: ${TYPESAFE_API_KEY:}
+    model: ${TYPESAFE_MODEL:jev-1.14.0}
+    connect-timeout: ${TYPESAFE_CONNECT_TIMEOUT:2s}
+    read-timeout: ${TYPESAFE_READ_TIMEOUT:3s}
+
 momentory:
+  judge:
+    # 턴 판단을 켤 사용자 id 목록(쉼표 구분). 비어 있으면 아무에게도 켜지 않는다.
+    # 대화 원문이 TypeSafe 로 나가므로, 처리위탁 고지 전에는 테스트 계정과 동의한 참여자만 넣는다.
+    user-ids: ${TURN_JUDGE_USER_IDS:}
   gate:
     reask-cap: ${RETRO_REASK_CAP:1}
   prompt:

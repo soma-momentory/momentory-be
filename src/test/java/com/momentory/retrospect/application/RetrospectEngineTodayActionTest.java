@@ -14,6 +14,7 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.TodayAction;
 import com.momentory.retrospect.domain.TodayActionResult;
+import com.momentory.retrospect.domain.assistant.TurnJudge;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
 
@@ -33,7 +34,7 @@ class RetrospectEngineTodayActionTest {
     @BeforeEach
     void setUp() {
         fake = new FakeAssistant();
-        engine = new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake,
+        engine = new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, TurnJudge.NONE,
                 new LlmUsageLogger(0.10, 0.40), events::add, 1, 3);
         state = new RetrospectState("s1");
     }

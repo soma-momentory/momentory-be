@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
+import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
 
 /**
@@ -112,6 +113,13 @@ public class RetrospectState {
      * userId 를 묶어 넣어준다. 엔진은 작은 행동을 제안할 때만 부른다.
      */
     private transient PriorActionCardFinder priorCardFinder = PriorActionCardFinder.NONE;
+
+    /**
+     * 이번 요청에서 턴 판단을 할 것인가 — 저장하지 않는다. 대상 계정인지는 애플리케이션 서비스가 정해 켠다.
+     */
+    private transient boolean turnJudgingEnabled;
+    /** 이번 요청에서 생긴 판단 기록 — 저장하지 않는다. 애플리케이션 서비스가 꺼내 따로 기록한다. */
+    private final transient List<TurnJudgmentLog> judgmentLogs = new ArrayList<>();
 
     public RetrospectState(String id) {
         this.id = id;
@@ -600,6 +608,25 @@ public class RetrospectState {
 
     public void priorCardFinder(PriorActionCardFinder finder) {
         this.priorCardFinder = finder == null ? PriorActionCardFinder.NONE : finder;
+    }
+
+    public void enableTurnJudging() {
+        this.turnJudgingEnabled = true;
+    }
+
+    public boolean turnJudgingEnabled() {
+        return turnJudgingEnabled;
+    }
+
+    public void logJudgment(TurnJudgmentLog log) {
+        judgmentLogs.add(log);
+    }
+
+    /** 이번 요청에서 생긴 판단 기록을 꺼내고 비운다. */
+    public List<TurnJudgmentLog> drainJudgmentLogs() {
+        List<TurnJudgmentLog> drained = List.copyOf(judgmentLogs);
+        judgmentLogs.clear();
+        return drained;
     }
 
     // ── 메시지 ───────────────────────────────────────────────────────────

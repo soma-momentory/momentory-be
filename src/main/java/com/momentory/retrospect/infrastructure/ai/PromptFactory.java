@@ -461,7 +461,7 @@ public class PromptFactory {
     }
 
     /** 선택지 줄("  1. 라벨")은 감정·사건 판단에 노이즈다 — 저장은 그대로 두고 프롬프트에서만 뺀다. */
-    private static String stripOptionLines(String content) {
+    static String stripOptionLines(String content) {
         if (content == null || content.isBlank()) {
             return "";
         }
