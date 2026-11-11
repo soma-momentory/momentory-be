@@ -197,6 +197,24 @@ class LetterRetrospectLinkIntegrationTest {
     }
 
     @Test
+    void cancellingCardInShelterUnlocksChoiceEvenAfterNightAnswer() {
+        User user = userRepository.saveAndFlush(User.create());
+        Seeded seeded = letterWithCard(user, yesterday());
+        letterService.chooseAction(user.getId(), seeded.letter().getId(), 0, null, null, null);
+        RetrospectResult started = retrospectService.start(user.getId(), StartCommand.today("정민", null));
+        retrospectService.handle(user.getId(), started.id(), TurnCommand.option("1"));
+        // 밤에는 「해 봤어요」였지만 쉼터에서 취소했다 — 카드가 원본이라 다시 고를 수 있다.
+        ActionCard cancelled = card(seeded);
+        cancelled.changeCompletion(false, null, java.time.Instant.now());
+        actionCardRepository.saveAndFlush(cancelled);
+
+        letterService.chooseAction(user.getId(), seeded.letter().getId(), 2, null, null, null);
+
+        assertThat(chosen(seeded.letter()).getPosition()).isEqualTo(2);
+        assertThat(card(seeded).getTargetAction()).isEqualTo(chosen(seeded.letter()).getTitle());
+    }
+
+    @Test
     void noChosenActionKeepsOriginalOpening() {
         User user = userRepository.saveAndFlush(User.create());
         letterWithCard(user, yesterday());

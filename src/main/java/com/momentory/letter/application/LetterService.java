@@ -96,10 +96,11 @@ public class LetterService {
         letter.markOpened(Instant.now());
         List<LetterAction> actions = letterActionRepository.findByLetterIdOrderByPositionAsc(id);
         Optional<ActionCard> card = wishCards.of(letter);
-        // 해 본 일이 기록됐으면(밤 회고 답 · 쉼터 「했어요」) 고르기 · 바꾸기 · 풀기를 모두 막는다(편지 PRD 14).
+        // 해 본 일이면 고르기 · 바꾸기 · 풀기를 모두 막는다(편지 PRD 14). 원본은 카드의 「했어요」라
+        // 쉼터에서 취소하면 다시 고를 수 있고, 카드가 없을 때만 밤 회고 답을 본다({@link LetterWishCards#tried}).
         // 카드가 이미 「했어요」면 처음 고르는 것도 막는다 — 해 보지 않은 일이 해 본 일로 남지 않게.
-        if (actions.stream().anyMatch(a -> a.isChosen() && a.isTried())
-                || card.map(ActionCard::isDone).orElse(false)) {
+        if (card.map(ActionCard::isDone)
+                .orElseGet(() -> actions.stream().anyMatch(a -> a.isChosen() && a.isTried()))) {
             throw new LetterActionLockedException();
         }
         if (position == null) {
