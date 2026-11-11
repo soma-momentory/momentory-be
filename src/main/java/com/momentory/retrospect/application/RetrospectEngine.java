@@ -44,6 +44,11 @@ import com.momentory.retrospect.domain.safety.PromptGuard;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.domain.script.Josa;
+import com.momentory.retrospect.domain.judgment.TurnJudgment;
+import com.momentory.retrospect.domain.strategy.QuestionFocus;
+import com.momentory.retrospect.domain.strategy.StrategyPolicy;
+import com.momentory.retrospect.domain.strategy.StrategyType;
+import com.momentory.retrospect.domain.strategy.TurnStrategy;
 import com.momentory.retrospect.infrastructure.ai.LlmRole;
 
 /**
@@ -90,6 +95,7 @@ public class RetrospectEngine {
     private final ExplorationAssistant explorationAssistant;
     private final DiaryWriter diaryWriter;
     private final TurnJudge turnJudge;
+    private final StrategyPolicy strategyPolicy;
     private final LlmUsageLogger usage;
     private final ApplicationEventPublisher events;
     private final int reaskCap;
@@ -97,7 +103,8 @@ public class RetrospectEngine {
 
     public RetrospectEngine(SafetyPolicy safetyPolicy, DiaryChatAssistant diaryChatAssistant,
             EmotionExtractor emotionExtractor, ExplorationAssistant explorationAssistant,
-            DiaryWriter diaryWriter, TurnJudge turnJudge, LlmUsageLogger usage,
+            DiaryWriter diaryWriter, TurnJudge turnJudge, StrategyPolicy strategyPolicy,
+            LlmUsageLogger usage,
             ApplicationEventPublisher events,
             @Value("${momentory.gate.reask-cap:1}") int reaskCap,
             @Value("${momentory.gate.abuse-cap:3}") int abuseCap) {
@@ -107,6 +114,7 @@ public class RetrospectEngine {
         this.explorationAssistant = explorationAssistant;
         this.diaryWriter = diaryWriter;
         this.turnJudge = turnJudge;
+        this.strategyPolicy = strategyPolicy;
         this.usage = usage;
         this.events = events;
         this.reaskCap = reaskCap;
@@ -325,11 +333,20 @@ public class RetrospectEngine {
         boolean eventPending = false;
         boolean causeProvided = false;
 
-        judgeTurn(state, userMessage, command.content());
+        TurnStrategy strategy = chooseStrategy(state, judgeTurn(state, userMessage, command.content()));
+        if (strategy != null && strategy.type() == StrategyType.CLOSE) {
+            // 판단이 종료 요청을 확신하면 규칙이 놓친 표현이어도 질문 없이 바로 마무리한다.
+            state.logStrategy(strategy, StrategyPolicy.VERSION, true);
+            state.markDiaryUserEnded();
+            generateDiary(state);
+            return finishComplete(state);
+        }
 
         String question = null;
         String empathy = null;
+        state.turnStrategy(strategy);
         Optional<DiaryTurn> ai = diaryChatAssistant.turn(state, command.content());
+        state.turnStrategy(null);
         if (ai.isPresent()) {
             DiaryTurn t = ai.get();
             mergeSafety(state, t.safetyLevelOrNone(), t.safetyFlags(), userMessage.id());
@@ -358,6 +375,8 @@ public class RetrospectEngine {
             question = t.question();
             empathy = t.empathy();
         } else {
+            // 고정 문구로 나간 턴은 기록에서 구분한다 — 전략을 골랐어도 그 문장은 모델이 쓴 것이 아니다.
+            state.logGenerationFailed();
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(),
                     Phase.DIARY_CHAT.key());
             // 장애 때도 이 명확한 정정 답변을 공감 한마디로 끝내지 않는다.
@@ -377,7 +396,10 @@ public class RetrospectEngine {
             return finishDiaryChat(state, empathy);
         }
         String text;
-        if (eventPending) {
+        if (strategy != null && !eventPending) {
+            state.logStrategy(strategy, StrategyPolicy.VERSION, true);
+            text = strategyText(state, strategy, empathy, question, command.content());
+        } else if (eventPending) {
             // 일정의 시간 정정은 소재를 풀어낸 답변이 아니다. 그전에 있었던 실제 일로 대화를 연다.
             text = diaryEmpathy(empathy, question, command.content()) + "\n그럼 그전에는 어떤 일을 하셨어요?";
         } else if (causeProvided && !state.topicEmotionConfirmAsked()) {
@@ -405,15 +427,66 @@ public class RetrospectEngine {
     }
 
     /**
-     * 대상 계정이면 방금 답변의 상태를 판단해 기록으로 남긴다. 지금은 기록만 하고 대화 흐름에는 쓰지 않는다.
-     * 판단이 실패해도 실패한 턴으로 남기고 대화는 그대로 이어간다.
+     * 대상 계정이면 방금 답변의 상태를 판단해 기록으로 남긴다. 판단이 실패해도 실패한 턴으로 남기고
+     * 대화는 그대로 이어간다.
      */
-    private void judgeTurn(RetrospectState state, Message userMessage, String content) {
+    private Optional<TurnJudgment> judgeTurn(RetrospectState state, Message userMessage, String content) {
         if (!state.turnJudgingEnabled()) {
-            return;
+            return Optional.empty();
         }
-        state.logJudgment(new TurnJudgmentLog(userMessage.id(), state.diaryTurn() + 1,
-                turnJudge.judge(state, content).orElse(null)));
+        Optional<TurnJudgment> judgment = turnJudge.judge(state, content);
+        state.logJudgment(TurnJudgmentLog.of(userMessage.id(), state.diaryTurn() + 1, judgment.orElse(null)));
+        return judgment;
+    }
+
+    /**
+     * 전략 선택을 켠 계정이면 판단과 이번 대화의 신호로 이번 턴의 전략을 고른다. 판단이 없으면(꺼짐·실패)
+     * null — 이 턴은 기존 고정 순서로 간다. 고른 전략은 일단 '적용 안 됨'으로 기록해 두고, 실제로 그 전략대로
+     * 응답이 나가는 자리에서 적용됨으로 고친다(턴 상한·단답 체크인이 앞서면 그대로 남는다).
+     */
+    private TurnStrategy chooseStrategy(RetrospectState state, Optional<TurnJudgment> judgment) {
+        if (!state.turnStrategyEnabled() || judgment.isEmpty()) {
+            return null;
+        }
+        StrategyPolicy.Decision decision = strategyPolicy.decide(judgment.get(), state.strategySignals(),
+                state.diaryTurn() == 0);
+        state.strategySignals(decision.signals());
+        state.logStrategy(decision.strategy(), StrategyPolicy.VERSION, false);
+        return decision.strategy();
+    }
+
+    /** 전략대로 응답을 만든다 — 인정·반영 문장 뒤에, 전략이 질문을 두면 그 초점의 질문 하나를 붙인다. */
+    private static String strategyText(RetrospectState state, TurnStrategy strategy, String empathy,
+            String question, String userText) {
+        String reflection = diaryEmpathy(empathy, question, userText);
+        if (!strategy.asks()) {
+            return reflection;
+        }
+        if (strategy.focus() == QuestionFocus.OTHER_TOPIC) {
+            // 다른 기억을 묻는 문장은 고정이다 — 이 문장 뒤의 거절을 「다른 이야기 없음」으로 알아본다.
+            return reflection + "\n" + (state.knownEventCount() >= RetrospectState.MAX_EVENTS
+                    ? OTHER_TOPIC_QUESTION : OTHER_MEMORY_QUESTION);
+        }
+        return reflection + "\n" + strategyQuestion(question, strategy.focus());
+    }
+
+    /** 모델이 쓴 질문 한 문장을 쓰고, 질문이 없으면 초점에 맞는 고정 질문으로 대신한다. */
+    private static String strategyQuestion(String candidate, QuestionFocus focus) {
+        if (candidate != null) {
+            for (String part : candidate.strip().split("(?<=[.!?。！？])\\s*|\\R")) {
+                String sentence = part.strip();
+                if (sentence.endsWith("?") || sentence.endsWith("？")) {
+                    return sentence;
+                }
+            }
+        }
+        return switch (focus) {
+            case EVENT -> "그때 무슨 일이 있었는지 조금만 더 들려주실래요?";
+            case FEELING -> "그 마음은 어떤 느낌이었나요?";
+            case MEANING -> "그 마음은 어디에서 온 것 같으세요?";
+            case EVIDENCE -> "그렇게 느끼신 건 어떤 부분 때문이었을까요?";
+            default -> "그 일이 본인에게는 어땠나요?";
+        };
     }
 
     /** 질문은 빼되 상황을 짚는 공감 문장을 살린다. 장애 때도 맥락 없는 맞장구로 끝내지 않는다. */

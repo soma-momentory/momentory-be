@@ -28,8 +28,10 @@ public class GeminiDiaryChatAssistant implements DiaryChatAssistant {
 
     @Override
     public Optional<DiaryTurn> turn(RetrospectState state, String userText) {
-        LlmRequest request = LlmRequest.of(state, LlmRole.G2, prompts.system(),
-                prompts.diaryTurnPrompt(state, userText));
+        // 서버가 이번 턴의 전략을 골랐으면 그 전략에 맞춘 프롬프트를, 아니면 기존 고정 순서 프롬프트를 쓴다.
+        String prompt = state.turnStrategy() == null ? prompts.diaryTurnPrompt(state, userText)
+                : prompts.strategyTurnPrompt(state, userText, state.turnStrategy());
+        LlmRequest request = LlmRequest.of(state, LlmRole.G2, prompts.system(), prompt);
         var schema = GeminiResponseSchemas.forType(DiaryTurn.class);
         var first = llm.attempt(request, DiaryTurn.class, schema);
         if (first.value().isPresent() || !first.retryable()) {

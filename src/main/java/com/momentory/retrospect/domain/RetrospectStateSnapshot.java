@@ -3,6 +3,7 @@ package com.momentory.retrospect.domain;
 import java.util.List;
 
 import com.momentory.retrospect.domain.safety.SafetyLevel;
+import com.momentory.retrospect.domain.strategy.StrategySignals;
 
 /**
  * {@link RetrospectState} 의 영속 필드를 담는 순수 스냅샷 — DB의 {@code state_json} 에 직렬화된다
@@ -57,7 +58,9 @@ public record RetrospectStateSnapshot(
         // 같은 소재의 감정 계기 질문 반복 방지 — 옛 스냅샷은 null(false)
         Boolean topicCauseDiscussed,
         // 같은 소재의 감정 확인 질문 반복 방지 — 옛 스냅샷은 null(false)
-        Boolean topicEmotionConfirmAsked) {
+        Boolean topicEmotionConfirmAsked,
+        // 이번 대화에서 관찰한 전략 신호 — 전략 선택을 하지 않은 세션과 옛 스냅샷은 null
+        StrategySignals strategySignals) {
 
     /** 안전 상태 스냅샷 — 누적 레벨·플래그·마지막 플래그 메시지 id. */
     public record SafetySnapshot(SafetyLevel level, List<String> flags, String lastFlaggedMsgId) {

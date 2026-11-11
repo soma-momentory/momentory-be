@@ -105,6 +105,13 @@ momentory:
     # 턴 판단을 켤 사용자 id 목록(쉼표 구분). 비어 있으면 아무에게도 켜지 않는다.
     # 대화 원문이 TypeSafe 로 나가므로, 처리위탁 고지 전에는 테스트 계정과 동의한 참여자만 넣는다.
     user-ids: ${TURN_JUDGE_USER_IDS:}
+  strategy:
+    # 판단으로 바바의 응답 방식(전략)까지 바꿀 사용자 id 목록(쉼표 구분). 여기 있으면 턴 판단도 함께 켜진다.
+    user-ids: ${TURN_STRATEGY_USER_IDS:}
+    # 아래 기준값은 근거가 쌓이기 전의 임시값이다. 바꾸면 그 전후 대화를 같은 조건으로 볼 수 없다.
+    min-confidence: ${TURN_STRATEGY_MIN_CONFIDENCE:0.5}
+    close-confidence: ${TURN_STRATEGY_CLOSE_CONFIDENCE:0.8}
+    resistance-threshold: ${TURN_STRATEGY_RESISTANCE_THRESHOLD:2}
   gate:
     reask-cap: ${RETRO_REASK_CAP:1}
   prompt:

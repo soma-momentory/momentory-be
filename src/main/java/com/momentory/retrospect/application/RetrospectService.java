@@ -64,6 +64,7 @@ public class RetrospectService {
     private final SafetyEventRepository safetyEvents;
     private final TurnJudgmentRecorder turnJudgments;
     private final Set<Long> judgeUserIds;
+    private final Set<Long> strategyUserIds;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
@@ -72,7 +73,8 @@ public class RetrospectService {
             UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
             ApplicationEventPublisher eventPublisher, TodayActionFinder todayActionFinder,
             SafetyEventRepository safetyEvents, TurnJudgmentRecorder turnJudgments,
-            @Value("${momentory.judge.user-ids:}") Set<Long> judgeUserIds) {
+            @Value("${momentory.judge.user-ids:}") Set<Long> judgeUserIds,
+            @Value("${momentory.strategy.user-ids:}") Set<Long> strategyUserIds) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
@@ -87,6 +89,7 @@ public class RetrospectService {
         this.safetyEvents = safetyEvents;
         this.turnJudgments = turnJudgments;
         this.judgeUserIds = Set.copyOf(judgeUserIds);
+        this.strategyUserIds = Set.copyOf(strategyUserIds);
     }
 
     /**
@@ -154,6 +157,10 @@ public class RetrospectService {
         // 턴 판단은 대상 계정에만 켠다 — 대화 원문이 외부 판단 모델로 나가기 때문이다.
         if (judgeUserIds.contains(userId)) {
             state.enableTurnJudging();
+        }
+        // 전략 선택 대상이면 판단으로 응답 방식까지 바꾼다(판단도 함께 켜진다).
+        if (strategyUserIds.contains(userId)) {
+            state.enableTurnStrategy();
         }
         ReplyDto reply = engine.handle(state, command);
         recordCrisis(entity, state);

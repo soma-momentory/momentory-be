@@ -12,6 +12,8 @@ import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.NeedActionCatalog;
 import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.RetrospectState;
+import com.momentory.retrospect.domain.strategy.StrategyType;
+import com.momentory.retrospect.domain.strategy.TurnStrategy;
 
 /**
  * v2 프롬프트 공장 — 시스템 프롬프트와 역할별 사용자 프롬프트를 만든다 (채팅흐름_v2 §8).
@@ -141,6 +143,86 @@ public class PromptFactory {
                 state.topicCauseDiscussed() ? "예" : "아니요",
                 state.topicEmotionConfirmAsked() ? "예" : "아니요",
                 recentHistory(state), userText.strip());
+    }
+
+    /**
+     * 전략이 정해진 턴의 일기 작성 프롬프트 — 무엇을 할지는 서버가 고른 {@link TurnStrategy} 가 정하고,
+     * 모델은 그 전략에 맞는 공감 문장과 질문 한 문장, 그리고 사건·안전 추출만 한다.
+     */
+    public String strategyTurnPrompt(RetrospectState state, String userText, TurnStrategy strategy) {
+        return """
+                [진행] 지금까지 %d턴 나눴습니다. 일기 작성 채팅은 최대 %d턴이며 종료는 서버가 결정합니다.
+                [현재 소재]
+                - 사건(event): %s
+
+                [대화]
+                %s
+                [방금 사용자 답변]
+                %s
+
+                말투·문장 길이·맞춤법이 아니라, 앞선 대화와 방금 답변의 의미를 판단하세요.
+                짧거나 간접적인 답변도 맥락으로 이해할 수 있으면 유효합니다. 불명확한 사실은 만들어내지 마세요.
+                [이번 턴에 할 일] 서버가 이미 정했습니다. 아래에서 벗어나지 마세요.
+                - %s
+                - 질문: %s
+                [공통 규칙]
+                - 질문은 반드시 인정·공감 문장 뒤에만 오며 한 턴에 하나를 넘기지 않습니다.
+                - 사용자가 이미 말한 것을 다시 묻지 않습니다. 모든 빈칸을 채우는 것이 목표가 아닙니다.
+                - 감정을 나타내는 말은 사용자가 방금 답변이나 앞선 대화에서 직접 쓴 것만 씁니다. 사용자가 감정을
+                  말하지 않았으면 감정 이름을 붙이거나 '~하셨겠어요'로 짐작하지 말고, 있었던 일만 그대로 받습니다.
+                  예) "교수님이 과제 다시 해 오래." → (X) "허탈하고 힘이 빠지셨겠어요." (O) "교수님께서 과제를 다시 해 오라고 하셨군요."
+                - 사용자가 말하지 않은 사정·원인·행동을 덧붙이지 않습니다(예: '열심히 준비했는데').
+                - 누가 무엇을 했는지 바꾸지 않습니다. 사용자의 '나·내가'는 사용자 자신이고, '걔·친구·엄마' 등은 그 사람입니다.
+                - 말하는 이는 바바, 듣는 이는 사용자입니다. 사용자를 '바바'라고 부르거나 '저·제'로 가리키지 않습니다.
+                - 답변이 '응'처럼 아주 짧으면 그 답을 평가하지 말고, 편하게 이어 말해도 된다는 뜻만 전합니다.
+                - 진단·조언·과장된 위로는 하지 않습니다. 정해진 공감 문구를 반복하지 않습니다.
+                - 존댓말을 씁니다.
+                [출력 필드]
+                - event: 방금 답변이 속한 실제 사건. 같은 소재면 위 event 문자열을 정확히 재사용하고,
+                  실제 다른 소재일 때만 바꿉니다. 새 정보가 없으면 null.
+                - secondaryEvents: 방금 답변의 다른 실제 사건들. 없으면 빈 목록.
+                - meaning: 방금 답변에서 자발적으로 말한 해당 사건의 의미만. 없으면 null.
+                - emotionPresent: 방금 답변에 감정·기분 등 주관적 상태 표현이 있으면 true.
+                - emotionCausePresent: 방금 답변이 그 감정이 생긴 원인·계기를 설명하면 true.
+                - eventPending: 아직 일어나지 않은 일정만 답했으면 true. 실제 경험도 답했으면 false.
+                  미래 사건은 event/secondaryEvents/meaning에 넣지 마세요.
+                - empathy: 반드시 채우세요. 위 [이번 턴에 할 일]에 맞는 인정·반영 1~2문장. 질문은 넣지 마세요.
+                - question: 위 '질문' 지시에 맞는 한 문장. 질문이 없는 턴이면 반드시 빈 문자열.
+                - noMoreToAsk: 더 물어볼 것이 없으면 true.
+                - safetyLevel: none|caution|risk|imminent.
+                - offTopic/vague: 무관하거나 얼버무린 답변만 true. 짧은 감정 답변과 맞다/아니다 답은 false입니다.
+                """.formatted(state.diaryTurn(), RetrospectState.DIARY_MAX_TURNS, orNone(state.event()),
+                recentHistory(state), userText.strip(), typeDirective(strategy.type()),
+                questionDirective(strategy));
+    }
+
+    private static String typeDirective(StrategyType type) {
+        return switch (type) {
+            case CORRECT -> "수정 반영: 사용자가 바바의 이해를 고쳐 말했습니다. 사용자가 고쳐 말한 표현 그대로 받아 "
+                    + "되돌려 주세요. 이전 해석을 되풀이하거나 변명하지 마세요. empathy는 한 문장입니다.";
+            case REFLECT -> "공감·반영: 사용자가 말한 감정과 맥락을 구체적으로 짚어 받아 주세요. empathy는 한 문장입니다.";
+            case EXPLORE -> "탐색: 한 문장으로 인정한 뒤, 아직 나오지 않은 것 하나를 묻습니다.";
+            case REFRAME -> "재해석: 한 문장으로 인정한 뒤, 그 생각의 근거를 함께 살펴보는 질문을 합니다. "
+                    + "다른 해석을 바바가 먼저 내놓지 말고 사용자가 말하게 하세요.";
+            case CLOSE -> "마무리: 추가 질문 없이 짧게 받아 주세요.";
+        };
+    }
+
+    private static String questionDirective(TurnStrategy strategy) {
+        String focus = switch (strategy.focus()) {
+            case NONE -> "이번 턴에는 질문하지 않습니다. question은 빈 문자열이고, 제안이나 권유도 넣지 않습니다.";
+            case OTHER_TOPIC -> "다음 질문은 서버가 붙입니다. question은 빈 문자열로 두세요.";
+            case EVENT -> "그때 어떤 일이 있었는지(상황과 경위)를 묻는 열린 질문 하나. 사건 설명이 아직 부족하므로 "
+                    + "이번 턴에는 기분·감정·마음을 묻지 않습니다.";
+            case SELF -> "그 일이 사용자 본인에게 어땠는지 묻는 열린 질문 하나. 초점을 사건·타인에서 사용자 자신으로 옮깁니다.";
+            case FEELING -> "사용자가 말한 그 감정 자체가 어떤 느낌이었는지 묻는 질문 하나. 사건을 다시 묻지 않습니다.";
+            case MEANING -> "그 감정이 사용자에게 어떤 의미인지, 어디에서 온 것 같은지 묻는 질문 하나.";
+            case EVIDENCE -> "그렇게 생각하게 된 근거나 부분을 묻는 질문 하나.";
+        };
+        return strategy.asChoices()
+                ? focus + " 둘 중 고를 수 있는 형태로 가볍게 묻고('~였을까요, 아니면 ~였을까요?'), "
+                        + "답하지 않아도 괜찮다는 여지를 둡니다."
+                : focus;
     }
 
     /**

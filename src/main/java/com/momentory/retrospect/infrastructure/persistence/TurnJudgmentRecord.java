@@ -20,7 +20,8 @@ import jakarta.persistence.Table;
  * 메시지를 가리킬 뿐이다. 한 번 쓰면 고치지 않는다.
  *
  * <p>항목별 선택과 확신은 집계하기 쉽게 칸으로 풀고, 선택지 확률 전체는 {@code probabilitiesJson} 에 둔다.
- * 판단 호출이 실패한 턴은 {@code status = FAILED} 이고 판단 칸이 모두 비어 있다.
+ * 판단 호출이 실패한 턴은 {@code status = FAILED} 이고 판단 칸이 모두 비어 있다. 전략 칸은 전략 선택을 켠
+ * 계정의 판단된 턴에만 채워진다.
  */
 @Entity
 @Table(name = "retrospect_turn_judgments")
@@ -99,6 +100,24 @@ public class TurnJudgmentRecord {
     @Column(name = "latency_ms")
     private Integer latencyMs;
 
+    @Column(name = "strategy_type", length = 20)
+    private String strategyType;
+
+    @Column(name = "question_focus", length = 20)
+    private String questionFocus;
+
+    @Column(name = "question_as_choices")
+    private Boolean questionAsChoices;
+
+    @Column(name = "policy_version", length = 20)
+    private String policyVersion;
+
+    @Column(name = "strategy_applied")
+    private Boolean strategyApplied;
+
+    @Column(name = "generation_failed", nullable = false)
+    private boolean generationFailed;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -116,6 +135,7 @@ public class TurnJudgmentRecord {
         record.messageId = Objects.requireNonNull(log.messageId(), "messageId must not be null");
         record.diaryTurn = log.diaryTurn();
         record.createdAt = Instant.now();
+        record.generationFailed = log.generationFailed();
         if (log.failed()) {
             record.status = FAILED;
             return record;
@@ -146,6 +166,13 @@ public class TurnJudgmentRecord {
                 "probabilitiesJson must not be null");
         record.inputTokens = j.inputTokens();
         record.latencyMs = (int) Math.min(j.latencyMs(), Integer.MAX_VALUE);
+        if (log.strategy() != null) {
+            record.strategyType = log.strategy().type().name();
+            record.questionFocus = log.strategy().focus().name();
+            record.questionAsChoices = log.strategy().asChoices();
+            record.policyVersion = log.policyVersion();
+            record.strategyApplied = log.strategyApplied();
+        }
         return record;
     }
 
@@ -167,4 +194,10 @@ public class TurnJudgmentRecord {
     public String getProbabilitiesJson() { return probabilitiesJson; }
     public Integer getInputTokens() { return inputTokens; }
     public Integer getLatencyMs() { return latencyMs; }
+    public String getStrategyType() { return strategyType; }
+    public String getQuestionFocus() { return questionFocus; }
+    public Boolean getQuestionAsChoices() { return questionAsChoices; }
+    public String getPolicyVersion() { return policyVersion; }
+    public Boolean getStrategyApplied() { return strategyApplied; }
+    public boolean isGenerationFailed() { return generationFailed; }
 }

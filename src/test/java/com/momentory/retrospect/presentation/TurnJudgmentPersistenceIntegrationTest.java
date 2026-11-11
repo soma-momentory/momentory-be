@@ -105,6 +105,12 @@ class TurnJudgmentPersistenceIntegrationTest {
     @AfterEach
     void resetJudgeUsers() {
         judgeFor(Set.of());
+        strategyFor(Set.of());
+    }
+
+    private void strategyFor(Set<Long> userIds) {
+        Object service = AopTestUtils.getTargetObject(retrospectService);
+        ReflectionTestUtils.setField(service, "strategyUserIds", userIds);
     }
 
     /** 대상 계정 목록은 기동 설정값이라, 방금 만든 사용자 id 로 바꿔 끼운다. */
@@ -136,6 +142,9 @@ class TurnJudgmentPersistenceIntegrationTest {
         assertThat(first.getEndIntentConfidence()).isEqualTo(0.9);
         assertThat(first.getInputTokens()).isEqualTo(1400);
         assertThat(first.getLatencyMs()).isEqualTo(350);
+        // 판단만 켠 계정은 전략 칸이 비어 있고 대화도 기존 순서 그대로다.
+        assertThat(first.getStrategyType()).isNull();
+        assertThat(first.getStrategyApplied()).isNull();
         assertThat((Double) JsonPath.read(first.getProbabilitiesJson(), "$.experiencing_depth.stage_3"))
                 .isEqualTo(0.9);
         Map<String, Object> probabilities = JsonPath.read(first.getProbabilitiesJson(), "$");
@@ -146,6 +155,40 @@ class TurnJudgmentPersistenceIntegrationTest {
         assertThat(jdbc.queryForObject("""
                 select count(*) from retrospect_turn_judgments t
                 where t.retrospect_id = ? and t::text like '%속상%'""", Long.class, sessionId)).isZero();
+    }
+
+    @Test
+    @DisplayName("전략 선택 대상 계정은 고른 전략이 판단 옆에 남고, 다음 턴이 앞 턴의 신호를 이어 쓴다")
+    void recordsTheChosenStrategyAndCarriesSignals() throws Exception {
+        // 감정과 사건이 다 나온 3단계 답변 — 첫 턴은 받아주고, 다음 턴은 한 단계 깊게 묻는다.
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        long sessionId = startSession(user);
+
+        MvcResult reflected = say(user, sessionId, "팀원이 말을 끊어서 속상했어요.");
+        MvcResult asked = say(user, sessionId, "계속 마음에 남아요.");
+
+        // 받아주는 턴에는 모델이 쓴 질문을 붙이지 않는다.
+        assertThat((String) JsonPath.read(reflected.getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.");
+        assertThat((String) JsonPath.read(asked.getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.\n그때 어떤 기분이 드셨나요?");
+        List<TurnJudgmentRecord> rows = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId);
+        assertThat(rows).extracting(TurnJudgmentRecord::getStrategyType).containsExactly("REFLECT", "EXPLORE");
+        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("NONE", "FEELING");
+        assertThat(rows).allSatisfy(row -> {
+            assertThat(row.getPolicyVersion()).isEqualTo("v1");
+            assertThat(row.getStrategyApplied()).isTrue();
+            assertThat(row.getQuestionAsChoices()).isFalse();
+            assertThat(row.isGenerationFailed()).isFalse();
+        });
+
+        // 문장 생성 모델이 실패한 턴은 기록에서 가려낼 수 있다.
+        when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.empty());
+        say(user, sessionId, "그 생각이 자꾸 나요.");
+        assertThat(judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast().isGenerationFailed())
+                .isTrue();
     }
 
     @Test
@@ -208,6 +251,17 @@ class TurnJudgmentPersistenceIntegrationTest {
             String choice = item == JudgmentItem.EXPERIENCING_DEPTH ? depth : item.choices().getFirst();
             items.put(item, new ItemJudgment(choice, 0.9, Map.of(choice, 0.9, "undeterminable", 0.1)));
         }
+        return new TurnJudgment("jev-1.14.0", "v1", items, 1400, 350);
+    }
+
+    /** 감정과 사건이 다 나온 답변의 판단. */
+    private static TurnJudgment told(String depth) {
+        Map<JudgmentItem, ItemJudgment> items = new EnumMap<>(JudgmentItem.class);
+        Map<JudgmentItem, String> choices = Map.of(
+                JudgmentItem.END_INTENT, "continue", JudgmentItem.REQUESTED_MODE, "none",
+                JudgmentItem.EMOTION_EXPRESSION, "clear", JudgmentItem.EVENT_INFO, "specific",
+                JudgmentItem.REACTION, "agree_or_elaborate", JudgmentItem.EXPERIENCING_DEPTH, depth);
+        choices.forEach((item, choice) -> items.put(item, new ItemJudgment(choice, 0.9, Map.of(choice, 0.9))));
         return new TurnJudgment("jev-1.14.0", "v1", items, 1400, 350);
     }
 

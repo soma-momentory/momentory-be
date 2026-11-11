@@ -20,6 +20,7 @@ import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
 import com.momentory.retrospect.domain.assistant.TurnJudge;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
+import com.momentory.retrospect.domain.strategy.StrategyPolicy;
 
 /**
  * 회고 대화 엔진 v2 검증 — AI 는 전부 {@link FakeAssistant}.
@@ -37,7 +38,7 @@ class RetrospectEngineTest {
     void setUp() {
         fake = new FakeAssistant();
         LlmUsageLogger usage = new LlmUsageLogger(0.10, 0.40);
-        engine = new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, TurnJudge.NONE, usage, e -> { },
+        engine = new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, TurnJudge.NONE, new StrategyPolicy(0.5, 0.8, 2), usage, e -> { },
                 1, 3);
         state = new RetrospectState("s1");
     }

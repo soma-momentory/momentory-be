@@ -2,12 +2,14 @@ package com.momentory.retrospect.infrastructure;
 
 import java.io.IOException;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 
 import com.momentory.retrospect.domain.NeedActionCatalog;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
+import com.momentory.retrospect.domain.strategy.StrategyPolicy;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -23,6 +25,15 @@ public class RetrospectDomainConfiguration {
     @Bean
     SafetyPolicy safetyPolicy() {
         return new SafetyPolicy();
+    }
+
+    /** 전략 선택 기준값 — 근거가 쌓이기 전의 임시값이라 설정으로 바꿀 수 있게 둔다. */
+    @Bean
+    StrategyPolicy strategyPolicy(
+            @Value("${momentory.strategy.min-confidence:0.5}") double minConfidence,
+            @Value("${momentory.strategy.close-confidence:0.8}") double closeConfidence,
+            @Value("${momentory.strategy.resistance-threshold:2}") int resistanceThreshold) {
+        return new StrategyPolicy(minConfidence, closeConfidence, resistanceThreshold);
     }
 
     @Bean

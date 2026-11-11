@@ -20,6 +20,7 @@ import com.momentory.retrospect.domain.judgment.JudgmentItem;
 import com.momentory.retrospect.domain.judgment.TurnJudgment;
 import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
+import com.momentory.retrospect.domain.strategy.StrategyPolicy;
 
 /** 턴 판단은 켠 요청에서만, 일기 작성 채팅의 사용자 답변마다 한 번 기록되고 대화 흐름은 바꾸지 않는다. */
 class RetrospectEngineTurnJudgeTest {
@@ -40,7 +41,7 @@ class RetrospectEngineTurnJudgeTest {
         return new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, (s, text) -> {
             judged.add(text);
             return answer;
-        }, new LlmUsageLogger(0.10, 0.40), e -> { }, 1, 3);
+        }, new StrategyPolicy(0.5, 0.8, 2), new LlmUsageLogger(0.10, 0.40), e -> { }, 1, 3);
     }
 
     static TurnJudgment judgment() {

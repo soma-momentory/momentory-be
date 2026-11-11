@@ -8,6 +8,8 @@ import java.util.Optional;
 
 import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
+import com.momentory.retrospect.domain.strategy.StrategySignals;
+import com.momentory.retrospect.domain.strategy.TurnStrategy;
 
 /**
  * 회고 세션 애그리거트 루트 (채팅흐름_v2).
@@ -118,6 +120,12 @@ public class RetrospectState {
      * 이번 요청에서 턴 판단을 할 것인가 — 저장하지 않는다. 대상 계정인지는 애플리케이션 서비스가 정해 켠다.
      */
     private transient boolean turnJudgingEnabled;
+    /** 이번 요청에서 판단으로 전략을 골라 응답에 적용할 것인가 — 저장하지 않는다. 켜면 턴 판단도 함께 켜진다. */
+    private transient boolean turnStrategyEnabled;
+    /** 이번 턴에 고른 전략 — 문장 생성 프롬프트가 읽는다. 저장하지 않는다. */
+    private transient TurnStrategy turnStrategy;
+    /** 이번 대화에서 관찰한 전략 신호 — 전략 선택을 한 번도 하지 않았으면 null. */
+    private StrategySignals strategySignals;
     /** 이번 요청에서 생긴 판단 기록 — 저장하지 않는다. 애플리케이션 서비스가 꺼내 따로 기록한다. */
     private final transient List<TurnJudgmentLog> judgmentLogs = new ArrayList<>();
 
@@ -618,8 +626,49 @@ public class RetrospectState {
         return turnJudgingEnabled;
     }
 
+    public void enableTurnStrategy() {
+        this.turnJudgingEnabled = true;
+        this.turnStrategyEnabled = true;
+    }
+
+    public boolean turnStrategyEnabled() {
+        return turnStrategyEnabled;
+    }
+
+    /** 이번 턴에 고른 전략. 전략 없이 가는 턴이면 null. */
+    public TurnStrategy turnStrategy() {
+        return turnStrategy;
+    }
+
+    public void turnStrategy(TurnStrategy strategy) {
+        this.turnStrategy = strategy;
+    }
+
+    public StrategySignals strategySignals() {
+        return strategySignals == null ? StrategySignals.initial() : strategySignals;
+    }
+
+    public void strategySignals(StrategySignals signals) {
+        this.strategySignals = signals;
+    }
+
     public void logJudgment(TurnJudgmentLog log) {
         judgmentLogs.add(log);
+    }
+
+    /** 방금 남긴 판단 기록에 고른 전략과 적용 여부를 덧붙인다. */
+    public void logStrategy(TurnStrategy strategy, String policyVersion, boolean applied) {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1,
+                    judgmentLogs.getLast().withStrategy(strategy, policyVersion, applied));
+        }
+    }
+
+    /** 방금 남긴 판단 기록에 이 턴의 문장 생성이 실패했음을 표시한다. */
+    public void logGenerationFailed() {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withGenerationFailed());
+        }
     }
 
     /** 이번 요청에서 생긴 판단 기록을 꺼내고 비운다. */
@@ -666,7 +715,7 @@ public class RetrospectState {
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
                 List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
                 topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction, topicCauseDiscussed,
-                topicEmotionConfirmAsked);
+                topicEmotionConfirmAsked, strategySignals);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -721,6 +770,7 @@ public class RetrospectState {
         state.topicEmotionSeen = Boolean.TRUE.equals(s.topicEmotionSeen());
         state.topicCauseDiscussed = Boolean.TRUE.equals(s.topicCauseDiscussed());
         state.topicEmotionConfirmAsked = Boolean.TRUE.equals(s.topicEmotionConfirmAsked());
+        state.strategySignals = s.strategySignals();
         state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
         state.selectedEventId = s.selectedEventId();
         state.awaitingEventSelection = Boolean.TRUE.equals(s.awaitingEventSelection());

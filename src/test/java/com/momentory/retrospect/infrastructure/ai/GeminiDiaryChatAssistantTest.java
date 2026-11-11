@@ -42,6 +42,25 @@ class GeminiDiaryChatAssistantTest {
     }
 
     @Test
+    void usesTheStrategyPromptOnlyWhenTheServerChoseAStrategy() {
+        when(client.attempt(any(), eq(DiaryTurn.class), any()))
+                .thenReturn(new GeminiApiClient.Attempt<>(Optional.of(turn), false));
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmRequest.class);
+        RetrospectState state = new RetrospectState("strategy");
+
+        assistant.turn(state, "고마웠어요.");
+        state.turnStrategy(new com.momentory.retrospect.domain.strategy.TurnStrategy(
+                com.momentory.retrospect.domain.strategy.StrategyType.REFLECT,
+                com.momentory.retrospect.domain.strategy.QuestionFocus.NONE, false));
+        assistant.turn(state, "고마웠어요.");
+
+        verify(client, times(2)).attempt(captor.capture(), eq(DiaryTurn.class), any());
+        assertThat(captor.getAllValues().get(0).user()).contains("[판단 순서와 질문 목적]");
+        assertThat(captor.getAllValues().get(1).user()).contains("[이번 턴에 할 일]")
+                .doesNotContain("[판단 순서와 질문 목적]");
+    }
+
+    @Test
     void doesNotRetrySuccessfulResponse() {
         when(client.attempt(any(), eq(DiaryTurn.class), any()))
                 .thenReturn(new GeminiApiClient.Attempt<>(Optional.of(turn), false));
