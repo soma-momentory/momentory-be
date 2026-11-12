@@ -55,9 +55,14 @@ class RetrospectEngineStrategyTest {
     }
 
     private static TurnJudgment judgment(String end, String emotion, String event, String depth) {
+        return judgment(end, "none", emotion, event, depth);
+    }
+
+    private static TurnJudgment judgment(String end, String requested, String emotion, String event,
+            String depth) {
         Map<JudgmentItem, ItemJudgment> items = new EnumMap<>(JudgmentItem.class);
         put(items, JudgmentItem.END_INTENT, end);
-        put(items, JudgmentItem.REQUESTED_MODE, "none");
+        put(items, JudgmentItem.REQUESTED_MODE, requested);
         put(items, JudgmentItem.EMOTION_EXPRESSION, emotion);
         put(items, JudgmentItem.EVENT_INFO, event);
         put(items, JudgmentItem.REACTION, "agree_or_elaborate");
@@ -97,14 +102,38 @@ class RetrospectEngineStrategyTest {
     }
 
     @Test
-    void reflectsWithoutAQuestionEvenIfTheModelWroteOne() {
-        fake.turnEmpathy = "준비한 만큼 허무하셨겠어요.";
+    void onlyReflectsForAUserWhoAskedToBeHeardEvenIfTheModelWroteAQuestion() {
+        fake.turnEmpathy = "발표가 뜻대로 되지 않아 허무하셨군요.";
         fake.turnQuestion = "어떤 부분이 가장 아쉬우셨나요?";
+
+        ReplyDto reply = say("그냥 들어줘. 발표 망쳐서 허무해.",
+                judgment("continue", "listen", "clear", "specific", "stage_3"));
+
+        assertThat(reply.text()).isEqualTo("발표가 뜻대로 되지 않아 허무하셨군요.");
+        assertThat(reply.phase()).isEqualTo(Phase.DIARY_CHAT.key());
+    }
+
+    @Test
+    void asksEvenWhenEmotionAndEventAreAlreadyOut() {
+        fake.turnEmpathy = "발표가 뜻대로 되지 않아 허무하셨군요.";
+        fake.turnQuestion = "어떤 점이 제일 허무하셨어요?";
 
         ReplyDto reply = say("발표 망쳐서 허무해.", judgment("clear", "specific", "stage_3"));
 
-        assertThat(reply.text()).isEqualTo("준비한 만큼 허무하셨겠어요.");
-        assertThat(reply.phase()).isEqualTo(Phase.DIARY_CHAT.key());
+        assertThat(reply.text()).isEqualTo("발표가 뜻대로 되지 않아 허무하셨군요.\n어떤 점이 제일 허무하셨어요?");
+    }
+
+    @Test
+    void goesStraightToTheQuestionAfterAShortAgreement() {
+        say("발표 망쳐서 허무해.", judgment("clear", "specific", "stage_3"));
+        fake.turnEmpathy = "그렇게 동의해 주시니 저도 마음이 놓이네요.";
+        fake.turnQuestion = "어떤 점이 제일 허무하셨어요?";
+
+        ReplyDto reply = say("맞아", judgment("none", "specific", "undeterminable"));
+
+        // 앞의 공감을 되풀이하지 않는다 — 모델이 쓴 공감 문장도 붙이지 않는다.
+        assertThat(reply.text()).isEqualTo("어떤 점이 제일 허무하셨어요?");
+        assertThat(fake.strategiesSeen.getLast().brief()).isTrue();
     }
 
     @Test
@@ -114,7 +143,7 @@ class RetrospectEngineStrategyTest {
 
         ReplyDto reply = say("그냥 허무했어.", judgment("clear", "specific", "stage_3"));
 
-        assertThat(reply.text()).isEqualTo(EMPATHY + "\n그 마음은 어떤 느낌이었나요?");
+        assertThat(reply.text()).isEqualTo(EMPATHY + "\n어떤 점이 가장 그렇게 느껴지셨나요?");
         assertThat(fake.strategiesSeen.getLast().focus()).isEqualTo(QuestionFocus.FEELING);
     }
 
@@ -193,7 +222,7 @@ class RetrospectEngineStrategyTest {
 
         assertThat(restored.strategySignals()).isEqualTo(state.strategySignals());
         assertThat(restored.strategySignals().topicDepth()).isEqualTo(3);
-        assertThat(restored.strategySignals().lastType()).isEqualTo(StrategyType.REFLECT);
+        assertThat(restored.strategySignals().lastType()).isEqualTo(StrategyType.EXPLORE);
         // 켜짐 여부는 요청마다 서비스가 정한다 — 저장되지 않는다.
         assertThat(restored.turnStrategyEnabled()).isFalse();
     }

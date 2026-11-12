@@ -458,16 +458,15 @@ public class RetrospectEngine {
     /** 전략대로 응답을 만든다 — 인정·반영 문장 뒤에, 전략이 질문을 두면 그 초점의 질문 하나를 붙인다. */
     private static String strategyText(RetrospectState state, TurnStrategy strategy, String empathy,
             String question, String userText) {
-        String reflection = diaryEmpathy(empathy, question, userText);
         if (!strategy.asks()) {
-            return reflection;
+            return diaryEmpathy(empathy, question, userText);
         }
-        if (strategy.focus() == QuestionFocus.OTHER_TOPIC) {
-            // 다른 기억을 묻는 문장은 고정이다 — 이 문장 뒤의 거절을 「다른 이야기 없음」으로 알아본다.
-            return reflection + "\n" + (state.knownEventCount() >= RetrospectState.MAX_EVENTS
-                    ? OTHER_TOPIC_QUESTION : OTHER_MEMORY_QUESTION);
-        }
-        return reflection + "\n" + strategyQuestion(question, strategy.focus());
+        // 다른 기억을 묻는 문장은 고정이다 — 이 문장 뒤의 거절을 「다른 이야기 없음」으로 알아본다.
+        String ask = strategy.focus() != QuestionFocus.OTHER_TOPIC ? strategyQuestion(question, strategy.focus())
+                : state.knownEventCount() >= RetrospectState.MAX_EVENTS ? OTHER_TOPIC_QUESTION
+                : OTHER_MEMORY_QUESTION;
+        // 「맞아」 같은 짧은 동의에는 앞의 공감을 되풀이하지 않고 바로 묻는다.
+        return strategy.brief() ? ask : diaryEmpathy(empathy, question, userText) + "\n" + ask;
     }
 
     /** 모델이 쓴 질문 한 문장을 쓰고, 질문이 없으면 초점에 맞는 고정 질문으로 대신한다. */
@@ -482,8 +481,9 @@ public class RetrospectEngine {
         }
         return switch (focus) {
             case EVENT -> "그때 무슨 일이 있었는지 조금만 더 들려주실래요?";
-            case FEELING -> "그 마음은 어떤 느낌이었나요?";
-            case MEANING -> "그 마음은 어디에서 온 것 같으세요?";
+            case FEELING -> "어떤 점이 가장 그렇게 느껴지셨나요?";
+            case MEANING -> "그 일이 유독 크게 느껴진 이유가 있을까요?";
+            case FOLLOW_UP -> "방금 말씀하신 부분을 조금만 더 들려주실래요?";
             case EVIDENCE -> "그렇게 느끼신 건 어떤 부분 때문이었을까요?";
             default -> "그 일이 본인에게는 어땠나요?";
         };

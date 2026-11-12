@@ -49,6 +49,7 @@ import com.momentory.retrospect.domain.assistant.TurnJudge;
 import com.momentory.retrospect.domain.judgment.ItemJudgment;
 import com.momentory.retrospect.domain.judgment.JudgmentItem;
 import com.momentory.retrospect.domain.judgment.TurnJudgment;
+import com.momentory.retrospect.domain.strategy.StrategyPolicy;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.TurnJudgmentRecord;
 import com.momentory.retrospect.infrastructure.persistence.TurnJudgmentRecordRepository;
@@ -160,25 +161,24 @@ class TurnJudgmentPersistenceIntegrationTest {
     @Test
     @DisplayName("전략 선택 대상 계정은 고른 전략이 판단 옆에 남고, 다음 턴이 앞 턴의 신호를 이어 쓴다")
     void recordsTheChosenStrategyAndCarriesSignals() throws Exception {
-        // 감정과 사건이 다 나온 3단계 답변 — 첫 턴은 받아주고, 다음 턴은 한 단계 깊게 묻는다.
+        // 감정과 사건이 다 나온 3단계 답변 — 인정 뒤에 한 단계 깊게 묻는다.
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
         long sessionId = startSession(user);
 
-        MvcResult reflected = say(user, sessionId, "팀원이 말을 끊어서 속상했어요.");
+        MvcResult first = say(user, sessionId, "팀원이 말을 끊어서 속상했어요.");
         MvcResult asked = say(user, sessionId, "계속 마음에 남아요.");
 
-        // 받아주는 턴에는 모델이 쓴 질문을 붙이지 않는다.
-        assertThat((String) JsonPath.read(reflected.getResponse().getContentAsString(StandardCharsets.UTF_8),
-                "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.");
+        assertThat((String) JsonPath.read(first.getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.\n그때 어떤 기분이 드셨나요?");
         assertThat((String) JsonPath.read(asked.getResponse().getContentAsString(StandardCharsets.UTF_8),
                 "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.\n그때 어떤 기분이 드셨나요?");
         List<TurnJudgmentRecord> rows = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId);
-        assertThat(rows).extracting(TurnJudgmentRecord::getStrategyType).containsExactly("REFLECT", "EXPLORE");
-        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("NONE", "FEELING");
+        assertThat(rows).extracting(TurnJudgmentRecord::getStrategyType).containsExactly("EXPLORE", "EXPLORE");
+        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("FEELING", "FEELING");
         assertThat(rows).allSatisfy(row -> {
-            assertThat(row.getPolicyVersion()).isEqualTo("v1");
+            assertThat(row.getPolicyVersion()).isEqualTo(StrategyPolicy.VERSION);
             assertThat(row.getStrategyApplied()).isTrue();
             assertThat(row.getQuestionAsChoices()).isFalse();
             assertThat(row.isGenerationFailed()).isFalse();

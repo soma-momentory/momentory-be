@@ -13,7 +13,11 @@ import com.momentory.retrospect.domain.judgment.JudgmentItem;
  */
 final class JevJudgmentQuestions {
 
-    static final String VERSION = "v1";
+    /**
+     * v2 (2026-11-12): 「직전 응답에 대한 반응」에 '답하려 했지만 어려워함'을 더했다. v1 에서는 "그냥 전부" 같은 답이
+     * 갈 곳이 없어 '동의·추가 설명'으로 판단됐다. 안 하겠다(저항)와 못 하겠다(응답 곤란)는 대처가 다르다.
+     */
+    static final String VERSION = "v2";
 
     private JevJudgmentQuestions() {
     }
@@ -71,11 +75,13 @@ final class JevJudgmentQuestions {
             case REACTION -> {
                 c.put("correct_interpretation", "바바가 짚은 감정이나 해석을 다른 표현으로 고쳐 말했다");
                 c.put("refuse_question", "질문받기를 거부하거나 묻지 말라고 했다");
-                c.put("no_answer_or_topic_change", "질문에 답하지 않았거나 다른 화제로 넘어갔다");
+                c.put("no_answer_or_topic_change", "질문을 받아들이지 않고 답 없이 넘어갔거나 다른 화제로 넘어갔다");
                 c.put("argue", "바바의 말이 틀렸다고 반박했다");
+                c.put("struggle_to_answer", "질문에 답하려 했지만 무엇이라 말하기 어려워했다('그냥 전부', '모르겠어', "
+                        + "'그냥 그래'처럼). 질문을 거부하거나 화제를 바꾼 것은 아니다");
                 c.put("agree_or_elaborate", "동의했거나 질문에 답하며 내용을 덧붙였다");
                 c.put("first_turn", "바바의 직전 응답이 첫 인사 질문뿐이라 반응이라 볼 것이 없다");
-                c.put("undeterminable", "발화가 너무 짧거나 모호해 판단할 수 없다");
+                c.put("undeterminable", "'응'처럼 발화가 너무 짧아 어떤 반응인지 판단할 수 없다");
             }
             case EXPERIENCING_DEPTH -> {
                 c.put("stage_1_2", "사건, 타인, 사실만 말한다. 자기 감정 표현이 없다");

@@ -20,7 +20,8 @@ final class GeminiResponseSchemas {
             DiaryTurn.class, diaryTurnSchema(),
             GeminiExtraction.class, extractionSchema(),
             GeminiNeeds.class, needsSchema(),
-            DiaryOutput.class, diarySchema());
+            DiaryOutput.class, diarySchema(),
+            DiaryDraft.class, diaryDraftSchema());
 
     private GeminiResponseSchemas() {
     }
@@ -95,6 +96,24 @@ final class GeminiResponseSchemas {
         props.put("diary", str());
         props.put("reframedDiary", str());
         return object(props, List.of("diary"));
+    }
+
+    private static Map<String, Object> diaryDraftSchema() {
+        LinkedHashMap<String, Object> paragraph = new LinkedHashMap<>();
+        paragraph.put("event", Map.of("type", "STRING", "description",
+                "이 문단이 다루는 일 한 줄. 때나 장소가 다른 일은 서로 다른 문단이다."));
+        paragraph.put("sentences", Map.of("type", "ARRAY", "items", str(), "description",
+                "이 사건에 대한 문장들. 원소 하나에 한 문장만 담는다."));
+        LinkedHashMap<String, Object> correction = new LinkedHashMap<>();
+        correction.put("before", str());
+        correction.put("after", str());
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        // 문단보다 먼저 채우게 한다 — 고쳐 말한 곳을 짚은 뒤에 일기를 쓴다.
+        props.put("corrections", Map.of("type", "ARRAY", "items", object(correction, List.of("before", "after")),
+                "description", "사용자가 자기 말을 고쳐 말한 곳. before=고치기 전 표현, after=고친 표현. 없으면 빈 목록."));
+        props.put("paragraphs", Map.of("type", "ARRAY", "items", object(paragraph, List.of("event", "sentences")),
+                "description", "문단 목록. 문단 하나가 한 사건(맥락)이다. 한 가지 일만 이야기했으면 문단은 하나다."));
+        return object(props, List.of("corrections", "paragraphs"));
     }
 
     private static Map<String, Object> object(LinkedHashMap<String, Object> properties,

@@ -82,9 +82,9 @@ class StrategyConversationRealIntegrationTest {
         say("응, 계속 생각나.");
         ReplyDto deepest = say("속상한 게 지적 자체보다, 인정받고 싶었는데 못 받아서인 것 같아.");
 
-        assertThat(asks(deepest)).as("스스로 탐색 중이면 질문 없이 받아준다").isFalse();
+        assertThat(asks(deepest)).as("스스로 짚은 것을 한 번 더 묻는다").isTrue();
         assertThat(state.strategySignals().topicDepth()).isEqualTo(5);
-        assertThat(state.strategySignals().lastType()).isEqualTo(StrategyType.REFLECT);
+        assertThat(state.strategySignals().lastType()).isEqualTo(StrategyType.EXPLORE);
     }
 
     @Test
