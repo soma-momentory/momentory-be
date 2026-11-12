@@ -13,7 +13,8 @@ import com.momentory.retrospect.domain.judgment.TurnJudgment;
 
 class StrategyPolicyTest {
 
-    private final StrategyPolicy policy = new StrategyPolicy(0.5, 0.8, 2);
+    private final StrategyPolicy policy = new StrategyPolicy(0.5, 0.8, 2, 8);
+
 
     /** 판단 하나를 조립한다 — 기본은 '계속 · 요청 없음 · 감정 없음 · 사건 없음 · 동의 · 1~2단계', 확신 0.9. */
     private static final class J {
@@ -61,7 +62,7 @@ class StrategyPolicyTest {
         assertThat(d.strategy().focus()).isEqualTo(focus);
     }
 
-    // ── 1. 먼저 적용하는 제약 ──
+    // ── 1. 먼저 적용하는 제약 (문서 4-2) ──
 
     @Test
     void endRequestClosesBeforeAnythingElse() {
@@ -73,23 +74,22 @@ class StrategyPolicyTest {
 
     @Test
     void uncertainEndRequestDoesNotClose() {
-        StrategyPolicy.Decision d = first(new J().end("end_request", 0.7));
-        assertThat(d.strategy().type()).isNotEqualTo(StrategyType.CLOSE);
+        assertThat(first(new J().end("end_request", 0.7)).strategy().type()).isNotEqualTo(StrategyType.CLOSE);
     }
 
     @Test
     void correctedInterpretationIsReflectedBackAndTheSameTurnKeepsAsking() {
-        // "아 분함이야. 잘못 말했네" — 고친 표현을 받고, 멈추지 않고 한 단계 깊게 묻는다.
+        // "아 분함이야. 잘못 말했네" — 고친 표현을 받고, 멈추지 않고 이어서 묻는다.
         StrategyPolicy.Decision d = next(first(new J().told("stage_3")),
                 new J().told("stage_3").reaction("correct_interpretation"));
         assertStrategy(d, StrategyType.CORRECT, QuestionFocus.FEELING);
     }
 
     @Test
-    void aCorrectionNeverMovesToAnotherMemory() {
+    void aCorrectionNeverMovesOnOrProposesWrapUp() {
         StrategyPolicy.Decision d = first(new J().event("specific"));
         d = next(d, new J().event("specific"));
-        // 정체가 두 번째인 턴이지만 방금 고쳐 말한 소재를 떠나지 않는다.
+        // 정체가 두 번째인 턴이지만 방금 고쳐 말한 소재를 떠나지도, 정리하자고 하지도 않는다.
         d = next(d, new J().event("specific").reaction("correct_interpretation"));
         assertStrategy(d, StrategyType.CORRECT, QuestionFocus.SELF);
     }
@@ -114,72 +114,154 @@ class StrategyPolicyTest {
         assertThat(d.signals().explicitMode()).isEqualTo(StrategySignals.LISTEN);
     }
 
-    // ── 2. 유형 + 4. 질문 깊이 ──
+    @Test
+    void aListeningUserIsNotAskedEvenAfterACorrectionOrAStruggle() {
+        StrategyPolicy.Decision listening = next(first(new J().told("stage_3")), new J().requested("listen"));
+        assertStrategy(next(listening, new J().reaction("correct_interpretation")), StrategyType.CORRECT,
+                QuestionFocus.NONE);
+        assertStrategy(next(listening, new J().reaction("struggle_to_answer")), StrategyType.REFLECT,
+                QuestionFocus.NONE);
+    }
+
+    // ── 2. 마무리 제안 (문서 4-7) ──
 
     @Test
-    void asksWhatHappenedWhenTheEventIsMissing() {
-        assertStrategy(first(new J().emotion("clear").depth("stage_3")), StrategyType.EXPLORE, QuestionFocus.EVENT);
-        assertStrategy(first(new J().event("partial")), StrategyType.EXPLORE, QuestionFocus.EVENT);
+    void proposesWrapUpOnceFeelingAndEventAreOutAndDepthRoseOneStep() {
+        StrategyPolicy.Decision first = first(new J().told("stage_3"));
+        assertStrategy(first, StrategyType.EXPLORE, QuestionFocus.FEELING);
+
+        StrategyPolicy.Decision deeper = next(first, new J().told("stage_4"));
+
+        assertStrategy(deeper, StrategyType.REFLECT, QuestionFocus.WRAP_UP);
+        assertThat(deeper.signals().wrapUpProposed()).isTrue();
+        // 마무리 제안은 깊이를 묻는 질문이 아니다 — 질문 수에 세지 않는다.
+        assertThat(deeper.signals().questionsAsked()).isEqualTo(1);
     }
 
     @Test
-    void asksAboutTheEventOnlyOncePerTopic() {
-        StrategyPolicy.Decision asked = first(new J().event("partial"));
+    void keepsGoingAfterTheUserChoseToTalkMoreAndDoesNotProposeAgainOnTheSameTopic() {
+        StrategyPolicy.Decision proposed = next(first(new J().told("stage_3")), new J().told("stage_4"));
+
+        StrategyPolicy.Decision more = next(proposed, new J().told("stage_4"));
+
+        assertStrategy(more, StrategyType.EXPLORE, QuestionFocus.MEANING);
+    }
+
+    @Test
+    void doesNotProposeWrapUpOnTheVeryFirstAnswerHoweverDeep() {
+        // 첫 답변부터 스스로 짚었어도 한 번은 주고받는다.
+        StrategyPolicy.Decision first = first(new J().told("stage_5_plus"));
+        assertStrategy(first, StrategyType.EXPLORE, QuestionFocus.FOLLOW_UP);
+
+        assertStrategy(next(first, new J().told("stage_5_plus")), StrategyType.REFLECT, QuestionFocus.WRAP_UP);
+    }
+
+    @Test
+    void doesNotProposeWrapUpWhileDepthHasNotRisen() {
+        StrategyPolicy.Decision d = next(first(new J().told("stage_3")), new J().told("stage_3"));
+        assertThat(d.strategy().focus()).isNotEqualTo(QuestionFocus.WRAP_UP);
+    }
+
+    @Test
+    void proposesWrapUpWhenItWouldHaveToAskTheSameThingAgain() {
+        StrategyPolicy.Decision d = first(new J().event("specific"));                 // 자기 쪽 질문
+        d = next(d, new J().event("specific"));                                       // 깊어지지 않음 — 한 번 더
+        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.SELF);
+        d = next(d, new J().event("specific"));                                       // 또 그대로 → 정리할지 묻는다
+        assertStrategy(d, StrategyType.REFLECT, QuestionFocus.WRAP_UP);
+
+        // 더 이야기하겠다고 하면 같은 것을 또 묻지 않고 다른 기억으로 넘어간다.
+        d = next(d, new J().event("specific"));
+        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC);
+        assertThat(d.signals().topicDepth()).isZero();
+        assertThat(d.signals().eventOut()).isFalse();
+        assertThat(d.signals().wrapUpProposed()).isFalse();
+        assertThat(d.signals().topicNumber()).isEqualTo(2);
+    }
+
+    @Test
+    void proposesWrapUpWhenResistanceComesTwiceInARow() {
+        StrategyPolicy.Decision d = first(new J().event("specific"));
+        d = next(d, new J().event("specific").reaction("argue"));
+        // 저항이 나온 턴은 질문을 뺀다(문서 3-1).
+        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.NONE);
+
+        d = next(d, new J().event("specific").reaction("no_answer_or_topic_change"));
+
+        assertStrategy(d, StrategyType.REFLECT, QuestionFocus.WRAP_UP);
+        assertThat(d.signals().resistanceCount()).isEqualTo(2);
+    }
+
+    // ── 3. 유형 + 5. 질문 깊이 ──
+
+    @Test
+    void asksWhatHappenedWhenTheEventIsMissingButOnlyOnce() {
+        StrategyPolicy.Decision asked = first(new J().emotion("clear").depth("stage_3").event("partial"));
         assertStrategy(asked, StrategyType.EXPLORE, QuestionFocus.EVENT);
-        // 여전히 일부만 들었어도 같은 것을 되묻지 않고 자기 쪽으로 넘어간다.
-        assertStrategy(next(asked, new J().event("partial")), StrategyType.EXPLORE, QuestionFocus.SELF);
+        // 여전히 일부만 들었어도 같은 것을 되묻지 않는다.
+        assertThat(next(asked, new J().emotion("clear").depth("stage_3").event("partial")).strategy().focus())
+                .isNotEqualTo(QuestionFocus.EVENT);
     }
 
     @Test
-    void movesFromTheEventToTheSelfWhenOnlyFactsWereTold() {
-        // "오늘 팀장한테 또 한 소리 들었어." — 사건은 나왔고 감정은 없다(체험 1~2단계).
+    void asksHowItWasForTheUserBeforeAnyFeelingWasNamed() {
+        // "오늘 시험 쳤는데 망한 거 같아" — 사건은 나왔고 감정은 말하지 않았다. 깊이가 3단계로 판단돼도
+        // 받을 감정이 없으니 그 감정을 묻지 않는다.
         assertStrategy(first(new J().event("specific")), StrategyType.EXPLORE, QuestionFocus.SELF);
+        assertStrategy(first(new J().event("specific").depth("stage_3")), StrategyType.EXPLORE,
+                QuestionFocus.SELF);
+        assertStrategy(first(new J().event("specific").emotion("vague").depth("stage_4")), StrategyType.EXPLORE,
+                QuestionFocus.SELF);
     }
 
     @Test
     void asksOneStepDeeperEveryTurnEvenWhenEmotionAndEventAreBothOut() {
-        // "발표 망쳐서 허무해." — 받아주기만 하고 끝내면 대화가 멈춘다. 인정 뒤에 한 단계 깊게 묻는다.
-        StrategyPolicy.Decision first = first(new J().told("stage_3"));
-        assertStrategy(first, StrategyType.EXPLORE, QuestionFocus.FEELING);
-        assertStrategy(next(first, new J().told("stage_4")), StrategyType.EXPLORE, QuestionFocus.MEANING);
+        // "발표 망쳐서 허무해." — 받아주기만 하고 끝내면 대화가 멈춘다.
+        assertStrategy(first(new J().told("stage_3")), StrategyType.EXPLORE, QuestionFocus.FEELING);
+        assertStrategy(first(new J().told("stage_4")), StrategyType.EXPLORE, QuestionFocus.MEANING);
+        assertStrategy(first(new J().told("stage_5_plus")), StrategyType.EXPLORE, QuestionFocus.FOLLOW_UP);
     }
 
     @Test
-    void doesNotAskAfterACorrectionWhenTheUserOnlyWantsToBeHeard() {
-        StrategyPolicy.Decision listening = next(first(new J().told("stage_3")), new J().requested("listen"));
-        assertStrategy(listening, StrategyType.REFLECT, QuestionFocus.NONE);
-        StrategyPolicy.Decision corrected = next(listening, new J().reaction("correct_interpretation"));
-        assertStrategy(corrected, StrategyType.CORRECT, QuestionFocus.NONE);
+    void leavesTheTopicRatherThanAskingTheSameFocusAgainOrAHarderOne() {
+        // "약간 실망했어. 열심히 공부했는데 잘 풀지 못했거든" — 깊이 판단은 그대로다. 같은 질문을 되풀이하지도,
+        // "이유가 따로 있었나요" 같은 더 어려운 질문으로 올리지도 않고 다른 기억으로 넘어간다.
+        StrategyPolicy.Decision feeling = first(new J().told("stage_3"));
+        StrategyPolicy.Decision next = next(feeling, new J().told("stage_3"));
 
-        assertStrategy(next(corrected, new J().told("stage_3")), StrategyType.REFLECT, QuestionFocus.NONE);
+        assertStrategy(next, StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC);
+        assertThat(next.signals().topicNumber()).isEqualTo(2);
     }
 
     @Test
-    void followsUpOnWhatTheUserJustNoticedAboutThemselves() {
-        // "내가 항상 후반부에 못하거든" — 받아주기만 하지 않고 방금 짚은 것을 한 번 더 묻는다.
-        assertStrategy(next(first(new J().told("stage_3")), new J().told("stage_5_plus")),
-                StrategyType.EXPLORE, QuestionFocus.FOLLOW_UP);
+    void onTheSecondTopicItProposesWrapUpInsteadOfAThirdTopic() {
+        StrategyPolicy.Decision second = next(first(new J().told("stage_3")), new J().told("stage_3"));
+        StrategyPolicy.Decision asked = next(second, new J().told("stage_3"));
+        assertStrategy(asked, StrategyType.EXPLORE, QuestionFocus.FEELING);
+
+        // 둘째 소재에서도 같은 것을 다시 묻게 됐다 — 사건은 둘까지라 여기까지 정리할지 묻는다.
+        StrategyPolicy.Decision proposal = next(asked, new J().told("stage_3"));
+        assertStrategy(proposal, StrategyType.REFLECT, QuestionFocus.WRAP_UP);
+
+        // 더 이야기하겠다고 했는데 답하기 어려워하면 더 묻지 않고 받아주기만 한다.
+        assertStrategy(next(proposal, new J().told("stage_3").reaction("struggle_to_answer")),
+                StrategyType.REFLECT, QuestionFocus.NONE);
     }
 
     @Test
-    void aShortAgreementIsMarkedBriefSoTheReplyGoesStraightToTheNextQuestion() {
-        StrategyPolicy.Decision asked = first(new J().told("stage_3"));
-        assertThat(asked.strategy().brief()).isFalse();
-
-        // "맞아" — 체험 깊이를 확신 있게 '판단 불가'로 본 답변.
-        StrategyPolicy.Decision agreed = next(asked, new J().depth("undeterminable"));
-        assertThat(agreed.strategy().brief()).isTrue();
-        assertStrategy(agreed, StrategyType.EXPLORE, QuestionFocus.FEELING);
-        // 확신이 낮으면 짧은 동의로 단정하지 않는다.
-        assertThat(next(asked, new J().set(JudgmentItem.EXPERIENCING_DEPTH, "undeterminable", 0.4))
-                .strategy().brief()).isFalse();
+    void movesToAnotherMemoryOnceEvenTheFollowUpWasAsked() {
+        StrategyPolicy.Decision d = first(new J().told("stage_5_plus"));              // 스스로 짚은 것을 묻는다
+        d = next(d, new J().told("stage_5_plus"));                                    // 정리할지 묻는다
+        d = next(d, new J().told("stage_5_plus"));                                    // 더 이야기 → 한 번 더 묻는다
+        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.FOLLOW_UP);
+        d = next(d, new J().told("stage_5_plus"));                                    // 같은 것을 또 묻지 않는다
+        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC);
     }
 
     @Test
-    void otherViewRequestLeadsToReframing() {
+    void otherViewRequestLeadsToReframingForTheRestOfTheTalk() {
         StrategyPolicy.Decision d = first(new J().told("stage_3").requested("other_view"));
         assertStrategy(d, StrategyType.REFRAME, QuestionFocus.EVIDENCE);
-        // 이번 대화에서는 그 요청이 이어진다.
         assertThat(next(d, new J().told("stage_3")).strategy().type()).isEqualTo(StrategyType.REFRAME);
     }
 
@@ -189,46 +271,11 @@ class StrategyPolicyTest {
                 QuestionFocus.FEELING);
     }
 
-    // ── 소재 전환 ──
-
-    @Test
-    void staysOnTheTopicWhileDepthKeepsRising() {
-        StrategyPolicy.Decision d = first(new J().event("specific"));                 // 2단계 → SELF
-        d = next(d, new J().told("stage_3"));                                         // 올랐다 → 감정 쪽으로
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.FEELING);
-        d = next(d, new J().told("stage_4"));                                         // 올랐다 → 그 마음의 이유로
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.MEANING);
-        d = next(d, new J().told("stage_5_plus"));                                    // 올랐다 → 방금 짚은 것을 한 번 더
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.FOLLOW_UP);
-        assertThat(d.signals().topicStall()).isZero();
-        assertThat(d.signals().topicDepth()).isEqualTo(5);
-    }
-
-    @Test
-    void movesToAnotherMemoryAfterTwoQuestionsWithoutGettingDeeper() {
-        StrategyPolicy.Decision d = first(new J().event("specific"));                 // SELF 질문
-        d = next(d, new J().event("specific"));                                       // 그대로 2단계 — 정체 1
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.SELF);
-        d = next(d, new J().event("specific"));                                       // 정체 2 → 다른 기억
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC);
-        // 넘어가면 소재에 묶인 신호는 비운다.
-        assertThat(d.signals().topicDepth()).isZero();
-        assertThat(d.signals().topicStall()).isZero();
-        assertThat(d.signals().eventOut()).isFalse();
-    }
-
-    @Test
-    void movesOnAfterTheDeepestStageWasFollowedUpOnce() {
-        StrategyPolicy.Decision d = first(new J().told("stage_5_plus"));
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.FOLLOW_UP);
-        assertStrategy(next(d, new J().told("stage_5_plus")), StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC);
-    }
-
     @Test
     void leavesTheTopicWhenTheUserFindsTheQuestionHardToAnswer() {
         // "그냥 전부." — 답하려 했지만 가려 말하기 어려워했다. 같은 것을 다시 묻지 않고 다른 기억으로 넘어간다.
-        StrategyPolicy.Decision asked = first(new J().told("stage_3"));
-        StrategyPolicy.Decision d = next(asked, new J().told("stage_3").reaction("struggle_to_answer"));
+        StrategyPolicy.Decision d = next(first(new J().told("stage_3")),
+                new J().told("stage_3").reaction("struggle_to_answer"));
 
         assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC);
         // 못 하겠다는 안 하겠다가 아니다 — 저항으로 세지 않고, 질문 빈도도 줄이지 않는다.
@@ -245,44 +292,32 @@ class StrategyPolicyTest {
 
         assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC);
         assertThat(d.strategy().brief()).isFalse();
+        // 문장 생성에는 답하기 어려워했다는 것이 전해진다 — 그 답을 되풀이하지 않게 한다.
+        assertThat(d.strategy().struggled()).isTrue();
     }
 
     @Test
-    void doesNotAskEvenAfterAStruggleWhenTheUserOnlyWantsToBeHeard() {
-        StrategyPolicy.Decision listening = next(first(new J().told("stage_3")), new J().requested("listen"));
+    void aShortAgreementIsMarkedBriefSoTheReplyGoesStraightToTheNextQuestion() {
+        StrategyPolicy.Decision asked = first(new J().told("stage_3"));
+        assertThat(asked.strategy().brief()).isFalse();
 
-        assertStrategy(next(listening, new J().reaction("struggle_to_answer")), StrategyType.REFLECT,
-                QuestionFocus.NONE);
+        // "맞아" — 체험 깊이를 확신 있게 '판단 불가'로 본 답변.
+        StrategyPolicy.Decision agreed = next(asked, new J().depth("undeterminable"));
+        assertThat(agreed.strategy().brief()).isTrue();
+        assertThat(agreed.strategy().asks()).isTrue();
+        // 확신이 낮으면 짧은 동의로 단정하지 않는다.
+        assertThat(next(asked, new J().set(JudgmentItem.EXPERIENCING_DEPTH, "undeterminable", 0.4))
+                .strategy().brief()).isFalse();
     }
 
-    @Test
-    void asksHowItWasForTheUserBeforeAnyFeelingWasNamed() {
-        // "오늘 시험 쳤는데 망한 거 같아" — 사건은 나왔고 감정은 말하지 않았다. 깊이가 3단계로 판단돼도
-        // 받을 감정이 없으니 그 감정을 묻지 않는다.
-        assertStrategy(first(new J().event("specific").depth("stage_3")), StrategyType.EXPLORE,
-                QuestionFocus.SELF);
-        assertStrategy(first(new J().event("specific").emotion("vague").depth("stage_4")), StrategyType.EXPLORE,
-                QuestionFocus.SELF);
-    }
-
-    // ── 3. 질문 빈도 ──
-
-    @Test
-    void dropsTheQuestionOnTheTurnTheUserResisted() {
-        StrategyPolicy.Decision d = next(first(new J().event("specific")),
-                new J().event("specific").reaction("no_answer_or_topic_change"));
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.NONE);
-        assertThat(d.signals().resistanceCount()).isEqualTo(1);
-    }
+    // ── 4. 질문 빈도 ──
 
     @Test
     void asksRarelyAndAsChoicesOnceResistanceRepeats() {
         StrategyPolicy.Decision d = first(new J().event("specific"));
         d = next(d, new J().event("specific").reaction("argue"));                       // 저항 1 — 질문 없음
-        d = next(d, new J().event("specific").reaction("no_answer_or_topic_change"));   // 저항 2 — 질문 없음
-        assertThat(d.signals().resistanceCount()).isEqualTo(2);
-        assertThat(d.strategy().asks()).isFalse();
-        d = next(d, new J().event("specific"));                                         // 두 턴 쉬었으니 한 번 묻는다
+        d = next(d, new J().event("specific").reaction("no_answer_or_topic_change"));   // 저항 2 — 정리할지 묻는다
+        d = next(d, new J().event("specific"));                                         // 더 이야기 — 두 턴 쉬었으니 한 번 묻는다
         assertThat(d.strategy().asks()).isTrue();
         assertThat(d.strategy().asChoices()).isTrue();
         d = next(d, new J().event("specific"));                                         // 바로 다음 턴은 쉰다
@@ -296,27 +331,64 @@ class StrategyPolicyTest {
         assertThat(d.strategy().asks()).isTrue();
     }
 
+    @Test
+    void stopsAskingOnceTheQuestionCapIsReached() {
+        StrategyPolicy capped = new StrategyPolicy(0.5, 0.8, 2, 2);
+        StrategyPolicy.Decision d = capped.decide(new J().told("stage_3").build(), StrategySignals.initial(), true);
+        d = capped.decide(new J().told("stage_3").build(), d.signals(), false);
+        assertThat(d.signals().questionsAsked()).isEqualTo(2);
+
+        d = capped.decide(new J().told("stage_3").build(), d.signals(), false);
+
+        // 상한을 넘으면 질문 없이 받아주기만 한다(문서 4-7).
+        assertStrategy(d, StrategyType.REFLECT, QuestionFocus.NONE);
+        assertThat(d.signals().questionsAsked()).isEqualTo(2);
+    }
+
     // ── 판단할 수 없을 때 ──
 
     @Test
     void lowConfidenceItemsAreSkippedAndNotCounted() {
-        StrategyPolicy.Decision d = next(first(new J().told("stage_3")),
+        StrategyPolicy.Decision d = next(first(new J().event("specific")),
                 new J().set(JudgmentItem.REACTION, "argue", 0.4)
                         .set(JudgmentItem.REQUESTED_MODE, "listen", 0.3)
                         .set(JudgmentItem.EXPERIENCING_DEPTH, "stage_5_plus", 0.45));
         assertThat(d.signals().resistanceCount()).isZero();
         assertThat(d.signals().explicitMode()).isNull();
-        assertThat(d.signals().topicDepth()).isEqualTo(3);
-        // 앞에서 나온 감정·사건과 깊이는 유지하고, 그 깊이에서 한 단계 깊게 묻는다.
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.FEELING);
+        // 앞에서 나온 사건과 깊이는 유지한다.
+        assertThat(d.signals().topicDepth()).isEqualTo(2);
+        assertThat(d.signals().eventOut()).isTrue();
+        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.SELF);
     }
 
     @Test
     void anUndeterminableShortAnswerKeepsEarlierSignals() {
-        StrategyPolicy.Decision before = first(new J().told("stage_4"));
+        StrategyPolicy.Decision before = first(new J().event("specific"));
         StrategyPolicy.Decision d = next(before, new J().reaction("undeterminable").depth("undeterminable"));
-        assertThat(d.signals().topicDepth()).isEqualTo(4);
+        assertThat(d.signals().topicDepth()).isEqualTo(2);
+        assertThat(d.signals().eventOut()).isTrue();
+        assertThat(d.signals().topicStall()).isZero();
+        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.SELF);
+    }
+
+    @Test
+    void withoutAJudgmentItGoesByWhatItAlreadyKnowsAndChangesNoSignal() {
+        // 판단 모델이 실패한 첫 턴 — 옛 고정 순서로 돌아가지 않고 기본값(인정 + 질문)으로 간다.
+        StrategyPolicy.Decision first = policy.decideWithoutJudgment(StrategySignals.initial(), true, false);
+        assertStrategy(first, StrategyType.EXPLORE, QuestionFocus.EVENT);
+
+        StrategyPolicy.Decision known = first(new J().told("stage_3"));
+        StrategyPolicy.Decision d = policy.decideWithoutJudgment(known.signals(), false, false);
+
+        assertThat(d.signals().topicDepth()).isEqualTo(3);
         assertThat(d.signals().emotionOut()).isTrue();
-        assertStrategy(d, StrategyType.EXPLORE, QuestionFocus.MEANING);
+        assertThat(d.signals().resistanceCount()).isZero();
+        assertThat(d.strategy().asks()).isTrue();
+    }
+
+    @Test
+    void withoutAJudgmentAClearStopPhraseStillCloses() {
+        assertStrategy(policy.decideWithoutJudgment(StrategySignals.initial(), false, true), StrategyType.CLOSE,
+                QuestionFocus.NONE);
     }
 }

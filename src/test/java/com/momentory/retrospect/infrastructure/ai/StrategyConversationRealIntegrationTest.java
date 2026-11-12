@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient;
 import com.momentory.retrospect.application.ReplyDto;
 import com.momentory.retrospect.application.RetrospectEngine;
 import com.momentory.retrospect.application.StartCommand;
+import com.momentory.retrospect.application.StrategyDiaryChat;
 import com.momentory.retrospect.application.TurnCommand;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.RetrospectState;
@@ -21,7 +22,6 @@ import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.domain.strategy.StrategyPolicy;
-import com.momentory.retrospect.domain.strategy.StrategyType;
 
 import io.micrometer.observation.ObservationRegistry;
 import tools.jackson.databind.json.JsonMapper;
@@ -48,11 +48,14 @@ class StrategyConversationRealIntegrationTest {
         var jev = new JevApiProperties("https://api.typesafe.ai", System.getenv("TYPESAFE_API_KEY"),
                 "jev-1.14.0", Duration.ofSeconds(2), Duration.ofSeconds(3));
         RestClient jevClient = new JevApiClientConfiguration().jevRestClient(jev, ObservationRegistry.NOOP);
-        engine = new RetrospectEngine(new SafetyPolicy(),
-                new GeminiDiaryChatAssistant(geminiClient, new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT)),
+        var assistant = new GeminiDiaryChatAssistant(geminiClient,
+                new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT));
+        var judge = new JevTurnJudge(jevClient, jev);
+        var usage = new LlmUsageLogger(0.10, 0.40);
+        engine = new RetrospectEngine(new SafetyPolicy(), assistant,
                 s -> new EmotionExtraction(List.of(), List.of(), null), s -> List.of(), s -> Optional.empty(),
-                new JevTurnJudge(jevClient, jev), new StrategyPolicy(0.5, 0.8, 2),
-                new LlmUsageLogger(0.10, 0.40), e -> { }, 1, 3);
+                judge, new StrategyDiaryChat(judge, new StrategyPolicy(0.5, 0.8, 2, 8), assistant, usage, 12),
+                usage, e -> { }, 1, 3);
         state = new RetrospectState("strategy-smoke");
         engine.start(state, StartCommand.today("민지", null));
         state.enableTurnStrategy();
@@ -82,9 +85,9 @@ class StrategyConversationRealIntegrationTest {
         say("응, 계속 생각나.");
         ReplyDto deepest = say("속상한 게 지적 자체보다, 인정받고 싶었는데 못 받아서인 것 같아.");
 
-        assertThat(asks(deepest)).as("스스로 짚은 것을 한 번 더 묻는다").isTrue();
-        assertThat(state.strategySignals().topicDepth()).isEqualTo(5);
-        assertThat(state.strategySignals().lastType()).isEqualTo(StrategyType.EXPLORE);
+        // 깊이가 오른 뒤에는 여기까지 정리할지 묻는다 — 선택지가 붙는다.
+        assertThat(deepest.options()).isNotEmpty();
+        assertThat(state.strategySignals().wrapUpProposed()).isTrue();
     }
 
     @Test

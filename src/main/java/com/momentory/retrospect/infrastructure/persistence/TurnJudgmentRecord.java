@@ -21,7 +21,7 @@ import jakarta.persistence.Table;
  *
  * <p>항목별 선택과 확신은 집계하기 쉽게 칸으로 풀고, 선택지 확률 전체는 {@code probabilitiesJson} 에 둔다.
  * 판단 호출이 실패한 턴은 {@code status = FAILED} 이고 판단 칸이 모두 비어 있다. 전략 칸은 전략 선택을 켠
- * 계정의 판단된 턴에만 채워진다.
+ * 계정의 턴에 채워진다 — 판단이 실패한 턴에도 지금까지의 신호로 고른 기본 전략이 남는다.
  */
 @Entity
 @Table(name = "retrospect_turn_judgments")
@@ -136,6 +136,13 @@ public class TurnJudgmentRecord {
         record.diaryTurn = log.diaryTurn();
         record.createdAt = Instant.now();
         record.generationFailed = log.generationFailed();
+        if (log.strategy() != null) {
+            record.strategyType = log.strategy().type().name();
+            record.questionFocus = log.strategy().focus().name();
+            record.questionAsChoices = log.strategy().asChoices();
+            record.policyVersion = log.policyVersion();
+            record.strategyApplied = log.strategyApplied();
+        }
         if (log.failed()) {
             record.status = FAILED;
             return record;
@@ -166,13 +173,6 @@ public class TurnJudgmentRecord {
                 "probabilitiesJson must not be null");
         record.inputTokens = j.inputTokens();
         record.latencyMs = (int) Math.min(j.latencyMs(), Integer.MAX_VALUE);
-        if (log.strategy() != null) {
-            record.strategyType = log.strategy().type().name();
-            record.questionFocus = log.strategy().focus().name();
-            record.questionAsChoices = log.strategy().asChoices();
-            record.policyVersion = log.policyVersion();
-            record.strategyApplied = log.strategyApplied();
-        }
         return record;
     }
 

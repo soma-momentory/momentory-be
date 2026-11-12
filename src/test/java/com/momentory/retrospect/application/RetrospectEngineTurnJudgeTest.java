@@ -15,6 +15,7 @@ import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
+import com.momentory.retrospect.domain.assistant.TurnJudge;
 import com.momentory.retrospect.domain.judgment.ItemJudgment;
 import com.momentory.retrospect.domain.judgment.JudgmentItem;
 import com.momentory.retrospect.domain.judgment.TurnJudgment;
@@ -38,10 +39,14 @@ class RetrospectEngineTurnJudgeTest {
     }
 
     private RetrospectEngine engine() {
-        return new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, (s, text) -> {
+        TurnJudge judge = (s, text) -> {
             judged.add(text);
             return answer;
-        }, new StrategyPolicy(0.5, 0.8, 2), new LlmUsageLogger(0.10, 0.40), e -> { }, 1, 3);
+        };
+        LlmUsageLogger usage = new LlmUsageLogger(0.10, 0.40);
+        return new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, judge,
+                new StrategyDiaryChat(judge, new StrategyPolicy(0.5, 0.8, 2, 8), fake, usage, 12), usage,
+                e -> { }, 1, 3);
     }
 
     static TurnJudgment judgment() {

@@ -161,7 +161,7 @@ class TurnJudgmentPersistenceIntegrationTest {
     @Test
     @DisplayName("전략 선택 대상 계정은 고른 전략이 판단 옆에 남고, 다음 턴이 앞 턴의 신호를 이어 쓴다")
     void recordsTheChosenStrategyAndCarriesSignals() throws Exception {
-        // 감정과 사건이 다 나온 3단계 답변 — 인정 뒤에 한 단계 깊게 묻는다.
+        // 감정과 사건이 다 나온 3단계 답변 — 인정 뒤에 한 단계 깊게 묻고, 같은 것을 또 묻게 되면 다른 기억으로 넘어간다.
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
@@ -173,10 +173,10 @@ class TurnJudgmentPersistenceIntegrationTest {
         assertThat((String) JsonPath.read(first.getResponse().getContentAsString(StandardCharsets.UTF_8),
                 "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.\n그때 어떤 기분이 드셨나요?");
         assertThat((String) JsonPath.read(asked.getResponse().getContentAsString(StandardCharsets.UTF_8),
-                "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.\n그때 어떤 기분이 드셨나요?");
+                "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
         List<TurnJudgmentRecord> rows = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId);
         assertThat(rows).extracting(TurnJudgmentRecord::getStrategyType).containsExactly("EXPLORE", "EXPLORE");
-        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("FEELING", "FEELING");
+        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("FEELING", "OTHER_TOPIC");
         assertThat(rows).allSatisfy(row -> {
             assertThat(row.getPolicyVersion()).isEqualTo(StrategyPolicy.VERSION);
             assertThat(row.getStrategyApplied()).isTrue();
@@ -189,6 +189,15 @@ class TurnJudgmentPersistenceIntegrationTest {
         say(user, sessionId, "그 생각이 자꾸 나요.");
         assertThat(judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast().isGenerationFailed())
                 .isTrue();
+
+        // 판단 모델이 실패한 턴에도 기본값으로 고른 전략이 남는다 — 옛 고정 순서로 돌아가지 않는다.
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.empty());
+        say(user, sessionId, "아직도 마음이 무거워요.");
+        TurnJudgmentRecord failed = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast();
+        assertThat(failed.getStatus()).isEqualTo("FAILED");
+        assertThat(failed.getStrategyType()).isNotNull();
+        assertThat(failed.getPolicyVersion()).isEqualTo(StrategyPolicy.VERSION);
+        assertThat(failed.getExperiencingDepth()).isNull();
     }
 
     @Test

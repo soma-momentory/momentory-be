@@ -112,6 +112,10 @@ momentory:
     min-confidence: ${TURN_STRATEGY_MIN_CONFIDENCE:0.5}
     close-confidence: ${TURN_STRATEGY_CLOSE_CONFIDENCE:0.8}
     resistance-threshold: ${TURN_STRATEGY_RESISTANCE_THRESHOLD:2}
+    # 대화 분량 — 턴 수로 끊지 않고 전략이 마무리를 제안한다. 바바의 질문이 question-cap 에 닿으면 더 묻지 않고,
+    # max-turns 는 끝없이 이어지지 않게 하는 안전 상한이다. 둘 다 근거가 쌓이기 전의 임시값이다.
+    question-cap: ${TURN_STRATEGY_QUESTION_CAP:8}
+    max-turns: ${TURN_STRATEGY_MAX_TURNS:12}
   gate:
     reask-cap: ${RETRO_REASK_CAP:1}
   prompt:

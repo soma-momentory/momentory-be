@@ -73,7 +73,9 @@ public class PromptFactory {
     private static final String STRATEGY_SYSTEM = SYSTEM.replace(SYSTEM_FIXED_ORDER, """
             2. 질문은 한 번에 하나만 합니다. 이번 턴에 질문을 할지와 무엇을 물을지는 턴마다 주어지는 [이번 턴에 할 일]을 따릅니다.
                아직 일어나지 않은 일정만 답하면 그 상황을 받아주고 그전에 있었던 일을 묻습니다.
-            """);
+            """)
+            // 매 응답을 "OO님,"으로 시작하고 질문에도 다시 붙였다 — 전략 턴에서는 호칭을 부르지 않는다.
+            .replace("닉네임이 있으면 \"OO님\"으로 부릅니다('당신' 금지).", "사용자를 '당신'이라고 부르지 않습니다.");
 
     /** 전략이 정해진 턴의 시스템 프롬프트 — 원칙은 같고, 무엇을 물을지는 턴 프롬프트의 전략에 맡긴다. */
     public String strategySystem() {
@@ -167,7 +169,7 @@ public class PromptFactory {
      */
     public String strategyTurnPrompt(RetrospectState state, String userText, TurnStrategy strategy) {
         return """
-                [진행] 지금까지 %d턴 나눴습니다. 일기 작성 채팅은 최대 %d턴이며 종료는 서버가 결정합니다.
+                [진행] 지금까지 %d턴 나눴습니다. 언제 마무리할지는 서버가 정합니다 — 대화를 끝내자고 하거나 정리하지 마세요.
                 [현재 소재]
                 - 사건(event): %s
 
@@ -195,6 +197,9 @@ public class PromptFactory {
                 - 누가 무엇을 했는지 바꾸지 않습니다. 사용자의 '나·내가'는 사용자 자신이고, '걔·친구·엄마' 등은 그 사람입니다.
                 - 말하는 이는 바바, 듣는 이는 사용자입니다. 사용자를 '바바'라고 부르거나 '저·제'로 가리키지 않습니다.
                 - 답변이 '응'처럼 아주 짧으면 그 답을 평가하지 말고, 편하게 이어 말해도 된다는 뜻만 전합니다.
+                - 사용자가 쓴 정도를 바꾸지 않습니다. '약간 실망했어'를 '실망이 크셨군요'로 키우거나 줄이지 않습니다.
+                  사용자가 쓰지 않은 감정 단어는 empathy에도 question에도 넣지 않습니다.
+                - 호칭('OO님')으로 응답을 시작하지 않습니다. 호칭은 empathy에도 question에도 넣지 않습니다.
                 - 진단·조언·과장된 위로는 하지 않습니다. 정해진 공감 문구를 반복하지 않습니다.
                 - 존댓말을 씁니다.
                 [출력 필드]
@@ -211,7 +216,7 @@ public class PromptFactory {
                 - noMoreToAsk: 더 물어볼 것이 없으면 true.
                 - safetyLevel: none|caution|risk|imminent.
                 - offTopic/vague: 무관하거나 얼버무린 답변만 true. 짧은 감정 답변과 맞다/아니다 답은 false입니다.
-                """.formatted(state.diaryTurn(), RetrospectState.DIARY_MAX_TURNS, orNone(state.event()),
+                """.formatted(state.diaryTurn(), orNone(state.event()),
                 recentHistory(state), userText.strip(), typeDirective(strategy.type()),
                 questionDirective(strategy), briefDirective(strategy));
     }
@@ -230,6 +235,10 @@ public class PromptFactory {
 
     /** 짧은 동의에는 앞의 공감을 되풀이하지 않는다. */
     private static String briefDirective(TurnStrategy strategy) {
+        if (strategy.struggled()) {
+            return "\n- 사용자가 답하기 어려워했습니다. 그 답을 되풀이하지 않습니다('…라고 하셨군요' 금지). 말로 꺼내기 어려울 "
+                    + "수 있다는 것만 한 문장으로 받아 주고, 왜 어려운지 묻거나 짐작하지 않습니다.";
+        }
         if (!strategy.brief()) {
             return "";
         }
@@ -243,14 +252,18 @@ public class PromptFactory {
     private static String questionDirective(TurnStrategy strategy) {
         String focus = switch (strategy.focus()) {
             case NONE -> "이번 턴에는 질문하지 않습니다. question은 빈 문자열이고, 제안이나 권유도 넣지 않습니다.";
+            case WRAP_UP -> "여기까지 정리할지는 서버가 묻습니다. question은 빈 문자열로 두세요. empathy는 방금 답변을 "
+                    + "한 문장으로 받아 주기만 하고, 대화를 마무리하는 말이나 작별 인사를 넣지 않습니다.";
             case OTHER_TOPIC -> "다음 질문은 서버가 붙입니다. question은 빈 문자열로 두세요. empathy는 방금 답변을 "
                     + "그대로 받아 주기만 하고, 이 일에 대해 더 캐묻거나 이유를 짐작하지 않습니다.";
             case EVENT -> "그때 어떤 일이 있었는지(상황과 경위)를 묻는 열린 질문 하나. 사건 설명이 아직 부족하므로 "
                     + "이번 턴에는 기분·감정·마음을 묻지 않습니다.";
             case SELF -> "그 일을 겪을 때 사용자 본인은 어땠는지 묻는 질문 하나(예: '그 말을 들었을 때 어떠셨어요?'). "
                     + "초점을 사건·타인에서 사용자 자신으로 옮깁니다.";
-            case FEELING -> "사용자가 방금 말한 감정 단어를 그대로 받아, 그 일의 어떤 점이 가장 그렇게 느껴지게 했는지 묻는 "
-                    + "질문 하나(예: '어떤 점이 제일 분하셨어요?'). 사건의 경위를 다시 묻지 않습니다.";
+            case FEELING -> "사용자가 방금 말한 감정을 그 말 그대로 받아, 그때 사용자 자신에 대해서는 어떤 마음이나 생각이 "
+                    + "들었는지 묻는 질문 하나(예: '그렇게 분했을 때 스스로한테는 어떤 마음이 드셨어요?'). 사용자가 자기 "
+                    + "자신에 대해 한 말이 있으면 그 말을 받아 묻습니다. 원인이나 '어떤 부분·어떤 점'을 캐묻지 않고, "
+                    + "원인을 넘겨짚지 않습니다.";
             case MEANING -> "사용자가 방금 말한 마음이 왜 그렇게 크게 다가왔는지 묻는 질문 하나"
                     + "(예: '그 일이 유독 크게 느껴진 이유가 있을까요?').";
             case FOLLOW_UP -> "사용자가 방금 스스로 짚은 것(자기 패턴이나 이유)을 그 말 그대로 받아, 그것에 대해 한 가지만 더 "

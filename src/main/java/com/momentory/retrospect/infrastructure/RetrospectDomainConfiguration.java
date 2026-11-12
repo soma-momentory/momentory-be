@@ -32,8 +32,9 @@ public class RetrospectDomainConfiguration {
     StrategyPolicy strategyPolicy(
             @Value("${momentory.strategy.min-confidence:0.5}") double minConfidence,
             @Value("${momentory.strategy.close-confidence:0.8}") double closeConfidence,
-            @Value("${momentory.strategy.resistance-threshold:2}") int resistanceThreshold) {
-        return new StrategyPolicy(minConfidence, closeConfidence, resistanceThreshold);
+            @Value("${momentory.strategy.resistance-threshold:2}") int resistanceThreshold,
+            @Value("${momentory.strategy.question-cap:8}") int questionCap) {
+        return new StrategyPolicy(minConfidence, closeConfidence, resistanceThreshold, questionCap);
     }
 
     @Bean
