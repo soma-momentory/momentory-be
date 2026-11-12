@@ -22,8 +22,8 @@ public enum JudgmentItem {
     EVENT_INFO("event_info", List.of("specific", "partial", "none")),
     /** 직전 응답에 대한 반응 — 바바의 해석이나 질문에 어떻게 반응했는가. */
     REACTION("reaction", List.of("correct_interpretation", "refuse_question",
-            "no_answer_or_topic_change", "argue", "struggle_to_answer", "agree_or_elaborate", "first_turn",
-            "undeterminable")),
+            "no_answer_or_topic_change", "argue", "struggle_to_answer", "puzzled_or_objecting",
+            "agree_or_elaborate", "undeterminable")),
     /** 체험 깊이 — 말의 초점이 사건·사건에 대한 감정·자기 감정·스스로의 탐색 중 어디에 있는가. */
     EXPERIENCING_DEPTH("experiencing_depth",
             List.of("stage_1_2", "stage_3", "stage_4", "stage_5_plus", "undeterminable"));

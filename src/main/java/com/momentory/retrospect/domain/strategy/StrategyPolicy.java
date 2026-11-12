@@ -1,45 +1,50 @@
 package com.momentory.retrospect.domain.strategy;
 
+import java.util.Set;
+
 import com.momentory.retrospect.domain.judgment.ItemJudgment;
 import com.momentory.retrospect.domain.judgment.JudgmentItem;
 import com.momentory.retrospect.domain.judgment.TurnJudgment;
 
 /**
- * 턴 판단과 이번 대화의 신호로 이번 턴의 전략을 고른다 — 순수 규칙이고 모델을 부르지 않는다.
+ * 턴 판단과 이번 대화의 신호로 이번 턴의 <b>굵은 방침</b>을 고른다 — 순수 규칙이고 모델을 부르지 않는다.
  *
- * <p>순서는 <b>제약 확인 → 마무리 제안 → 유형 선택 → 질문 빈도 → 질문 깊이</b>다(설계 문서 4번). 확신이 기준에 못
- * 미치거나 '판단 불가'인 항목은 이번 턴 선택에서 건너뛰고 신호에도 세지 않는다. 규칙을 고치면 {@link #VERSION} 을
- * 올린다 — 기록에 버전이 남아 규칙이 바뀌기 전후의 대화를 섞지 않고 볼 수 있다.
+ * <p>규칙이 정하는 것은 넷뿐이다: 끝낼지, 물러설지, 질문을 할지, 언제 마무리를 제안할지. <b>무엇을 물을지는 정하지 않는다</b> —
+ * 이미 답한 것인지, 새 이야기인지, 더 물을 것이 남았는지는 대화 전체를 보는 문장 생성 모델만 알 수 있다. 감정 · 사건 · 체험 깊이
+ * 판단은 방침을 고르는 데 쓰지 않는 측정값이다(턴별 기록에 남아 결과 지표가 된다).
  *
- * <p>저장된 성향은 아직 없다. 기본값(바바가 이끌고, 지지 위주)에서 시작해 이번 대화의 신호만 반영한다.
+ * <p>방침을 바꾸는 신호(끝내려 함 · 받아들이지 않음 · 들어 달라 함 · 다른 관점을 원함)만 판단에서 읽고, 확신이 기준에
+ * 못 미치면 없는 것으로 본다. 규칙을 고치면 {@link #VERSION} 을 올린다.
  *
  * <p>버전 이력:
  * <ul>
- * <li>v1: 문서의 유형 정의 그대로 — 감정과 사건이 다 나오면 질문 없이 받아준다.
- * <li>v2: 수정 반영 뒤에도 한 단계 깊은 질문을 붙인다.
- * <li>v3: 기본은 매 턴 인정 뒤에 질문 하나다(문서 4-3 · 4-8). 5단계 이상에서도 한 번 더 묻고, 짧은 동의에는 공감을
- *     되풀이하지 않는다.
- * <li>v4: 답하기 어려워하면 다른 기억으로 넘어가고 저항으로 세지 않는다. 감정이 나오기 전에는 자기 쪽 질문부터 한다.
- * <li>v5: 턴 수 상한을 버리고 문서 4-7 로 간다 — 충분해지면 마무리를 제안하고(더 말하고 싶으면 이어간다), 질문 수에
- *     상한을 둔다. 직전 턴과 같은 초점을 연달아 묻지 않는다. 판단이 없는 턴은 기본값으로 간다(옛 고정 순서 폴백 없음).
- * <li>v6: 같은 초점이 다시 골라지면 더 어려운 질문으로 올리지 않고 그 소재를 떠난다 — 이미 이유까지 들은 뒤에 "이유가
- *     따로 있었나요"를 물어 「잘 모르겠어」가 나왔다. 소재는 둘까지다: 첫 소재면 다른 기억을 묻고, 둘째 소재면
- *     마무리를 제안한다.
+ * <li>v1~v6: 규칙이 체험 깊이 판단으로 질문의 초점을 골랐다. 대화마다 상황별 규칙을 더했고, 규칙끼리 부딪혀 깨졌다 —
+ *     깊이 판단의 확신이 낮아 엉뚱한 초점이 골라지고, 사용자가 꺼낸 새 이야기를 알아보지 못해 앞 이야기의 감정을 섞었다.
+ * <li>v7: 규칙은 굵은 방침만 정한다. 받아들이지 않는 반응(고쳐 말함 · 반박 · 답하기 어려워함 · 의아해함 · 다른 얘기로 넘어감)은
+ *     종류를 가리지 않고 물러선다. 질문의 내용과 「더 물을 것이 없음」은 문장 생성 모델이 정하고, 그 결과로 다른 기억을
+ *     묻거나 마무리를 제안한다({@link #settle}).
+ * <li>v8: 규칙은 그대로이고 문장 생성 지시만 바뀌었다(턴 기록에서 구분하려고 버전을 올린다). v7 대화에서 질문이 모두
+ *     사실 쪽으로 가 감정이 하나도 나오지 않았다 — 질문은 그 일을 겪은 마음을 향하고, 무슨 일인지 알게 됐으면 사실을
+ *     더 캐묻지 않으며, 마음을 한 번도 묻지 않은 이야기는 「더 물을 것이 없음」으로 끝내지 않는다. 같은 질문은 두 번 하지
+ *     않는다 — 답을 듣지 못한 질문은 되풀이하지 않고, 다른 기억을 이미 물었으면 다시 묻는 대신 마무리를 제안한다.
  * </ul>
  */
 public class StrategyPolicy {
 
-    /** 한 대화에서 다루는 소재 수 — 사건은 둘까지 뽑는다. */
-    static final int MAX_TOPICS = 2;
+    public static final String VERSION = "v8";
 
-    public static final String VERSION = "v6";
-
-    /** 한 소재에서 질문하고도 깊이가 이만큼 연달아 오르지 않으면 같은 것을 다시 묻게 된 것으로 본다. */
-    static final int TOPIC_STALL_LIMIT = 2;
-    /** 저항이 이만큼 연달아 나오면 마무리를 제안한다. */
-    static final int RESISTANCE_STREAK_LIMIT = 2;
+    /** 한 대화에서 다루는 이야기 수 — 사건은 둘까지 뽑는다. */
+    public static final int MAX_TOPICS = 2;
+    /** 받아들이지 않는 답이 이만큼 연달아 나오면 마무리를 제안한다. */
+    static final int YIELD_STREAK_LIMIT = 2;
     /** 저항이 반복된 사용자에게는 이만큼 턴을 건너 한 번만 묻는다. */
     static final int SPARSE_QUESTION_GAP = 2;
+
+    /** 바바의 직전 말을 받아들이지 않은 반응 — 종류는 달라도 대처는 같다: 물러선다. */
+    private static final Set<String> NOT_ACCEPTED = Set.of("correct_interpretation", "argue", "struggle_to_answer",
+            "puzzled_or_objecting", "no_answer_or_topic_change");
+    /** 그중 주도성 신호로 세는 저항 — 답하지 않음 · 화제 전환 · 반박. */
+    private static final Set<String> RESISTANCE = Set.of("argue", "no_answer_or_topic_change");
 
     private final double minConfidence;
     private final double closeConfidence;
@@ -47,10 +52,10 @@ public class StrategyPolicy {
     private final int questionCap;
 
     /**
-     * @param minConfidence       이 값 미만의 판단은 '판단 불가'로 본다
+     * @param minConfidence       이 값 미만의 신호는 없는 것으로 본다
      * @param closeConfidence     종료 요청은 이 값 이상일 때만 바로 마무리한다(회고는 하루 한 번이라 되돌릴 수 없다)
      * @param resistanceThreshold 저항이 이 횟수부터 질문을 줄이고 선택지 형태로 묻는다
-     * @param questionCap         바바의 질문이 이 수에 닿으면 더 묻지 않고 받아주기만 한다
+     * @param questionCap         바바의 질문이 이 수에 닿으면 더 묻지 않고 마무리를 제안한다
      */
     public StrategyPolicy(double minConfidence, double closeConfidence, int resistanceThreshold, int questionCap) {
         this.minConfidence = minConfidence;
@@ -59,229 +64,117 @@ public class StrategyPolicy {
         this.questionCap = questionCap;
     }
 
-    /** 고른 전략과, 이번 턴까지 반영한 신호. */
+    /** 고른 방침과, 이번 턴의 신호까지 반영한 값. 턴이 끝나면 {@link #settle} 로 마무리한다. */
     public record Decision(TurnStrategy strategy, StrategySignals signals) {
     }
 
-    /** 이번 턴 판단에서 전략 선택에 쓰는 것만 추린 것 — 쓸 수 없는 항목은 null 이나 0 이다. */
-    private record Reading(boolean judged, boolean endRequested, String reaction, String requested,
-            boolean emotionClear, boolean eventSpecific, int depth, boolean brief) {
-
-        /** 판단이 없는 턴. */
-        static Reading none(boolean endRequested) {
-            return new Reading(false, endRequested, null, null, false, false, 0, false);
-        }
-    }
-
     /**
-     * @param firstTurn 일기 작성 채팅의 첫 답변인가 — 바바의 직전 말이 첫 질문뿐이라 '직전 응답에 대한 반응'을 보지 않는다
+     * @param noReaction 바바의 직전 말이 반응을 볼 만한 것이 아니었는가 — 첫 질문이거나, 「더 나누고 싶은 이야기를 들려주세요」처럼
+     *                   무엇을 말할지 사용자에게 맡긴 뒤다. 이때 다른 얘기를 꺼내는 것은 받아들이지 않은 것이 아니다.
      */
-    public Decision decide(TurnJudgment judgment, StrategySignals before, boolean firstTurn) {
+    public Decision decide(TurnJudgment judgment, StrategySignals before, boolean noReaction) {
         ItemJudgment end = judgment.of(JudgmentItem.END_INTENT);
-        ItemJudgment depth = judgment.of(JudgmentItem.EXPERIENCING_DEPTH);
-        String reaction = firstTurn ? null : usable(judgment, JudgmentItem.REACTION);
-        // 짧은 동의 — 체험 깊이를 '판단 불가'라고 확신 있게 본 답변. 답하기 어려워한 답은 짧아도 받아준 뒤 넘어간다.
-        boolean brief = !"struggle_to_answer".equals(reaction) && "undeterminable".equals(depth.choice())
-                && depth.confidence() >= minConfidence;
-        return decide(new Reading(true,
-                "end_request".equals(end.choice()) && end.confidence() >= closeConfidence,
-                reaction,
-                usable(judgment, JudgmentItem.REQUESTED_MODE),
-                "clear".equals(usable(judgment, JudgmentItem.EMOTION_EXPRESSION)),
-                "specific".equals(usable(judgment, JudgmentItem.EVENT_INFO)),
-                depthOf(usable(judgment, JudgmentItem.EXPERIENCING_DEPTH)),
-                brief), before, firstTurn);
+        boolean endRequested = "end_request".equals(end.choice()) && end.confidence() >= closeConfidence;
+        return decide(endRequested, noReaction ? null : signal(judgment, JudgmentItem.REACTION),
+                signal(judgment, JudgmentItem.REQUESTED_MODE), before);
     }
 
     /**
-     * 판단이 없는 턴(판단 모델 실패) — 지금까지의 신호만으로 기본값을 고른다. 이 턴으로 신호를 바꾸지는 않는다.
+     * 판단이 없는 턴(판단 모델 실패) — 지금까지의 신호만으로 방침을 고른다.
      *
      * @param stopPhrase 사용자의 답이 「그만할래」 같은 분명한 종료 문구인가 — 판단이 없을 때만 쓰는 안전망
      */
-    public Decision decideWithoutJudgment(StrategySignals before, boolean firstTurn, boolean stopPhrase) {
-        return decide(Reading.none(stopPhrase), before, firstTurn);
+    public Decision decideWithoutJudgment(StrategySignals before, boolean stopPhrase) {
+        return decide(stopPhrase, null, null, before);
     }
 
-    private Decision decide(Reading r, StrategySignals before, boolean firstTurn) {
-        boolean resisted = "no_answer_or_topic_change".equals(r.reaction()) || "argue".equals(r.reaction());
-        // 답하려 했지만 어려워함 — 저항으로 세지 않는다.
-        boolean struggled = "struggle_to_answer".equals(r.reaction());
-
-        // ── 신호 갱신 ──
+    private Decision decide(boolean endRequested, String reaction, String requested, StrategySignals before) {
+        boolean notAccepted = reaction != null && NOT_ACCEPTED.contains(reaction);
         String explicitMode = before.explicitMode();
-        if ("listen".equals(r.requested()) || "refuse_question".equals(r.reaction())) {
+        if ("listen".equals(requested) || "refuse_question".equals(reaction)) {
             explicitMode = StrategySignals.LISTEN;
-        } else if ("explore".equals(r.requested())) {
-            explicitMode = StrategySignals.EXPLORE;
-        } else if ("other_view".equals(r.requested())) {
+        } else if ("other_view".equals(requested)) {
             explicitMode = StrategySignals.OTHER_VIEW;
-        }
-        int topicDepth = before.topicDepth();
-        int topicStall = before.topicStall();
-        if (r.depth() > topicDepth) {
-            topicDepth = r.depth();
-            topicStall = 0;
-        } else if (r.depth() > 0 && before.lastAsked()) {
-            // 질문을 받고도 깊어지지 않은 턴만 센다.
-            topicStall++;
+        } else if ("explore".equals(requested) || "advice".equals(requested)) {
+            // 함께 알아보자거나 조언을 구하면 「듣기만」은 풀린다.
+            explicitMode = StrategySignals.LISTEN.equals(explicitMode) ? null : explicitMode;
         }
         StrategySignals now = new StrategySignals(
-                before.resistanceCount() + (resisted ? 1 : 0),
-                resisted ? before.resistanceStreak() + 1 : 0,
-                explicitMode,
-                before.emotionOut() || r.emotionClear(),
-                before.eventOut() || r.eventSpecific(),
-                before.topicNumber(),
-                before.startDepth() > 0 ? before.startDepth() : r.depth(),
-                topicDepth, topicStall, before.wrapUpProposed(), before.lastType(), before.lastFocus(),
+                before.resistanceCount() + (reaction != null && RESISTANCE.contains(reaction) ? 1 : 0),
+                notAccepted ? before.yieldStreak() + 1 : 0,
+                explicitMode, before.topicNumber(), before.wrapUpProposed(), before.lastType(),
                 before.turnsSinceQuestion(), before.questionsAsked());
-
-        TurnStrategy strategy = choose(r, now, resisted, struggled, firstTurn);
-        QuestionFocus focus = strategy.focus();
-        boolean askedNow = strategy.asks() && focus != QuestionFocus.WRAP_UP;
-        StrategySignals after = new StrategySignals(now.resistanceCount(), now.resistanceStreak(),
-                now.explicitMode(), now.emotionOut(),
-                // 사건은 한 소재에서 한 번만 묻는다 — 일부만 들었어도 같은 것을 되묻지 않는다.
-                now.eventOut() || focus == QuestionFocus.EVENT,
-                now.topicNumber(), now.startDepth(), now.topicDepth(), now.topicStall(),
-                now.wrapUpProposed() || focus == QuestionFocus.WRAP_UP,
-                strategy.type(), focus,
-                askedNow ? 0 : now.turnsSinceQuestion() + 1,
-                now.questionsAsked() + (askedNow ? 1 : 0));
-        return new Decision(strategy, focus == QuestionFocus.OTHER_TOPIC ? after.nextTopic() : after);
+        return new Decision(choose(endRequested, notAccepted, reaction, now), now);
     }
 
-    private TurnStrategy choose(Reading r, StrategySignals s, boolean resisted, boolean struggled,
-            boolean firstTurn) {
-        // ── 1. 먼저 적용하는 제약 (문서 4-2) ──
-        if (r.endRequested()) {
-            return new TurnStrategy(StrategyType.CLOSE, QuestionFocus.NONE, false);
+    private TurnStrategy choose(boolean endRequested, boolean notAccepted, String reaction, StrategySignals s) {
+        // ── 1. 끝내려 하면 마무리한다 ──
+        if (endRequested) {
+            return new TurnStrategy(StrategyType.CLOSE, QuestionFocus.NONE, false, reaction);
         }
-        boolean corrected = "correct_interpretation".equals(r.reaction());
-        StrategyType quiet = corrected ? StrategyType.CORRECT : StrategyType.REFLECT;
-        // 들어 달라고 한 사용자에게는 묻지 않는다. 질문 수 상한을 넘어도 받아주기만 한다(4-7).
-        if (StrategySignals.LISTEN.equals(s.explicitMode()) || s.questionsAsked() >= questionCap) {
-            return new TurnStrategy(quiet, QuestionFocus.NONE, false, r.brief(), struggled);
+        StrategyType base = notAccepted ? StrategyType.YIELD
+                : StrategySignals.OTHER_VIEW.equals(s.explicitMode()) ? StrategyType.REFRAME
+                : StrategyType.EXPLORE;
+        // ── 2. 들어 달라고 했으면 묻지 않는다 ──
+        if (StrategySignals.LISTEN.equals(s.explicitMode())) {
+            return new TurnStrategy(notAccepted ? StrategyType.YIELD : StrategyType.REFLECT, QuestionFocus.NONE,
+                    false, reaction);
         }
-
-        // ── 2. 마무리 제안 (문서 4-7) ── 끊지 않고 묻기만 한다. 같은 소재에서는 한 번만 제안한다.
-        if (!firstTurn && !corrected && !struggled && !s.wrapUpProposed() && enough(s)) {
-            return new TurnStrategy(quiet, QuestionFocus.WRAP_UP, false);
+        // ── 3. 충분히 물었거나 받아들이지 않는 답이 이어지면 마무리를 제안한다(이야기마다 한 번) ──
+        boolean askedEnough = s.questionsAsked() >= questionCap;
+        if (askedEnough || s.yieldStreak() >= YIELD_STREAK_LIMIT) {
+            StrategyType quiet = notAccepted ? StrategyType.YIELD : StrategyType.REFLECT;
+            return new TurnStrategy(quiet, s.wrapUpProposed() ? QuestionFocus.NONE : QuestionFocus.WRAP_UP, false,
+                    reaction);
         }
-
-        // ── 3. 유형 ── 기본은 매 턴 인정 뒤에 질문 하나다. 받아주기만 하고 끝내면 대화가 멈춘다.
-        int depth = r.depth() > 0 ? r.depth() : s.topicDepth();
-        StrategyType type;
-        QuestionFocus focus;
-        if (StrategySignals.OTHER_VIEW.equals(s.explicitMode())) {
-            type = StrategyType.REFRAME;
-            focus = QuestionFocus.EVIDENCE;
-        } else if (corrected) {
-            // 고친 표현을 받은 뒤 같은 턴에 이어서 묻는다. 방금 고쳐 말한 소재에서 다른 기억으로 넘어가지는 않는다.
-            type = StrategyType.CORRECT;
-            focus = s.eventOut() ? deeper(depth, s.emotionOut()) : QuestionFocus.EVENT;
-        } else if (struggled || s.topicStall() >= TOPIC_STALL_LIMIT) {
-            // 답하기 어려워했거나(4-8), 마무리를 제안한 뒤에도 이 소재에서 더 깊어지지 않는다 → 이 소재를 떠난다.
-            return paced(leaveTopic(s, struggled, r.brief()), s, resisted);
-        } else if (!s.eventOut()) {
-            type = StrategyType.EXPLORE;
-            focus = QuestionFocus.EVENT;
-        } else {
-            type = StrategyType.EXPLORE;
-            focus = deeper(depth, s.emotionOut());
-            // 같은 것을 다시 묻게 된다 — 더 어려운 질문으로 올리지 않고 이 소재를 떠난다. 판단이 없는 턴에는 방금 답이
-            // 어땠는지 모르므로 소재를 떠나지 않는다.
-            if (r.judged() && wouldRepeat(focus, s)) {
-                return paced(leaveTopic(s, false, r.brief()), s, resisted);
-            }
-        }
-
-        return paced(new TurnStrategy(type, focus, false, r.brief()), s, resisted);
-    }
-
-    /**
-     * 4. 질문 빈도 — 저항이 나온 턴은 질문을 빼고, 저항이 반복된 사용자에게는 턴을 건너 한 번씩 선택지 형태로 묻는다.
-     * 마무리 제안은 깊이를 묻는 질문이 아니므로 그대로 둔다.
-     */
-    private TurnStrategy paced(TurnStrategy chosen, StrategySignals s, boolean resisted) {
-        if (!chosen.asks() || chosen.focus() == QuestionFocus.WRAP_UP) {
-            return chosen;
-        }
+        // ── 4. 질문 빈도 — 저항이 반복된 사용자에게는 턴을 건너 한 번씩, 선택지 형태로 묻는다 ──
         boolean sparse = s.resistanceCount() >= resistanceThreshold;
-        if (resisted || (sparse && s.turnsSinceQuestion() < SPARSE_QUESTION_GAP)) {
-            return new TurnStrategy(chosen.type(), QuestionFocus.NONE, false, chosen.brief(), chosen.struggled());
+        if (sparse && s.turnsSinceQuestion() < SPARSE_QUESTION_GAP) {
+            return new TurnStrategy(base, QuestionFocus.NONE, false, reaction);
         }
-        boolean asChoices = sparse && chosen.focus() != QuestionFocus.OTHER_TOPIC;
-        return new TurnStrategy(chosen.type(), chosen.focus(), asChoices, chosen.brief(), chosen.struggled());
+        // ── 5. 그 외에는 인정 뒤에 질문 하나 — 무엇을 물을지는 문장 생성 모델이 정한다 ──
+        return new TurnStrategy(base, QuestionFocus.OPEN, sparse, reaction);
     }
 
     /**
-     * 이 소재를 떠난다. 첫 소재면 다른 기억을 묻고, 이미 둘째 소재면 마무리를 제안한다(이 소재에서 이미 제안했으면
-     * 더 묻지 않고 받아주기만 한다 — 무엇을 더 이야기할지는 사용자에게 맡긴다).
+     * 문장 생성 모델이 「더 물을 것이 없다」고 했을 때 이번 턴을 어떻게 마칠지 — 첫 이야기면 다른 기억을 묻고,
+     * 이미 둘째 이야기면 마무리를 제안한다(이 이야기에서 이미 제안했으면 받아주기만 한다).
+     *
+     * @param otherMemoryAsked 이 대화에서 다른 기억을 이미 물었는가 — 같은 질문은 두 번 하지 않고 마무리를 제안한다
      */
-    private static TurnStrategy leaveTopic(StrategySignals s, boolean struggled, boolean brief) {
-        if (s.topicNumber() < MAX_TOPICS) {
-            return new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC, false, brief, struggled);
+    public TurnStrategy whenNothingMoreToAsk(TurnStrategy chosen, StrategySignals s, boolean otherMemoryAsked) {
+        if (s.topicNumber() < MAX_TOPICS && !otherMemoryAsked) {
+            return chosen.withFocus(QuestionFocus.OTHER_TOPIC);
         }
-        QuestionFocus focus = s.wrapUpProposed() ? QuestionFocus.NONE : QuestionFocus.WRAP_UP;
-        return new TurnStrategy(StrategyType.REFLECT, focus, false, brief, struggled);
+        return chosen.withFocus(s.wrapUpProposed() ? QuestionFocus.NONE : QuestionFocus.WRAP_UP);
     }
 
     /**
-     * 마무리를 제안할 만큼 충분해졌는가 — ① 감정과 사건이 나왔고 깊이가 시작보다 한 단계 올랐거나 5단계 이상에 닿음
-     * ② 저항이 연달아 나옴 ③ 같은 것을 다시 물어야 하는 상황이 됨.
+     * 사용자가 새 이야기를 꺼냈다(문장 생성 모델이 알린다) — 이야기 번호를 올리고, 새 이야기에서는 아직 마무리를
+     * 제안한 적이 없는 것으로 둔다. 이야기는 {@link #MAX_TOPICS} 까지만 센다.
      */
-    private static boolean enough(StrategySignals s) {
-        boolean deepened = s.emotionOut() && s.eventOut()
-                && (s.topicDepth() >= 5 || (s.startDepth() > 0 && s.topicDepth() > s.startDepth()));
-        return deepened || s.resistanceStreak() >= RESISTANCE_STREAK_LIMIT
-                || s.topicStall() >= TOPIC_STALL_LIMIT;
+    public StrategySignals movedToNewTopic(StrategySignals now) {
+        if (now.topicNumber() >= MAX_TOPICS) {
+            return now;
+        }
+        return new StrategySignals(now.resistanceCount(), now.yieldStreak(), now.explicitMode(),
+                now.topicNumber() + 1, false, now.lastType(), now.turnsSinceQuestion(), now.questionsAsked());
     }
 
-    /**
-     * 5. 질문 깊이 — 지금 단계보다 한 단계 깊게. 단계를 모르면 가장 얕은 곳에서 시작한다.
-     * 감정이 아직 나오지 않았으면 단계가 어떻게 판단됐든 자기 쪽 질문부터 한다 — 받을 감정이 없는데 그 감정을 물을 수 없다.
-     */
-    private static QuestionFocus deeper(int depth, boolean emotionOut) {
-        if (!emotionOut) {
-            return QuestionFocus.SELF;
-        }
-        if (depth >= 5) {
-            return QuestionFocus.FOLLOW_UP;
-        }
-        if (depth >= 4) {
-            return QuestionFocus.MEANING;
-        }
-        return depth == 3 ? QuestionFocus.FEELING : QuestionFocus.SELF;
-    }
-
-    /**
-     * 직전 턴과 같은 초점의 질문을 또 하게 되는가. 감정이 나오기 전의 자기 쪽 질문은 예외다 — 감정이 나올 때까지는
-     * 달리 물을 것이 없고, 같은 뜻을 다른 말로 다시 물어도 자연스럽다.
-     */
-    private static boolean wouldRepeat(QuestionFocus focus, StrategySignals s) {
-        return s.lastAsked() && focus == s.lastFocus() && focus != QuestionFocus.SELF;
+    /** 턴을 마친 뒤의 신호 — 실제로 나간 방침을 반영한다. */
+    public StrategySignals settle(StrategySignals now, TurnStrategy done) {
+        boolean asked = done.focus() == QuestionFocus.OPEN || done.focus() == QuestionFocus.OTHER_TOPIC;
+        return new StrategySignals(now.resistanceCount(), now.yieldStreak(), now.explicitMode(), now.topicNumber(),
+                now.wrapUpProposed() || done.focus() == QuestionFocus.WRAP_UP, done.type(),
+                asked ? 0 : now.turnsSinceQuestion() + 1, now.questionsAsked() + (asked ? 1 : 0));
     }
 
     /** 확신이 기준 이상이고 '판단 불가'가 아닌 선택지만 돌려준다. 아니면 null. */
-    private String usable(TurnJudgment judgment, JudgmentItem item) {
+    private String signal(TurnJudgment judgment, JudgmentItem item) {
         ItemJudgment j = judgment.of(item);
         if (j.confidence() < minConfidence || "undeterminable".equals(j.choice())) {
             return null;
         }
         return j.choice();
-    }
-
-    private static int depthOf(String choice) {
-        if (choice == null) {
-            return 0;
-        }
-        return switch (choice) {
-            case "stage_1_2" -> 2;
-            case "stage_3" -> 3;
-            case "stage_4" -> 4;
-            case "stage_5_plus" -> 5;
-            default -> 0;
-        };
     }
 }

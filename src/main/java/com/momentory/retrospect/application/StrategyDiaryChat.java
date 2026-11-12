@@ -10,35 +10,44 @@ import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Message;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
-import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
-import com.momentory.retrospect.domain.assistant.DiaryTurn;
+import com.momentory.retrospect.domain.assistant.StrategyReply;
+import com.momentory.retrospect.domain.assistant.StrategyReplyWriter;
 import com.momentory.retrospect.domain.assistant.TurnJudge;
 import com.momentory.retrospect.domain.judgment.TurnJudgment;
 import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
 import com.momentory.retrospect.domain.strategy.QuestionFocus;
 import com.momentory.retrospect.domain.strategy.StrategyPolicy;
+import com.momentory.retrospect.domain.strategy.StrategySignals;
 import com.momentory.retrospect.domain.strategy.StrategyType;
 import com.momentory.retrospect.domain.strategy.TurnStrategy;
 import com.momentory.retrospect.infrastructure.ai.LlmRole;
 
 /**
- * 전략 대화 — 일기 작성 채팅의 한 턴을 설계 문서의 흐름만으로 처리한다:
- * <b>상태 판단 → 규칙으로 전략 선택 → 전략에 맞춘 문장 생성</b>.
+ * 전략 대화 — 일기 작성 채팅의 한 턴을 세 역할로 나눠 처리한다.
  *
- * <p>옛 엔진의 고정 순서(기분 → 계기 → 감정 확인 → 다른 소재) · 5턴 상한 · 단답 체크인은 여기에 없다. 얼마나 이야기할지는
- * 턴 수가 아니라 전략이 정한다 — 충분해지면 마무리를 제안하고, 질문 수 상한을 넘으면 받아주기만 한다. 끝없이 이어지지 않게
- * 하는 안전 상한({@code maxTurns})만 둔다.
+ * <ol>
+ * <li><b>판단 모델</b>이 방금 답변에서 신호를 읽는다(끝내려 함 · 받아들이지 않음 · 들어 달라 함 …).
+ * <li><b>규칙</b>({@link StrategyPolicy})이 굵은 방침만 정한다 — 끝낼지, 물러설지, 질문을 할지.
+ * <li><b>문장 생성 모델</b>이 대화 전체를 보고 그 방침 안에서 말을 쓴다. 무엇을 물을지, 새 이야기인지, 더 물을 것이
+ *     남았는지는 이 모델이 정한다.
+ * </ol>
+ *
+ * <p>모델이 「더 물을 것이 없다」고 하면 규칙이 다른 기억을 묻거나 마무리를 제안한다. 얼마나 이야기할지는 턴 수가 아니라
+ * 이 흐름이 정하고, 끝없이 이어지지 않게 하는 안전 상한({@code maxTurns})만 둔다. 옛 엔진의 고정 순서 · 5턴 상한 ·
+ * 단답 체크인은 여기에 없다.
  *
  * <p>여기서는 한 턴의 결과({@link Outcome})까지만 만든다. 단계 전환(일기 생성 · 감정 탐색으로 넘어가기 · 안전 안내)은
- * {@link RetrospectEngine} 이 맡는다. 판단 모델이 실패한 턴은 지금까지의 신호로 기본값을 고르고, 문장 생성 모델이 실패한
- * 턴은 짧은 고정 문구와 초점에 맞는 고정 질문으로 간다 — 어느 쪽도 옛 고정 순서로 돌아가지 않는다.
+ * {@link RetrospectEngine} 이 맡는다. 판단 모델이 실패한 턴은 지금까지의 신호로 방침을 고르고, 문장 생성 모델이 실패한
+ * 턴은 짧은 고정 문구로 간다.
  */
 @Component
 public class StrategyDiaryChat {
 
     /** 문장 생성 모델이 받아주는 말을 쓰지 못했을 때의 짧은 말. */
     static final String PLAIN_ACK = "네, 듣고 있어요.";
+    /** 문장 생성 모델이 실패한 턴에 질문이 필요하면 쓰는 말 — 무엇을 물을지 알 수 없으므로 이야기를 열어 둔다. */
+    static final String PLAIN_QUESTION = "조금 더 들려주실래요?";
     static final String WRAP_UP_QUESTION = "여기까지 일기로 정리해볼까요?";
 
     enum Kind {
@@ -61,86 +70,92 @@ public class StrategyDiaryChat {
 
     private final TurnJudge turnJudge;
     private final StrategyPolicy policy;
-    private final DiaryChatAssistant assistant;
+    private final StrategyReplyWriter writer;
     private final LlmUsageLogger usage;
     private final int maxTurns;
 
-    public StrategyDiaryChat(TurnJudge turnJudge, StrategyPolicy policy, DiaryChatAssistant assistant,
+    public StrategyDiaryChat(TurnJudge turnJudge, StrategyPolicy policy, StrategyReplyWriter writer,
             LlmUsageLogger usage, @Value("${momentory.strategy.max-turns:12}") int maxTurns) {
         this.turnJudge = turnJudge;
         this.policy = policy;
-        this.assistant = assistant;
+        this.writer = writer;
         this.usage = usage;
         this.maxTurns = maxTurns;
     }
 
     /**
      * @param userMessage 엔진이 방금 대화 기록에 넣은 사용자 발화
+     * @param noReaction  바바의 직전 말이 반응을 볼 만한 것이 아니었는가(첫 질문이거나, 무엇을 말할지 사용자에게 맡긴 뒤)
      * @param stopPhrase  방금 답이 분명한 종료 문구인가 — 판단 모델이 실패했을 때만 쓰는 안전망
      */
-    Outcome turn(RetrospectState state, Message userMessage, String content, boolean stopPhrase) {
-        boolean firstTurn = state.diaryTurn() == 0;
+    Outcome turn(RetrospectState state, Message userMessage, String content, boolean noReaction,
+            boolean stopPhrase) {
         Optional<TurnJudgment> judgment = turnJudge.judge(state, content);
         state.logJudgment(TurnJudgmentLog.of(userMessage.id(), state.diaryTurn() + 1, judgment.orElse(null)));
         StrategyPolicy.Decision decision = judgment
-                .map(j -> policy.decide(j, state.strategySignals(), firstTurn))
-                .orElseGet(() -> policy.decideWithoutJudgment(state.strategySignals(), firstTurn, stopPhrase));
+                .map(j -> policy.decide(j, state.strategySignals(), noReaction))
+                .orElseGet(() -> policy.decideWithoutJudgment(state.strategySignals(), stopPhrase));
         TurnStrategy strategy = decision.strategy();
-        state.strategySignals(decision.signals());
         if (strategy.type() == StrategyType.CLOSE) {
+            state.strategySignals(policy.settle(decision.signals(), strategy));
             state.logStrategy(strategy, StrategyPolicy.VERSION, true);
             return new Outcome(Kind.CLOSE, null, SafetyLevel.NONE, List.of());
         }
 
-        state.turnStrategy(strategy);
-        Optional<DiaryTurn> ai = assistant.turn(state, content);
-        state.turnStrategy(null);
+        Optional<StrategyReply> written = writer.write(state, content, strategy);
         state.bumpDiaryTurn();
 
-        // 안전 상한 — 전략이 무엇을 골랐든 여기서 정리한다. 이 턴의 전략은 '적용 안 됨'으로 남는다.
-        boolean capped = state.diaryTurn() >= maxTurns;
-        state.logStrategy(strategy, StrategyPolicy.VERSION, !capped);
-        String reflection = "";
+        String ack = PLAIN_ACK;
         String question = null;
+        boolean newTopic = false;
         SafetyLevel safetyLevel = SafetyLevel.NONE;
         List<String> safetyFlags = List.of();
-        if (ai.isPresent()) {
-            DiaryTurn t = ai.get();
-            safetyLevel = t.safetyLevelOrNone();
-            safetyFlags = t.safetyFlags();
-            // 사건 이름은 일기 대체문과 「다른 이야기」 질문을 고르는 데만 쓴다. 감정 · 계기 여부는 판단 모델이 본다.
-            if (!t.eventPending()) {
-                state.event(t.event());
-                state.addSecondaryEvents(t.secondaryEvents());
-                state.meaning(t.meaning());
+        if (written.isPresent()) {
+            StrategyReply reply = written.get();
+            safetyLevel = reply.safetyLevelOrNone();
+            safetyFlags = reply.safetyFlags();
+            newTopic = reply.newTopic() && state.event() != null;
+            // 일의 이름은 일기 대체문에만 쓴다.
+            if (reply.topic() != null && !reply.topic().isBlank() && (state.event() == null || reply.newTopic())) {
+                state.event(reply.topic());
             }
-            reflection = withoutVocative(state, RetrospectEngine.empathyStatements(t.empathy()));
-            question = withoutVocative(state, t.question());
+            String said = withoutVocative(state, RetrospectEngine.empathyStatements(reply.ack()));
+            ack = said.isBlank() ? PLAIN_ACK : said;
+            question = reply.nothingMoreToAsk() ? null : firstQuestion(withoutVocative(state, reply.question()));
         } else {
             state.logGenerationFailed();
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
+            question = PLAIN_QUESTION;
         }
+
+        // 새 이야기로 넘어갔는지를 먼저 반영한 뒤에, 더 물을 것이 없을 때 어디로 갈지를 정한다.
+        StrategySignals signals = newTopic ? policy.movedToNewTopic(decision.signals()) : decision.signals();
+        TurnStrategy done = strategy;
+        if (strategy.focus() == QuestionFocus.OPEN && question == null) {
+            done = policy.whenNothingMoreToAsk(strategy, signals, otherMemoryAsked(state));
+        }
+        // 안전 상한 — 방침이 무엇이든 여기서 정리한다. 이 턴의 방침은 '적용 안 됨'으로 남는다.
+        boolean capped = state.diaryTurn() >= maxTurns;
+        state.strategySignals(policy.settle(signals, done));
+        state.logStrategy(done, StrategyPolicy.VERSION, !capped);
         if (capped) {
-            return new Outcome(Kind.FINISH, reflection, safetyLevel, safetyFlags);
+            return new Outcome(Kind.FINISH, ack, safetyLevel, safetyFlags);
         }
-        if (strategy.focus() == QuestionFocus.WRAP_UP) {
-            return new Outcome(Kind.PROPOSE_WRAP_UP, reflection, safetyLevel, safetyFlags);
-        }
-        return new Outcome(Kind.REPLY, compose(state, strategy, reflection, question), safetyLevel, safetyFlags);
+        return switch (done.focus()) {
+            case WRAP_UP -> new Outcome(Kind.PROPOSE_WRAP_UP, ack, safetyLevel, safetyFlags);
+            // 다른 기억을 묻는 문장은 고정이다 — 이 문장 뒤의 거절을 「다른 이야기 없음」으로 알아본다.
+            case OTHER_TOPIC -> new Outcome(Kind.REPLY, ack + "\n" + RetrospectEngine.OTHER_MEMORY_QUESTION,
+                    safetyLevel, safetyFlags);
+            case OPEN -> new Outcome(Kind.REPLY, ack + "\n" + question, safetyLevel, safetyFlags);
+            default -> new Outcome(Kind.REPLY, ack, safetyLevel, safetyFlags);
+        };
     }
 
-    /** 받아주는 말 뒤에, 전략이 질문을 두면 그 초점의 질문 하나를 붙인다. */
-    private static String compose(RetrospectState state, TurnStrategy strategy, String reflection,
-            String question) {
-        String ack = reflection.isBlank() ? PLAIN_ACK : reflection;
-        if (!strategy.asks()) {
-            return ack;
-        }
-        // 다른 기억을 묻는 문장은 고정이다 — 이 문장 뒤의 거절을 「다른 이야기 없음」으로 알아본다.
-        String ask = strategy.focus() == QuestionFocus.OTHER_TOPIC ? RetrospectEngine.OTHER_MEMORY_QUESTION
-                : questionFor(question, strategy.focus());
-        // 「맞아」 같은 짧은 동의에는 앞의 공감을 되풀이하지 않고 바로 묻는다.
-        return strategy.brief() ? ask : ack + "\n" + ask;
+    /** 이 대화에서 바바가 다른 기억을 이미 물었는가 — 그 문장은 고정이라 대화 기록에서 알아본다. */
+    private static boolean otherMemoryAsked(RetrospectState state) {
+        return state.messages().stream().anyMatch(
+                m -> m.isAssistant() && m.content() != null
+                        && m.content().endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION));
     }
 
     /**
@@ -151,26 +166,21 @@ public class StrategyDiaryChat {
         if (text == null || state.nickname() == null || state.nickname().isBlank()) {
             return text;
         }
-        return text.strip().replaceFirst("^" + java.util.regex.Pattern.quote(state.nickname().strip()) + "\\s*님[,，]?\\s*", "");
+        return text.strip().replaceFirst(
+                "^" + java.util.regex.Pattern.quote(state.nickname().strip()) + "\\s*님[,，]?\\s*", "");
     }
 
-    /** 모델이 쓴 질문 한 문장을 쓰고, 질문이 없으면 초점에 맞는 고정 질문으로 대신한다. */
-    private static String questionFor(String candidate, QuestionFocus focus) {
-        if (candidate != null) {
-            for (String part : candidate.strip().split("(?<=[.!?。！？])\\s*|\\R")) {
-                String sentence = part.strip();
-                if (sentence.endsWith("?") || sentence.endsWith("？")) {
-                    return sentence;
-                }
+    /** 모델이 쓴 글에서 질문 한 문장을 고른다. 질문이 없으면 null. */
+    private static String firstQuestion(String candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        for (String part : candidate.strip().split("(?<=[.!?。！？])\\s*|\\R")) {
+            String sentence = part.strip();
+            if (sentence.endsWith("?") || sentence.endsWith("？")) {
+                return sentence;
             }
         }
-        return switch (focus) {
-            case EVENT -> "그때 무슨 일이 있었는지 조금만 더 들려주실래요?";
-            case FEELING -> "그때 스스로에게는 어떤 마음이 드셨나요?";
-            case MEANING -> "그 일이 유독 크게 느껴진 이유가 있을까요?";
-            case FOLLOW_UP -> "방금 말씀하신 부분을 조금만 더 들려주실래요?";
-            case EVIDENCE -> "그렇게 느끼신 건 어떤 부분 때문이었을까요?";
-            default -> "그 일이 본인에게는 어땠나요?";
-        };
+        return null;
     }
 }

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import com.momentory.retrospect.domain.RetrospectState;
-import com.momentory.retrospect.domain.assistant.DiaryTurn;
+import com.momentory.retrospect.domain.assistant.StrategyReply;
 import com.momentory.retrospect.domain.strategy.QuestionFocus;
 import com.momentory.retrospect.domain.strategy.StrategyType;
 import com.momentory.retrospect.domain.strategy.TurnStrategy;
@@ -26,7 +26,11 @@ import tools.jackson.databind.json.JsonMapper;
 @EnabledIfEnvironmentVariable(named = "STRATEGY_WORDING_CHECK", matches = "true")
 class StrategyWordingRealIntegrationTest {
 
-    private record Case(String baba, String user, StrategyType type, QuestionFocus focus) {
+    private record Case(String baba, String user, StrategyType type, QuestionFocus focus, String reaction) {
+
+        Case(String baba, String user, StrategyType type, QuestionFocus focus) {
+            this(baba, user, type, focus, null);
+        }
     }
 
     private static Case reflect(String baba, String user) {
@@ -34,7 +38,7 @@ class StrategyWordingRealIntegrationTest {
     }
 
     private static Case explore(String baba, String user, QuestionFocus focus) {
-        return new Case(baba, user, StrategyType.EXPLORE, focus);
+        return new Case(baba, user, StrategyType.EXPLORE, QuestionFocus.OPEN);
     }
 
     private static final String OPEN = "오늘 하루 중에서 가장 기억에 남는 일은 뭐였어요?";
@@ -64,9 +68,9 @@ class StrategyWordingRealIntegrationTest {
             reflect(FEEL, "그냥 말하고 싶었어. 뭘 물어보진 마."),
             reflect("어떤 일이 있었는지 조금 더 들려주실래요?", "별로 설명하고 싶지 않아. 그냥 힘든 하루였어."),
             // 해석 수정.
-            new Case("많이 화가 나셨겠어요.", "화난 게 아니라 서운한 거야.", StrategyType.CORRECT, QuestionFocus.NONE),
-            new Case("많이 불안하셨군요.", "불안한 건 아니고 그냥 귀찮았어.", StrategyType.CORRECT, QuestionFocus.NONE),
-            new Case("슬프셨겠어요.", "슬프다기보단 좀 허무했어.", StrategyType.CORRECT, QuestionFocus.NONE),
+            new Case("많이 화가 나셨겠어요.", "화난 게 아니라 서운한 거야.", StrategyType.YIELD, QuestionFocus.OPEN, "correct_interpretation"),
+            new Case("많이 불안하셨군요.", "불안한 건 아니고 그냥 귀찮았어.", StrategyType.YIELD, QuestionFocus.OPEN, "correct_interpretation"),
+            new Case("슬프셨겠어요.", "슬프다기보단 좀 허무했어.", StrategyType.YIELD, QuestionFocus.OPEN, "correct_interpretation"),
             // 감정을 말함 — 한 단계 깊게.
             explore(FEEL, "지적받아서 속상했어.", QuestionFocus.FEELING),
             explore(FEEL, "발표 망쳐서 허무해.", QuestionFocus.FEELING),
@@ -78,7 +82,7 @@ class StrategyWordingRealIntegrationTest {
             reflect(FEEL, "응."),
             // 재해석.
             new Case(FEEL, "내가 너무 못나서 그런 것 같아. 내가 잘못 생각하는 건가?", StrategyType.REFRAME,
-                    QuestionFocus.EVIDENCE));
+                    QuestionFocus.OPEN));
 
     @Test
     void printsTheWordingForEveryCase() throws InterruptedException {
@@ -88,7 +92,7 @@ class StrategyWordingRealIntegrationTest {
         var client = new GeminiApiClient(
                 new GeminiApiClientConfiguration().geminiRestClient(properties, ObservationRegistry.NOOP),
                 JsonMapper.builder().build(), event -> { }, properties);
-        var assistant = new GeminiDiaryChatAssistant(client, new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT));
+        var writer = new GeminiStrategyReplyWriter(client, new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT));
 
         int answered = 0;
         for (int i = 0; i < CASES.size(); i++) {
@@ -97,18 +101,21 @@ class StrategyWordingRealIntegrationTest {
             state.begin(null, null, null, "민지", null);
             state.addAssistantMessage(c.baba());
             state.addUserMessage(c.user());
-            state.turnStrategy(new TurnStrategy(c.type(), c.focus(), false));
-            Optional<DiaryTurn> turn = Optional.empty();
+            TurnStrategy strategy = new TurnStrategy(c.type(), c.focus(), false, c.reaction());
+            Optional<StrategyReply> turn = Optional.empty();
             for (int attempt = 0; attempt < 3 && turn.isEmpty(); attempt++) {
-                turn = assistant.turn(state, c.user());
+                turn = writer.write(state, c.user(), strategy);
                 if (turn.isEmpty()) {
                     Thread.sleep(3000);
                 }
             }
             answered += turn.isPresent() ? 1 : 0;
-            System.out.printf("WORDING %02d [%s/%s] 나: %s%n           공감: %s%n           질문: %s%n", i + 1,
-                    c.type(), c.focus(), c.user(), turn.map(DiaryTurn::empathy).orElse("(실패)"),
-                    turn.map(DiaryTurn::question).orElse("(실패)"));
+            System.out.printf("WORDING %02d [%s/%s] 나: %s%n           받음: %s%n           질문: %s%n"
+                            + "           새 이야기=%s 더 물을 것 없음=%s%n", i + 1,
+                    c.type(), c.focus(), c.user(), turn.map(StrategyReply::ack).orElse("(실패)"),
+                    turn.map(StrategyReply::question).orElse("(실패)"),
+                    turn.map(r -> String.valueOf(r.newTopic())).orElse("-"),
+                    turn.map(r -> String.valueOf(r.nothingMoreToAsk())).orElse("-"));
         }
         assertThat(answered).isGreaterThanOrEqualTo(CASES.size() - 3);
     }

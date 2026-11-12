@@ -23,82 +23,83 @@ class StrategyTurnPromptTest {
     }
 
     @Test
-    void tellsTheModelNotToAskOnAReflectionTurn() {
-        String prompt = prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false));
+    void leavesWhatToAskToTheWriterWithOnePrinciple() {
+        String prompt = prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
 
-        assertThat(prompt).contains("공감·반영:", "이번 턴에는 질문하지 않습니다", "발표 망쳐서 허무해.");
-        // 기존 고정 순서의 지시는 섞이지 않는다.
-        assertThat(prompt).doesNotContain("[판단 순서와 질문 목적]", "다른 기억에 남는 일을 물으세요");
+        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "발표 망쳐서 허무해.",
+                "이미 말한 것을 다시 묻지 않습니다", "이유를 이미 말했는데 이유를 또 묻지 않습니다",
+                "언제 마무리할지는 서버가 정합니다");
+        // 옛 고정 순서나 단계별로 정해 둔 질문은 없다.
+        assertThat(prompt).doesNotContain("[판단 순서와 질문 목적]", "최대 5턴", "둘 중 고를 수 있는");
     }
 
     @Test
-    void aimsTheQuestionOneStepDeeper() {
-        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.FEELING, false)))
-                .contains("탐색:", "사용자 자신에 대해서는 어떤 마음이나 생각이", "원인을 넘겨짚지 않습니다",
-                        "사용자가 방금 쓴 구체적인 말을 받아서", "언제 마무리할지는 서버가 정합니다")
-                .doesNotContain("최대 5턴")
-                .doesNotContain("둘 중 고를 수 있는", "짧게 동의만");
-        assertThat(prompt(new TurnStrategy(StrategyType.REFRAME, QuestionFocus.EVIDENCE, false)))
-                .contains("재해석:", "사용자가 말하게 하세요", "근거나 부분을 묻는 질문");
+    void asksTheWriterToReadTheFlowItAloneCanSee() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("newTopic", "앞 이야기의 감정이나 사정을 새 이야기에 끌어오지 않습니다",
+                        "nothingMoreToAsk", "빈칸을 다 채우는 것이 목표가 아닙니다");
     }
 
     @Test
-    void asksAsChoicesForAUserWhoKeepsResisting() {
-        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.SELF, true)))
-                .contains("둘 중 고를 수 있는 형태로", "답하지 않아도 괜찮다는 여지");
+    void pointsQuestionsAtHowTheUserFeltRatherThanAtMoreFacts() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("그 일을 겪은 사용자의 마음", "사실을 더 캐묻지 않고 그때의 기분을 묻습니다",
+                        "'○○ 했을 때 기분이 어땠어요?'", "'어떤 생각이 드셨나요'로 에둘러 묻는 질문은 쓰지 않습니다",
+                        "그때의 마음을 아직 한 번도 묻지 않았고", "일어난 일만 듣고 끝내지 않습니다",
+                        "같은 것을 다시 묻지 않고 true 로 둡니다", "한 번 물은 것은 한 번으로 끝냅니다");
     }
 
     @Test
-    void leavesTheNextTopicQuestionToTheServer() {
-        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC, false)))
-                .contains("다음 질문은 서버가 붙입니다", "더 캐묻거나 이유를 짐작하지 않습니다");
+    void keepsTheUsersOwnWordsAndDegree() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("사용자가 쓴 정도 그대로", "'그렇게 실망스러웠던'으로 키우지 않습니다", "말하지 않은 감정을 붙이거나",
+                        "'…라고 하셨군요' 금지", "호칭('OO님')은 쓰지 않습니다");
     }
 
     @Test
-    void leavesTheWrapUpQuestionToTheServer() {
+    void tellsTheWriterNotToAskOnAQuietTurn() {
+        assertThat(prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false)))
+                .contains("받아주기:", "질문: 이번 턴에는 하지 않습니다");
         assertThat(prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.WRAP_UP, false)))
                 .contains("여기까지 정리할지는 서버가 묻습니다", "작별 인사를 넣지 않습니다");
     }
 
     @Test
-    void followsUpOnWhatTheUserNoticedInTheirOwnWords() {
-        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.FOLLOW_UP, false)))
-                .contains("방금 스스로 짚은 것", "새로운 해석을 덧붙이지 않습니다");
+    void tellsTheWriterToStepBackAndWhy() {
+        String prompt = prompt(new TurnStrategy(StrategyType.YIELD, QuestionFocus.OPEN, false,
+                "puzzled_or_objecting"));
+
+        assertThat(prompt).contains("물러서기:", "(바바의 말이 이상하거나 지나치다고 되물음)", "직전의 질문이나 해석을 거두고",
+                "직전 질문과 같은 방향으로는 다시 묻지 않습니다");
+        assertThat(prompt(new TurnStrategy(StrategyType.YIELD, QuestionFocus.OPEN, false, "struggle_to_answer")))
+                .contains("(답하려 했지만 말하기 어려워함)");
+        assertThat(prompt(new TurnStrategy(StrategyType.YIELD, QuestionFocus.OPEN, false,
+                "no_answer_or_topic_change"))).contains("사용자가 꺼낸 얘기를 따라갑니다");
     }
 
     @Test
-    void skipsTheEmpathyAfterAShortAgreement() {
-        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.FEELING, false, true)))
-                .contains("짧게 동의만 했습니다", "empathy는 빈 문자열", "동의를 평가하거나 고마워하지 않습니다");
-        assertThat(prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false, true)))
-                .contains("짧게 동의만 했습니다", "편하게 이어 말해도 된다는 뜻만");
+    void asksAsChoicesForAUserWhoKeepsResisting() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, true)))
+                .contains("둘 중 고를 수 있는 형태로", "답하지 않아도 괜찮다는 여지");
     }
 
     @Test
-    void acknowledgesAHardQuestionWithoutEchoingTheAnswer() {
-        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC, false, false, true)))
-                .contains("답하기 어려워했습니다", "그 답을 되풀이하지 않습니다", "말로 꺼내기 어려울 수 있다는 것만");
+    void reframingAsksForTheUsersOwnGrounds() {
+        assertThat(prompt(new TurnStrategy(StrategyType.REFRAME, QuestionFocus.OPEN, false)))
+                .contains("재해석:", "근거를 함께 살펴보는 질문", "사용자가 말하게 합니다");
     }
 
     @Test
-    void keepsTheUsersOwnDegreeAndDoesNotCallThemByName() {
-        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.FEELING, false)))
-                .contains("사용자가 쓴 정도를 바꾸지 않습니다", "호칭('OO님')으로 응답을 시작하지 않습니다");
-        assertThat(prompts.strategySystem()).doesNotContain("\"OO님\"으로 부릅니다");
-        assertThat(prompts.system()).contains("\"OO님\"으로 부릅니다");
-    }
-
-    @Test
-    void strategyTurnsUseASystemPromptWithoutTheOldFixedOrder() {
-        assertThat(prompts.system()).contains("감정만 있으면 계기를 한 번 묻고");
+    void strategyTurnsUseASystemPromptWithoutTheOldFixedOrderOrNameCalling() {
+        assertThat(prompts.system()).contains("감정만 있으면 계기를 한 번 묻고", "\"OO님\"으로 부릅니다");
         assertThat(prompts.strategySystem())
-                .doesNotContain("감정만 있으면 계기를", "그 감정이 맞는지 한 번 확인")
+                .doesNotContain("감정만 있으면 계기를", "그 감정이 맞는지 한 번 확인", "\"OO님\"으로 부릅니다")
                 .contains("[이번 턴에 할 일]을 따릅니다", "항상 존댓말", "지어내지 않습니다", "안전 신호");
     }
 
     @ParameterizedTest
-    @EnumSource(QuestionFocus.class)
-    void everyFocusHasADirective(QuestionFocus focus) {
-        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, focus, false))).contains("- 질문: ");
+    @EnumSource(StrategyType.class)
+    void everyCourseHasADirective(StrategyType type) {
+        assertThat(prompt(new TurnStrategy(type, QuestionFocus.NONE, false))).contains("[이번 턴의 방침]");
     }
 }

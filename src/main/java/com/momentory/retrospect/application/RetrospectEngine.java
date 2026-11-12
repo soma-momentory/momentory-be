@@ -434,7 +434,11 @@ public class RetrospectEngine {
      * 여기서는 그 결과에 따라 단계만 옮긴다. 옛 고정 순서 · 5턴 상한 · 단답 체크인은 거치지 않는다.
      */
     private ReplyDto handleStrategyTurn(RetrospectState state, Message userMessage, String content) {
-        StrategyDiaryChat.Outcome outcome = strategyChat.turn(state, userMessage, content, isStopRequest(content));
+        // 첫 답변이거나, 무엇을 말할지 사용자에게 맡긴 뒤의 답변이면 「직전 응답에 대한 반응」을 보지 않는다 —
+        // 그때 다른 얘기를 꺼내는 것은 바바의 말을 받아들이지 않은 것이 아니다.
+        boolean noReaction = state.diaryTurn() == 0 || lastAssistantSaid(state, userMessage, KEEP_TALKING_INVITATION);
+        StrategyDiaryChat.Outcome outcome = strategyChat.turn(state, userMessage, content, noReaction,
+                isStopRequest(content));
         mergeSafety(state, outcome.safetyLevel(), outcome.safetyFlags(), userMessage.id());
         if (state.safety().level().stopsRetrospect()) {
             return safetyReply(state);
@@ -452,6 +456,19 @@ public class RetrospectEngine {
                 yield ReplyDto.question(outcome.text(), Phase.DIARY_CHAT, state.safety().level());
             }
         };
+    }
+
+    static final String KEEP_TALKING_INVITATION = "좋아요, 편하게 이어가 봐요. 더 나누고 싶은 이야기를 들려주세요.";
+
+    /** 방금 사용자 발화 바로 앞의 바바의 말이 이 문구였는가. */
+    private static boolean lastAssistantSaid(RetrospectState state, Message userMessage, String text) {
+        List<Message> messages = state.messages();
+        for (int i = messages.indexOf(userMessage) - 1; i >= 0; i--) {
+            if (messages.get(i).isAssistant()) {
+                return text.equals(messages.get(i).content());
+            }
+        }
+        return false;
     }
 
     /**
@@ -694,8 +711,7 @@ public class RetrospectEngine {
         }
         state.addUserMessage(KEEP_TALKING);
         // 전략 대화에서는 무엇을 더 이야기할지 사용자에게 맡긴다 — 다음 답변부터 다시 전략이 고른다.
-        String text = state.turnStrategyEnabled()
-                ? "좋아요, 편하게 이어가 봐요. 더 나누고 싶은 이야기를 들려주세요."
+        String text = state.turnStrategyEnabled() ? KEEP_TALKING_INVITATION
                 : "좋아요, 편하게 이어가 봐요. " + fallbackDiaryQuestion(state);
         state.addAssistantMessage(text);
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());

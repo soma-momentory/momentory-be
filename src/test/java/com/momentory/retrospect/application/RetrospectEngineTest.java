@@ -39,7 +39,8 @@ class RetrospectEngineTest {
         fake = new FakeAssistant();
         LlmUsageLogger usage = new LlmUsageLogger(0.10, 0.40);
         engine = new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, TurnJudge.NONE,
-                new StrategyDiaryChat(TurnJudge.NONE, new StrategyPolicy(0.5, 0.8, 2, 8), fake, usage, 12), usage, e -> { },
+                new StrategyDiaryChat(TurnJudge.NONE, new StrategyPolicy(0.5, 0.8, 2, 8),
+                (state, text, strategy) -> java.util.Optional.empty(), usage, 12), usage, e -> { },
                 1, 3);
         state = new RetrospectState("s1");
     }

@@ -48,13 +48,14 @@ class StrategyConversationRealIntegrationTest {
         var jev = new JevApiProperties("https://api.typesafe.ai", System.getenv("TYPESAFE_API_KEY"),
                 "jev-1.14.0", Duration.ofSeconds(2), Duration.ofSeconds(3));
         RestClient jevClient = new JevApiClientConfiguration().jevRestClient(jev, ObservationRegistry.NOOP);
-        var assistant = new GeminiDiaryChatAssistant(geminiClient,
-                new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT));
+        var prompts = new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT);
+        var assistant = new GeminiDiaryChatAssistant(geminiClient, prompts);
+        var writer = new GeminiStrategyReplyWriter(geminiClient, prompts);
         var judge = new JevTurnJudge(jevClient, jev);
         var usage = new LlmUsageLogger(0.10, 0.40);
         engine = new RetrospectEngine(new SafetyPolicy(), assistant,
                 s -> new EmotionExtraction(List.of(), List.of(), null), s -> List.of(), s -> Optional.empty(),
-                judge, new StrategyDiaryChat(judge, new StrategyPolicy(0.5, 0.8, 2, 8), assistant, usage, 12),
+                judge, new StrategyDiaryChat(judge, new StrategyPolicy(0.5, 0.8, 2, 8), writer, usage, 12),
                 usage, e -> { }, 1, 3);
         state = new RetrospectState("strategy-smoke");
         engine.start(state, StartCommand.today("민지", null));
@@ -77,17 +78,17 @@ class StrategyConversationRealIntegrationTest {
     }
 
     @Test
-    void deepensStepByStepAndReflectsSelfExploration() {
+    void keepsAskingWithoutRepeatingItselfAndFollowsANewStory() {
         ReplyDto first = say("오늘 팀장한테 또 한 소리 들었어.");
-        assertThat(asks(first)).as("사건만 말했으면 자기 쪽으로 묻는다").isTrue();
+        assertThat(asks(first)).as("사건만 말했으면 이어서 묻는다").isTrue();
 
         say("다들 있는 회의 자리에서 그래서 좀 창피하고 속상했어.");
-        say("응, 계속 생각나.");
-        ReplyDto deepest = say("속상한 게 지적 자체보다, 인정받고 싶었는데 못 받아서인 것 같아.");
+        say("약간 실망했어. 열심히 준비했는데 지적만 받았거든.");
+        ReplyDto followed = say("아 그리고 오늘 엄마랑 통화했어.");
 
-        // 깊이가 오른 뒤에는 여기까지 정리할지 묻는다 — 선택지가 붙는다.
-        assertThat(deepest.options()).isNotEmpty();
-        assertThat(state.strategySignals().wrapUpProposed()).isTrue();
+        // 새 이야기를 꺼냈으면 앞 이야기의 감정을 끌어오지 않고 그 이야기를 따라간다.
+        assertThat(followed.text()).doesNotContain("창피", "속상", "실망");
+        assertThat(state.strategySignals().topicNumber()).isEqualTo(2);
     }
 
     @Test

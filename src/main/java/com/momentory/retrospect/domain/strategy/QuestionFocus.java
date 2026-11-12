@@ -1,24 +1,33 @@
 package com.momentory.retrospect.domain.strategy;
 
-/** 이번 턴 질문이 겨냥하는 것. {@link #NONE} 이면 질문을 붙이지 않는다. */
+/**
+ * 이번 턴의 질문을 누가 어떻게 붙이는가. 이름은 기록에 남는다.
+ *
+ * <p>규칙 v6 까지는 규칙이 질문의 초점(사건 · 자기 쪽 · 감정 · 이유 …)을 골랐다. v7 부터 규칙은 질문을 할지 말지만 정하고,
+ * 무엇을 물을지는 대화 전체를 보는 문장 생성 모델이 정한다.
+ */
 public enum QuestionFocus {
 
     /** 질문 없음. */
     NONE,
-    /** 무슨 일이 있었는지 — 사건 설명이 아직 없거나 일부뿐일 때. */
-    EVENT,
-    /** 그 일이 나에게 어땠는지 — 사건·타인 얘기(체험 1~2단계)에서 자기 쪽으로. */
-    SELF,
-    /** 그 일의 어떤 점이 그렇게 느껴지게 했는지 — 사건에 대한 반응(3단계)에서 감정 자체로. */
-    FEELING,
-    /** 그 마음이 왜 그렇게 크게 다가왔는지 — 자기 감정이 주제(4단계)일 때 그 의미로. */
-    MEANING,
-    /** 방금 스스로 짚은 것을 한 가지 더 구체적으로 — 스스로 탐색 중(5단계 이상)일 때. */
-    FOLLOW_UP,
-    /** 그렇게 생각한 근거 — 재해석. */
-    EVIDENCE,
-    /** 다른 기억 — 이 소재에서 더 깊어지지 않을 때. 문장은 서버의 고정 질문을 쓴다. */
+    /** 문장 생성 모델이 고른 질문 하나. */
+    OPEN,
+    /** 다른 기억 — 이 이야기에서 더 물을 것이 없을 때. 문장은 서버의 고정 질문을 쓴다. */
     OTHER_TOPIC,
     /** 마무리 제안 — 여기까지 일기로 정리할지 묻는다. 문장과 선택지는 서버가 붙이고, 더 말하고 싶으면 이어간다. */
-    WRAP_UP
+    WRAP_UP,
+
+    // ── 아래는 규칙 v6 까지의 기록에만 있다 ──
+    /** @deprecated v6 까지 */
+    @Deprecated EVENT,
+    /** @deprecated v6 까지 */
+    @Deprecated SELF,
+    /** @deprecated v6 까지 */
+    @Deprecated FEELING,
+    /** @deprecated v6 까지 */
+    @Deprecated MEANING,
+    /** @deprecated v6 까지 */
+    @Deprecated FOLLOW_UP,
+    /** @deprecated v6 까지 */
+    @Deprecated EVIDENCE
 }

@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
+import com.momentory.retrospect.domain.assistant.StrategyReply;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiExtraction;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
 
@@ -21,7 +22,8 @@ final class GeminiResponseSchemas {
             GeminiExtraction.class, extractionSchema(),
             GeminiNeeds.class, needsSchema(),
             DiaryOutput.class, diarySchema(),
-            DiaryDraft.class, diaryDraftSchema());
+            DiaryDraft.class, diaryDraftSchema(),
+            StrategyReply.class, strategyReplySchema());
 
     private GeminiResponseSchemas() {
     }
@@ -96,6 +98,22 @@ final class GeminiResponseSchemas {
         props.put("diary", str());
         props.put("reframedDiary", str());
         return object(props, List.of("diary"));
+    }
+
+    private static Map<String, Object> strategyReplySchema() {
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        // 흐름을 먼저 판단하게 한다 — 새 이야기인지, 더 물을 것이 남았는지를 정한 뒤에 문장을 쓴다.
+        props.put("newTopic", Map.of("type", "BOOLEAN", "description",
+                "방금 답변이 앞에서 다루던 일과 다른 새 이야기를 꺼냈으면 true."));
+        props.put("topic", Map.of("type", "STRING", "description", "지금 다루는 일의 짧은 이름."));
+        props.put("nothingMoreToAsk", Map.of("type", "BOOLEAN", "description",
+                "이 이야기에서 더 물을 것이 없으면 true — 이미 충분히 들었거나, 사용자가 더 말하기 어려워한다."));
+        props.put("ack", Map.of("type", "STRING", "description", "방금 답변을 받아주는 말. 질문은 넣지 않는다."));
+        props.put("question", Map.of("type", "STRING", "description",
+                "이어서 물을 질문 한 문장. 묻지 않는 턴이거나 nothingMoreToAsk 가 true 면 빈 문자열."));
+        props.put("safetyLevel", str());
+        props.put("safetyFlags", arrayOf(str()));
+        return object(props, List.of("newTopic", "nothingMoreToAsk", "ack", "question", "safetyLevel"));
     }
 
     private static Map<String, Object> diaryDraftSchema() {

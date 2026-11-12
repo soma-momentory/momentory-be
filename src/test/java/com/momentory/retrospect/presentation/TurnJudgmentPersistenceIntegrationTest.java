@@ -45,6 +45,8 @@ import com.momentory.auth.token.application.AccessTokenIssuer;
 import com.momentory.retrospect.application.RetrospectService;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
+import com.momentory.retrospect.domain.assistant.StrategyReply;
+import com.momentory.retrospect.domain.assistant.StrategyReplyWriter;
 import com.momentory.retrospect.domain.assistant.TurnJudge;
 import com.momentory.retrospect.domain.judgment.ItemJudgment;
 import com.momentory.retrospect.domain.judgment.JudgmentItem;
@@ -89,6 +91,7 @@ class TurnJudgmentPersistenceIntegrationTest {
 
     @MockitoBean DiaryChatAssistant diaryChatAssistant;
     @MockitoBean TurnJudge turnJudge;
+    @MockitoBean StrategyReplyWriter strategyReplyWriter;
 
     private MockMvc mockMvc;
 
@@ -159,38 +162,49 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
-    @DisplayName("전략 선택 대상 계정은 고른 전략이 판단 옆에 남고, 다음 턴이 앞 턴의 신호를 이어 쓴다")
-    void recordsTheChosenStrategyAndCarriesSignals() throws Exception {
-        // 감정과 사건이 다 나온 3단계 답변 — 인정 뒤에 한 단계 깊게 묻고, 같은 것을 또 묻게 되면 다른 기억으로 넘어간다.
+    @DisplayName("전략 선택 대상 계정은 방침이 판단 옆에 남고, 문장 생성 모델이 쓴 말이 나간다")
+    void recordsTheChosenCourseAndUsesTheWriter() throws Exception {
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
+                "말이 끊겨 당황하셨군요.", "그때 스스로한테는 어떤 마음이 드셨어요?", false, false, "면접 스터디", "none",
+                List.of())));
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
         long sessionId = startSession(user);
 
         MvcResult first = say(user, sessionId, "팀원이 말을 끊어서 속상했어요.");
-        MvcResult asked = say(user, sessionId, "계속 마음에 남아요.");
 
         assertThat((String) JsonPath.read(first.getResponse().getContentAsString(StandardCharsets.UTF_8),
-                "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.\n그때 어떤 기분이 드셨나요?");
-        assertThat((String) JsonPath.read(asked.getResponse().getContentAsString(StandardCharsets.UTF_8),
-                "$.text")).isEqualTo("말이 끊겨 당황하셨겠어요.\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+                "$.text")).isEqualTo("말이 끊겨 당황하셨군요.\n그때 스스로한테는 어떤 마음이 드셨어요?");
+        // 전략 대화는 옛 일기 작성 턴 모델을 부르지 않는다.
+        verify(diaryChatAssistant, never()).turn(any(), anyString());
+
+        // 문장 생성 모델이 더 물을 것이 없다고 하면 다른 기억을 묻는다.
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
+                "계속 마음에 남으셨군요.", "", false, true, "면접 스터디", "none", List.of())));
+        MvcResult moved = say(user, sessionId, "계속 마음에 남아요.");
+        assertThat((String) JsonPath.read(moved.getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.text")).isEqualTo("계속 마음에 남으셨군요.\n오늘 하루 중 다른 기억에 남는 일은 뭐였어요?");
+
         List<TurnJudgmentRecord> rows = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId);
         assertThat(rows).extracting(TurnJudgmentRecord::getStrategyType).containsExactly("EXPLORE", "EXPLORE");
-        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("FEELING", "OTHER_TOPIC");
+        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("OPEN", "OTHER_TOPIC");
         assertThat(rows).allSatisfy(row -> {
             assertThat(row.getPolicyVersion()).isEqualTo(StrategyPolicy.VERSION);
             assertThat(row.getStrategyApplied()).isTrue();
             assertThat(row.getQuestionAsChoices()).isFalse();
             assertThat(row.isGenerationFailed()).isFalse();
+            // 체험 깊이는 방침에 쓰이지 않지만 측정값으로 남는다.
+            assertThat(row.getExperiencingDepth()).isEqualTo("stage_3");
         });
 
         // 문장 생성 모델이 실패한 턴은 기록에서 가려낼 수 있다.
-        when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.empty());
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.empty());
         say(user, sessionId, "그 생각이 자꾸 나요.");
         assertThat(judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast().isGenerationFailed())
                 .isTrue();
 
-        // 판단 모델이 실패한 턴에도 기본값으로 고른 전략이 남는다 — 옛 고정 순서로 돌아가지 않는다.
+        // 판단 모델이 실패한 턴에도 방침은 남는다 — 옛 고정 순서로 돌아가지 않는다.
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.empty());
         say(user, sessionId, "아직도 마음이 무거워요.");
         TurnJudgmentRecord failed = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast();

@@ -16,7 +16,6 @@ import com.momentory.retrospect.domain.assistant.DiaryWriter;
 import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
-import com.momentory.retrospect.domain.strategy.TurnStrategy;
 
 /**
  * v2 AI 포트 4종의 페이크 — 네트워크 없이 엔진 흐름을 결정적으로 검증한다.
@@ -56,14 +55,11 @@ class FakeAssistant
     int extractCalls;
     int diaryWriteCalls;
     final List<String> diaryTurnInputs = new ArrayList<>();
-    /** 턴마다 엔진이 건넨 전략 — 전략 없이 온 턴은 null. */
-    final List<TurnStrategy> strategiesSeen = new ArrayList<>();
 
     @Override
     public Optional<DiaryTurn> turn(RetrospectState state, String userText) {
         diaryTurnCalls++;
         diaryTurnInputs.add(userText);
-        strategiesSeen.add(state.turnStrategy());
         if (failDiaryChat) {
             return Optional.empty();
         }

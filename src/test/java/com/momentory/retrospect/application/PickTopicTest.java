@@ -25,7 +25,8 @@ class PickTopicTest {
     private final FakeAssistant fake = new FakeAssistant();
     private final RetrospectEngine engine = new RetrospectEngine(new SafetyPolicy(), fake, fake,
             fake, fake, TurnJudge.NONE,
-            new StrategyDiaryChat(TurnJudge.NONE, new StrategyPolicy(0.5, 0.8, 2, 8), fake, new LlmUsageLogger(0.10, 0.40), 12),
+            new StrategyDiaryChat(TurnJudge.NONE, new StrategyPolicy(0.5, 0.8, 2, 8),
+                (state, text, strategy) -> java.util.Optional.empty(), new LlmUsageLogger(0.10, 0.40), 12),
             new LlmUsageLogger(0.10, 0.40), e -> { }, 1, 3);
 
     private String pick(List<ScheduleItem> schedules, String interest) {

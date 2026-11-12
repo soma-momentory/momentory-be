@@ -122,8 +122,6 @@ public class RetrospectState {
     private transient boolean turnJudgingEnabled;
     /** 이번 요청에서 판단으로 전략을 골라 응답에 적용할 것인가 — 저장하지 않는다. 켜면 턴 판단도 함께 켜진다. */
     private transient boolean turnStrategyEnabled;
-    /** 이번 턴에 고른 전략 — 문장 생성 프롬프트가 읽는다. 저장하지 않는다. */
-    private transient TurnStrategy turnStrategy;
     /** 이번 대화에서 관찰한 전략 신호 — 전략 선택을 한 번도 하지 않았으면 null. */
     private StrategySignals strategySignals;
     /** 이번 요청에서 생긴 판단 기록 — 저장하지 않는다. 애플리케이션 서비스가 꺼내 따로 기록한다. */
@@ -633,15 +631,6 @@ public class RetrospectState {
 
     public boolean turnStrategyEnabled() {
         return turnStrategyEnabled;
-    }
-
-    /** 이번 턴에 고른 전략. 전략 없이 가는 턴이면 null. */
-    public TurnStrategy turnStrategy() {
-        return turnStrategy;
-    }
-
-    public void turnStrategy(TurnStrategy strategy) {
-        this.turnStrategy = strategy;
     }
 
     public StrategySignals strategySignals() {

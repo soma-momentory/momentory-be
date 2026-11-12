@@ -16,8 +16,11 @@ final class JevJudgmentQuestions {
     /**
      * v2 (2026-11-12): 「직전 응답에 대한 반응」에 '답하려 했지만 어려워함'을 더했다. v1 에서는 "그냥 전부" 같은 답이
      * 갈 곳이 없어 '동의·추가 설명'으로 판단됐다. 안 하겠다(저항)와 못 하겠다(응답 곤란)는 대처가 다르다.
+     *
+     * <p>v3 (2026-11-12): '의아해하거나 이의를 닮'을 더했다 — 바바의 질문이 과하거나 엉뚱해서 "뭐?" 라고 한 답이 '판단 불가'로
+     * 나왔다. '첫 턴' 선택지는 뺐다. 첫 턴인지는 서버가 알고, 이 선택지가 다른 판단의 확률을 깎았다.
      */
-    static final String VERSION = "v2";
+    static final String VERSION = "v3";
 
     private JevJudgmentQuestions() {
     }
@@ -79,8 +82,9 @@ final class JevJudgmentQuestions {
                 c.put("argue", "바바의 말이 틀렸다고 반박했다");
                 c.put("struggle_to_answer", "질문에 답하려 했지만 무엇이라 말하기 어려워했다('그냥 전부', '모르겠어', "
                         + "'그냥 그래'처럼). 질문을 거부하거나 화제를 바꾼 것은 아니다");
+                c.put("puzzled_or_objecting", "바바의 말이 이상하거나 지나치다고 되물었거나 의아해했다('뭐?', "
+                        + "'그게 무슨 말이야?', '그 정도는 아닌데'처럼)");
                 c.put("agree_or_elaborate", "동의했거나 질문에 답하며 내용을 덧붙였다");
-                c.put("first_turn", "바바의 직전 응답이 첫 인사 질문뿐이라 반응이라 볼 것이 없다");
                 c.put("undeterminable", "'응'처럼 발화가 너무 짧아 어떤 반응인지 판단할 수 없다");
             }
             case EXPERIENCING_DEPTH -> {
