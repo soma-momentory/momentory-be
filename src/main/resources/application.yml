@@ -116,6 +116,9 @@ momentory:
   strategy:
     # 판단으로 바바의 응답 방식(전략)까지 바꿀 사용자 id 목록(쉼표 구분). 여기 있으면 턴 판단도 함께 켜진다.
     user-ids: ${TURN_STRATEGY_USER_IDS:}
+    # true 면 목록과 무관하게 모든 계정에 켠다. 모든 사용자의 대화 원문이 TypeSafe 로 나가므로,
+    # 운영에서는 처리방침에 처리위탁(국외 이전)을 고지한 뒤에만 켠다.
+    all-users: ${TURN_STRATEGY_ALL_USERS:false}
     # 아래 기준값은 근거가 쌓이기 전의 임시값이다. 바꾸면 그 전후 대화를 같은 조건으로 볼 수 없다.
     min-confidence: ${TURN_STRATEGY_MIN_CONFIDENCE:0.5}
     close-confidence: ${TURN_STRATEGY_CLOSE_CONFIDENCE:0.8}

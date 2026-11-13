@@ -124,6 +124,12 @@ class TurnJudgmentPersistenceIntegrationTest {
         judgeFor(Set.of());
         strategyFor(Set.of());
         applyDispositionFor(DispositionAssignment.Mode.OFF, Set.of());
+        strategyForEveryone(false);
+    }
+
+    private void strategyForEveryone(boolean on) {
+        Object service = AopTestUtils.getTargetObject(retrospectService);
+        ReflectionTestUtils.setField(service, "strategyAllUsers", on);
     }
 
     private void strategyFor(Set<Long> userIds) {
@@ -335,6 +341,24 @@ class TurnJudgmentPersistenceIntegrationTest {
         assertThat(observation.getApplyArm()).isEqualTo(arm);
         assertThat(observation.isDerivedSelfLed()).isTrue();
         assertThat(startedSignals(sessionId).resistanceCount()).isEqualTo(arm == DispositionArm.TREATMENT ? 2 : 0);
+    }
+
+    @Test
+    @DisplayName("전체에 켜면 목록에 없는 계정도 전략 대화를 탄다")
+    void turnsOnForEveryoneWhenAllUsersIsSet() throws Exception {
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
+                "말이 끊기셨군요.", "그때 기분이 어땠어요?", false, false, "면접 스터디", "none", List.of(), true)));
+        User user = userRepository.saveAndFlush(User.create());
+        strategyForEveryone(true);
+        long sessionId = startSession(user);
+
+        say(user, sessionId, "팀원이 말을 끊었어요.");
+
+        assertThat(judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId))
+                .extracting(TurnJudgmentRecord::getStrategyType).containsExactly("EXPLORE");
+        assertThat(dispositionObservations.findByRetrospectId(sessionId)).isPresent();
+        verify(diaryChatAssistant, never()).turn(any(), anyString());
     }
 
     @Test

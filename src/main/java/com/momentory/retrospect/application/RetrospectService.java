@@ -69,6 +69,7 @@ public class RetrospectService {
     private final DispositionStart dispositionStart;
     private final Set<Long> judgeUserIds;
     private final Set<Long> strategyUserIds;
+    private final boolean strategyAllUsers;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
@@ -79,7 +80,8 @@ public class RetrospectService {
             SafetyEventRepository safetyEvents, TurnJudgmentRecorder turnJudgments,
             DispositionObservationRecorder dispositionObservations, DispositionStart dispositionStart,
             @Value("${momentory.judge.user-ids:}") Set<Long> judgeUserIds,
-            @Value("${momentory.strategy.user-ids:}") Set<Long> strategyUserIds) {
+            @Value("${momentory.strategy.user-ids:}") Set<Long> strategyUserIds,
+            @Value("${momentory.strategy.all-users:false}") boolean strategyAllUsers) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
@@ -97,6 +99,7 @@ public class RetrospectService {
         this.dispositionStart = dispositionStart;
         this.judgeUserIds = Set.copyOf(judgeUserIds);
         this.strategyUserIds = Set.copyOf(strategyUserIds);
+        this.strategyAllUsers = strategyAllUsers;
     }
 
     /**
@@ -113,7 +116,7 @@ public class RetrospectService {
         ReplyDto reply = engine.start(state, command, preferredRestMethods(userId),
                 todayActionFinder.findFor(userId).orElse(null));
         // 전략 대화는 지난 대화의 성향으로 시작할 수 있다(기본은 꺼져 있어 기본값에서 시작한다).
-        DispositionStart.Plan dispositionPlan = strategyUserIds.contains(userId)
+        DispositionStart.Plan dispositionPlan = strategyEnabledFor(userId)
                 ? dispositionStart.plan(userId) : null;
         if (dispositionPlan != null) {
             state.strategySignals(dispositionPlan.startingSignals());
@@ -127,6 +130,11 @@ public class RetrospectService {
         }
 
         return new RetrospectResult(entity.getId(), reply);
+    }
+
+    /** 전략 대화 대상인가 — 전체에 켰거나, 적어 둔 계정이다. */
+    private boolean strategyEnabledFor(Long userId) {
+        return strategyAllUsers || strategyUserIds.contains(userId);
     }
 
     /**
@@ -175,7 +183,7 @@ public class RetrospectService {
             state.enableTurnJudging();
         }
         // 전략 선택 대상이면 판단으로 응답 방식까지 바꾼다(판단도 함께 켜진다).
-        if (strategyUserIds.contains(userId)) {
+        if (strategyEnabledFor(userId)) {
             state.enableTurnStrategy();
         }
         ReplyDto reply = engine.handle(state, command);
