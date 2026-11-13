@@ -23,7 +23,8 @@ final class GeminiResponseSchemas {
             GeminiNeeds.class, needsSchema(),
             DiaryOutput.class, diarySchema(),
             DiaryDraft.class, diaryDraftSchema(),
-            StrategyReply.class, strategyReplySchema());
+            StrategyReply.class, strategyReplySchema(),
+            ReflectionSummary.class, reflectionSummarySchema());
 
     private GeminiResponseSchemas() {
     }
@@ -98,6 +99,13 @@ final class GeminiResponseSchemas {
         props.put("diary", str());
         props.put("reframedDiary", str());
         return object(props, List.of("diary"));
+    }
+
+    private static Map<String, Object> reflectionSummarySchema() {
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        props.put("summary", Map.of("type", "STRING", "description",
+                "사용자가 말한 느낀 점을 일기체 한 문장으로. 말하지 않은 내용은 넣지 않는다."));
+        return object(props, List.of("summary"));
     }
 
     private static Map<String, Object> strategyReplySchema() {

@@ -56,6 +56,16 @@ class FakeAssistant
     int diaryWriteCalls;
     final List<String> diaryTurnInputs = new ArrayList<>();
 
+    // 작은 일을 해 본 느낀 점 요약 — null 이면 요약 실패
+    String reflectionSummary;
+    final List<String> reflectionInputs = new ArrayList<>();
+
+    @Override
+    public Optional<String> summarizeReflection(RetrospectState state, String actionTitle, String userText) {
+        reflectionInputs.add(actionTitle + " | " + userText);
+        return Optional.ofNullable(reflectionSummary);
+    }
+
     @Override
     public Optional<DiaryTurn> turn(RetrospectState state, String userText) {
         diaryTurnCalls++;

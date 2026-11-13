@@ -343,6 +343,17 @@ public class RetrospectState {
         }
     }
 
+    /** 「해 봤어요」 뒤에 해 보니 어땠는지를 물었다. */
+    public void askTodayActionReflection() {
+        if (todayAction != null) {
+            this.todayAction = todayAction.askedReflection();
+        }
+    }
+
+    public boolean awaitingTodayActionReflection() {
+        return todayAction != null && todayAction.awaitingReflection();
+    }
+
     public boolean awaitingEventSelection() {
         return awaitingEventSelection;
     }

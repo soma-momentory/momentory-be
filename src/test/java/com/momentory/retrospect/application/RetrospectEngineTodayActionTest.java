@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.momentory.retrospect.application.event.TodayActionAnswered;
+import com.momentory.retrospect.application.event.TodayActionReflected;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.RetrospectState;
@@ -59,17 +60,88 @@ class RetrospectEngineTodayActionTest {
     }
 
     @Test
-    void triedAnswerRecordsDoneThenAsksOriginalOpening() {
+    void triedAnswerRecordsDoneThenAsksHowItWent() {
         start(false);
 
         ReplyDto reply = engine.handle(state, TurnCommand.option("1"));
 
-        assertThat(reply.text()).isEqualTo("해 봤군요, 잘했어요. " + ORIGINAL_OPENING);
-        assertThat(reply.options()).isNull();
+        assertThat(reply.text()).isEqualTo("해 봤군요, 잘했어요. 해 보니 어땠어요?");
+        assertThat(reply.options()).extracting(ReplyDto.OptionDto::label).containsExactly("다른 얘기 할래요");
         assertThat(events).containsExactly(new TodayActionAnswered(7L, TodayActionResult.DONE));
         assertThat(state.awaitingTodayAction()).isFalse();
+        assertThat(state.awaitingTodayActionReflection()).isTrue();
         assertThat(state.diaryTurn()).isZero();
         assertThat(fake.diaryTurnCalls).isZero();
+    }
+
+    @Test
+    void howItWentIsSummarisedForTheWishCardThenTheOriginalOpeningFollows() {
+        start(false);
+        engine.handle(state, TurnCommand.option("1"));
+        fake.reflectionSummary = "생각보다 개운했지만 금방 잊게 됐다.";
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("생각보다 개운했어. 근데 금방 까먹더라"));
+
+        assertThat(reply.text()).isEqualTo("들려줘서 고마워요. " + ORIGINAL_OPENING);
+        assertThat(reply.options()).isNull();
+        assertThat(fake.reflectionInputs).containsExactly(ACTION + " | 생각보다 개운했어. 근데 금방 까먹더라");
+        assertThat(events).containsExactly(new TodayActionAnswered(7L, TodayActionResult.DONE),
+                new TodayActionReflected(7L, "생각보다 개운했지만 금방 잊게 됐다."));
+        // 이 답은 일기 턴을 쓰지 않고, 다음 답부터 일기 대화다.
+        assertThat(state.awaitingTodayActionReflection()).isFalse();
+        assertThat(state.diaryTurn()).isZero();
+        assertThat(fake.diaryTurnCalls).isZero();
+        engine.handle(state, TurnCommand.text("오늘은 회의가 길었어요"));
+        assertThat(state.diaryTurn()).isEqualTo(1);
+    }
+
+    @Test
+    void keepsTheUsersOwnWordsWhenTheSummaryFails() {
+        start(false);
+        engine.handle(state, TurnCommand.option("1"));
+
+        engine.handle(state, TurnCommand.text("  " + "좋".repeat(250) + "  "));
+
+        assertThat(events.getLast()).isEqualTo(new TodayActionReflected(7L, "좋".repeat(200)));
+    }
+
+    @Test
+    void skippingHowItWentLeavesNoReflection() {
+        start(false);
+        engine.handle(state, TurnCommand.option("1"));
+
+        ReplyDto reply = engine.handle(state, TurnCommand.option("1"));
+
+        assertThat(reply.text()).isEqualTo("좋아요, 오늘 이야기부터 해요. " + ORIGINAL_OPENING);
+        assertThat(events).containsExactly(new TodayActionAnswered(7L, TodayActionResult.DONE));
+        assertThat(fake.reflectionInputs).isEmpty();
+        assertThat(state.awaitingTodayActionReflection()).isFalse();
+        assertThat(state.diaryTurn()).isZero();
+    }
+
+    @Test
+    void aStopRequestInsteadOfAReflectionEndsTheRetrospectWithoutOne() {
+        start(false);
+        engine.handle(state, TurnCommand.option("1"));
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("그만할래"));
+
+        assertThat(fake.reflectionInputs).isEmpty();
+        assertThat(events).containsExactly(new TodayActionAnswered(7L, TodayActionResult.DONE));
+        assertThat(state.phase().isTerminal()).isTrue();
+    }
+
+    @Test
+    void howItWentQuestionSurvivesSessionJsonRoundTrip() {
+        start(false);
+        engine.handle(state, TurnCommand.option("1"));
+        RetrospectStateCodec codec = new RetrospectStateCodec(JsonMapper.builder().build());
+        state = codec.deserialize(codec.serialize(state));
+        fake.reflectionSummary = "개운했다.";
+
+        engine.handle(state, TurnCommand.text("개운했어"));
+
+        assertThat(events.getLast()).isEqualTo(new TodayActionReflected(7L, "개운했다."));
     }
 
     @Test
@@ -130,7 +202,7 @@ class RetrospectEngineTodayActionTest {
 
         ReplyDto reply = engine.handle(state, TurnCommand.option("1"));
 
-        assertThat(reply.text()).isEqualTo("해 봤군요, 잘했어요. " + ORIGINAL_OPENING);
+        assertThat(reply.text()).isEqualTo("해 봤군요, 잘했어요. 해 보니 어땠어요?");
         assertThat(events).containsExactly(new TodayActionAnswered(7L, TodayActionResult.DONE));
     }
 }

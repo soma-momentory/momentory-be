@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import com.momentory.retrospect.application.event.CrisisDetected;
 import com.momentory.retrospect.application.event.TodayActionAnswered;
+import com.momentory.retrospect.application.event.TodayActionReflected;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.AnswerGate;
 import com.momentory.retrospect.domain.Choice;
@@ -203,6 +204,10 @@ public class RetrospectEngine {
                 : NOT_TRIED.equals(label) ? TodayActionResult.NOT_DONE
                 : TodayActionResult.SKIPPED;
         events.publishEvent(new TodayActionAnswered(action.letterActionId(), result));
+        // 방금 해 봤다고 한 사람에게는 해 보니 어땠는지를 한 번 묻는다 — 그 답이 바람카드의 느낀 점이 된다.
+        if (TRIED.equals(label) && !action.alreadyDone()) {
+            return askTodayActionReflection(state);
+        }
         String text = TODAY_ACTION_ACKS.get(label) + " " + action.followUp();
         state.addAssistantMessage(text);
         usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
@@ -255,6 +260,47 @@ public class RetrospectEngine {
         return state.nickname() == null || state.nickname().isBlank();
     }
 
+    static final String HOW_WAS_IT = "해 보니 어땠어요?";
+    static final String REFLECTION_ACK = "들려줘서 고마워요.";
+
+    private ReplyDto askTodayActionReflection(RetrospectState state) {
+        String text = TODAY_ACTION_ACKS.get(TRIED) + " " + HOW_WAS_IT;
+        List<Choice> options = List.of(Choice.of(OTHER_TOPIC));
+        state.askTodayActionReflection();
+        state.lastOptions(options);
+        state.addAssistantMessage(text + "\n" + optionLines(options));
+        usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
+        return ReplyDto.choices(text, Phase.DIARY_CHAT, toOptionDtos(options), state.safety().level());
+    }
+
+    /** 「해 보니 어땠어요?」를 건너뛴다 — 느낀 점을 남기지 않고 원래 첫 질문으로 간다. */
+    private ReplyDto skipTodayActionReflection(RetrospectState state) {
+        String text = TODAY_ACTION_ACKS.get(OTHER_TOPIC) + " " + state.todayAction().followUp();
+        state.addUserMessage(OTHER_TOPIC);
+        state.addAssistantMessage(text);
+        usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
+        return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
+    }
+
+    /**
+     * 「해 보니 어땠어요?」에 글로 답했다 — 한 줄로 줄여 바람카드의 느낀 점으로 넘기고(이벤트) 원래 첫 질문을 잇는다.
+     * 줄이는 데 실패하면 답을 그대로 남긴다. 이 답은 일기 턴을 쓰지 않는다.
+     */
+    private ReplyDto recordTodayActionReflection(RetrospectState state, String content) {
+        TodayAction action = state.todayAction();
+        String reflection = diaryChatAssistant.summarizeReflection(state, action.title(), content)
+                .filter(summary -> !summary.isBlank())
+                .orElse(content);
+        reflection = reflection.strip();
+        if (reflection.length() > CUSTOM_MAX_LENGTH) {
+            reflection = reflection.substring(0, CUSTOM_MAX_LENGTH);
+        }
+        events.publishEvent(new TodayActionReflected(action.letterActionId(), reflection));
+        String text = REFLECTION_ACK + " " + action.followUp();
+        state.addAssistantMessage(text);
+        return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
+    }
+
     // ── 턴 처리 진입점 ───────────────────────────────────────────────────
 
     public ReplyDto handle(RetrospectState state, TurnCommand command) {
@@ -276,6 +322,16 @@ public class RetrospectEngine {
     private ReplyDto handleDiaryTurn(RetrospectState state, TurnCommand command) {
         if (state.awaitingTodayAction()) {
             return resolveTodayAction(state, command);
+        }
+        // 「해 보니 어땠어요?」의 답 — 건너뛰면 바로 첫 질문으로, 글로 답하면 안전 · 악용 점검을 거친 뒤 느낀 점으로 남긴다.
+        boolean reflecting = state.awaitingTodayActionReflection();
+        if (reflecting) {
+            boolean skipped = picked(state, command, OTHER_TOPIC) || !command.hasContent();
+            state.lastOptions(List.of());
+            state.answerTodayAction();
+            if (skipped) {
+                return skipTodayActionReflection(state);
+            }
         }
         // 단답 체크인을 띄운 상태면, 이 턴은 그 선택('일기 보러 갈래요' vs '조금 더')에 대한 답이다.
         if (!state.lastOptions().isEmpty()) {
@@ -306,6 +362,11 @@ public class RetrospectEngine {
             }
         }
         state.resetAbuse();
+
+        // 그만하려는 말은 느낀 점이 아니다 — 아래의 종료 처리로 넘긴다.
+        if (reflecting && !isStopRequest(command.content())) {
+            return recordTodayActionReflection(state, command.content());
+        }
 
         // 전략 선택을 켠 계정은 여기서 전략 대화로 넘어가고, 아래의 옛 흐름을 거치지 않는다.
         // 「다른 기억」 질문에 없다고 답한 경우만 두 경로가 같이 쓴다 — 지금까지의 이야기로 정리한다.
