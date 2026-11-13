@@ -7,8 +7,10 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +32,9 @@ import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
 import com.momentory.retrospect.infrastructure.persistence.SafetyEventRepository;
+import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
+import com.momentory.retrospect.infrastructure.persistence.DispositionObservationRecorder;
+import com.momentory.retrospect.infrastructure.persistence.TurnJudgmentRecorder;
 import com.momentory.schedule.infrastructure.ScheduleRepository;
 import com.momentory.user.application.AuthenticatedUserNotFoundException;
 import com.momentory.user.domain.RestMethod;
@@ -59,6 +64,12 @@ public class RetrospectService {
     private final ApplicationEventPublisher eventPublisher;
     private final TodayActionFinder todayActionFinder;
     private final SafetyEventRepository safetyEvents;
+    private final TurnJudgmentRecorder turnJudgments;
+    private final DispositionObservationRecorder dispositionObservations;
+    private final DispositionStart dispositionStart;
+    private final Set<Long> judgeUserIds;
+    private final Set<Long> strategyUserIds;
+    private final boolean strategyAllUsers;
 
     public RetrospectService(RetrospectEngine engine, RetrospectRepository retrospectRepository,
             DiaryQueryService diaryQueryService, ActionCardQueryService actionCardQueryService,
@@ -66,7 +77,11 @@ public class RetrospectService {
             RetrospectStateCodec codec, UserRepository userRepository,
             UserProfileRepository userProfileRepository, ScheduleRepository scheduleRepository,
             ApplicationEventPublisher eventPublisher, TodayActionFinder todayActionFinder,
-            SafetyEventRepository safetyEvents) {
+            SafetyEventRepository safetyEvents, TurnJudgmentRecorder turnJudgments,
+            DispositionObservationRecorder dispositionObservations, DispositionStart dispositionStart,
+            @Value("${momentory.judge.user-ids:}") Set<Long> judgeUserIds,
+            @Value("${momentory.strategy.user-ids:}") Set<Long> strategyUserIds,
+            @Value("${momentory.strategy.all-users:false}") boolean strategyAllUsers) {
         this.engine = engine;
         this.retrospectRepository = retrospectRepository;
         this.diaryQueryService = diaryQueryService;
@@ -79,6 +94,12 @@ public class RetrospectService {
         this.eventPublisher = eventPublisher;
         this.todayActionFinder = todayActionFinder;
         this.safetyEvents = safetyEvents;
+        this.turnJudgments = turnJudgments;
+        this.dispositionObservations = dispositionObservations;
+        this.dispositionStart = dispositionStart;
+        this.judgeUserIds = Set.copyOf(judgeUserIds);
+        this.strategyUserIds = Set.copyOf(strategyUserIds);
+        this.strategyAllUsers = strategyAllUsers;
     }
 
     /**
@@ -94,12 +115,26 @@ public class RetrospectService {
         // 아침 편지에서 고른 오늘의 작은 일이 있으면 첫 질문 앞에서 해 봤는지 묻는다(바바의 편지).
         ReplyDto reply = engine.start(state, command, preferredRestMethods(userId),
                 todayActionFinder.findFor(userId).orElse(null));
+        // 전략 대화는 지난 대화의 성향으로 시작할 수 있다(기본은 꺼져 있어 기본값에서 시작한다).
+        DispositionStart.Plan dispositionPlan = strategyEnabledFor(userId)
+                ? dispositionStart.plan(userId) : null;
+        if (dispositionPlan != null) {
+            state.strategySignals(dispositionPlan.startingSignals());
+        }
 
         Retrospect entity = Retrospect.start(userId, RetrospectStatus.from(state.phase()),
                 resolveScheduleId(userId, state.scheduleId()), codec.serialize(state));
         retrospectRepository.save(entity);
+        if (dispositionPlan != null) {
+            dispositionStart.open(userId, entity.getId(), dispositionPlan);
+        }
 
         return new RetrospectResult(entity.getId(), reply);
+    }
+
+    /** 전략 대화 대상인가 — 전체에 켰거나, 적어 둔 계정이다. */
+    private boolean strategyEnabledFor(Long userId) {
+        return strategyAllUsers || strategyUserIds.contains(userId);
     }
 
     /**
@@ -143,8 +178,19 @@ public class RetrospectService {
         RetrospectState state = codec.deserialize(entity.getStateJson());
         // 행동 추천 스텝에서만(지연) 부른다 — actioncard 컨텍스트가 비슷한 상황 이전 카드를 찾는다.
         state.priorCardFinder(situation -> priorActionCardRecommender.findSimilar(userId, situation));
+        // 턴 판단은 대상 계정에만 켠다 — 대화 원문이 외부 판단 모델로 나가기 때문이다.
+        if (judgeUserIds.contains(userId)) {
+            state.enableTurnJudging();
+        }
+        // 전략 선택 대상이면 판단으로 응답 방식까지 바꾼다(판단도 함께 켜진다).
+        if (strategyEnabledFor(userId)) {
+            state.enableTurnStrategy();
+        }
         ReplyDto reply = engine.handle(state, command);
         recordCrisis(entity, state);
+        List<TurnJudgmentLog> judgmentLogs = state.drainJudgmentLogs();
+        turnJudgments.record(entity.getUserId(), entity.getId(), judgmentLogs);
+        dispositionObservations.record(entity.getUserId(), entity.getId(), judgmentLogs);
         sync(entity, state, reply);
 
         // 완료 턴이면 방금 저장된 일기·행동 카드의 id 를 응답에 실어 보낸다 — sync 가 발행한 이벤트가

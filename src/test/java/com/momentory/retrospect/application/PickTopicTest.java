@@ -11,7 +11,9 @@ import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Phase;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.ScheduleItem;
+import com.momentory.retrospect.domain.assistant.TurnJudge;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
+import com.momentory.retrospect.domain.strategy.StrategyPolicy;
 
 /**
  * 일정이 여러 개일 때 1턴 소재를 고르는 우선순위 — 사건성 → 분야별 키워드 → 첫 후보 (나머지는 힌트).
@@ -22,7 +24,10 @@ class PickTopicTest {
 
     private final FakeAssistant fake = new FakeAssistant();
     private final RetrospectEngine engine = new RetrospectEngine(new SafetyPolicy(), fake, fake,
-            fake, fake, new LlmUsageLogger(0.10, 0.40), e -> { }, 1, 3);
+            fake, fake, TurnJudge.NONE,
+            new StrategyDiaryChat(TurnJudge.NONE, new StrategyPolicy(0.5, 0.8, 2, 8),
+                (state, text, strategy) -> java.util.Optional.empty(), new LlmUsageLogger(0.10, 0.40), 12),
+            new LlmUsageLogger(0.10, 0.40), e -> { }, 1, 3);
 
     private String pick(List<ScheduleItem> schedules, String interest) {
         RetrospectState state = new RetrospectState("s");

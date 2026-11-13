@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
 import com.momentory.retrospect.domain.assistant.DiaryTurn;
+import com.momentory.retrospect.domain.assistant.StrategyReply;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiExtraction;
 import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.GeminiNeeds;
 
@@ -20,7 +21,10 @@ final class GeminiResponseSchemas {
             DiaryTurn.class, diaryTurnSchema(),
             GeminiExtraction.class, extractionSchema(),
             GeminiNeeds.class, needsSchema(),
-            DiaryOutput.class, diarySchema());
+            DiaryOutput.class, diarySchema(),
+            DiaryDraft.class, diaryDraftSchema(),
+            StrategyReply.class, strategyReplySchema(),
+            ReflectionSummary.class, reflectionSummarySchema());
 
     private GeminiResponseSchemas() {
     }
@@ -95,6 +99,50 @@ final class GeminiResponseSchemas {
         props.put("diary", str());
         props.put("reframedDiary", str());
         return object(props, List.of("diary"));
+    }
+
+    private static Map<String, Object> reflectionSummarySchema() {
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        props.put("summary", Map.of("type", "STRING", "description",
+                "사용자가 말한 느낀 점을 일기체 한 문장으로. 말하지 않은 내용은 넣지 않는다."));
+        return object(props, List.of("summary"));
+    }
+
+    private static Map<String, Object> strategyReplySchema() {
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        // 흐름을 먼저 판단하게 한다 — 새 이야기인지, 더 물을 것이 남았는지를 정한 뒤에 문장을 쓴다.
+        props.put("newTopic", Map.of("type", "BOOLEAN", "description",
+                "방금 답변이 앞에서 다루던 일과 다른 새 이야기를 꺼냈으면 true."));
+        props.put("topic", Map.of("type", "STRING", "description", "지금 다루는 일의 짧은 이름."));
+        props.put("nothingMoreToAsk", Map.of("type", "BOOLEAN", "description",
+                "이 이야기에서 더 물을 것이 없으면 true — 이미 충분히 들었거나, 사용자가 더 말하기 어려워한다."));
+        props.put("ack", Map.of("type", "STRING", "description", "방금 답변을 받아주는 말. 질문은 넣지 않는다."));
+        props.put("question", Map.of("type", "STRING", "description",
+                "이어서 물을 질문 한 문장. 묻지 않는 턴이거나 nothingMoreToAsk 가 true 면 빈 문자열."));
+        props.put("asksFeeling", Map.of("type", "BOOLEAN", "description",
+                "question 이 그때의 기분이나 마음을 물으면 true. 사실·이유·생각을 묻거나 질문이 없으면 false."));
+        props.put("safetyLevel", str());
+        props.put("safetyFlags", arrayOf(str()));
+        return object(props,
+                List.of("newTopic", "nothingMoreToAsk", "ack", "question", "asksFeeling", "safetyLevel"));
+    }
+
+    private static Map<String, Object> diaryDraftSchema() {
+        LinkedHashMap<String, Object> paragraph = new LinkedHashMap<>();
+        paragraph.put("event", Map.of("type", "STRING", "description",
+                "이 문단이 다루는 일 한 줄. 때나 장소가 다른 일은 서로 다른 문단이다."));
+        paragraph.put("sentences", Map.of("type", "ARRAY", "items", str(), "description",
+                "이 사건에 대한 문장들. 원소 하나에 한 문장만 담는다."));
+        LinkedHashMap<String, Object> correction = new LinkedHashMap<>();
+        correction.put("before", str());
+        correction.put("after", str());
+        LinkedHashMap<String, Object> props = new LinkedHashMap<>();
+        // 문단보다 먼저 채우게 한다 — 고쳐 말한 곳을 짚은 뒤에 일기를 쓴다.
+        props.put("corrections", Map.of("type", "ARRAY", "items", object(correction, List.of("before", "after")),
+                "description", "사용자가 자기 말을 고쳐 말한 곳. before=고치기 전 표현, after=고친 표현. 없으면 빈 목록."));
+        props.put("paragraphs", Map.of("type", "ARRAY", "items", object(paragraph, List.of("event", "sentences")),
+                "description", "문단 목록. 문단 하나가 한 사건(맥락)이다. 한 가지 일만 이야기했으면 문단은 하나다."));
+        return object(props, List.of("corrections", "paragraphs"));
     }
 
     private static Map<String, Object> object(LinkedHashMap<String, Object> properties,

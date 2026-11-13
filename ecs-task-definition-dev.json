@@ -24,6 +24,10 @@
           "value": "gemini-flash-lite-latest"
         },
         {
+          "name": "TURN_STRATEGY_ALL_USERS",
+          "value": "true"
+        },
+        {
           "name": "KAKAO_READ_TIMEOUT",
           "value": "5s"
         },
@@ -79,6 +83,10 @@
         {
           "name": "GEMINI_API_KEY",
           "valueFrom": "/momentory/dev/GEMINI_API_KEY"
+        },
+        {
+          "name": "TYPESAFE_API_KEY",
+          "valueFrom": "/momentory/dev/TYPESAFE_API_KEY"
         },
         {
           "name": "APPLE_PRIVATE_KEY",
