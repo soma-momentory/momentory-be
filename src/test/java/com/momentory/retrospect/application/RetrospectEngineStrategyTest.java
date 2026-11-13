@@ -163,6 +163,19 @@ class RetrospectEngineStrategyTest {
     }
 
     @Test
+    void logsWhetherBabaAskedAboutFeelingsOnlyWhenTheWritersQuestionWentOut() {
+        reply = new StrategyReply("팀장님께 또 지적을 받으셨군요.", "그 말을 들었을 때 기분이 어땠어요?", false, false,
+                "오늘의 일", "none", List.of(), true);
+        say("오늘 팀장한테 또 한 소리 들었어.", plain());
+        assertThat(lastLog().askedFeeling()).isTrue();
+
+        // 모델이 기분 질문이라고 했어도 서버가 다른 기억을 물은 턴은 기분을 물은 것이 아니다.
+        reply = new StrategyReply("속상하셨군요.", "", false, true, "오늘의 일", "none", List.of(), true);
+        say("속상했어.", plain());
+        assertThat(lastLog().askedFeeling()).isFalse();
+    }
+
+    @Test
     void proposesWrapUpInsteadOfAskingForAnotherMemoryASecondTime() {
         say("시험 망쳐서 분했어.", plain());
         reply = nothingMore("약간 실망하셨군요.");

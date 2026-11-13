@@ -169,6 +169,29 @@ public class StrategyPolicy {
                 asked ? 0 : now.turnsSinceQuestion() + 1, now.questionsAsked() + (asked ? 1 : 0));
     }
 
+    /** 한 대화 안에서 저항이 이 횟수부터 질문을 줄인다. */
+    public int resistanceThreshold() {
+        return resistanceThreshold;
+    }
+
+    /**
+     * 지난 대화에서 도출한 성향으로 시작하는 대화의 첫 신호. 성향이 없으면 기본값과 같다.
+     *
+     * <p>스스로 이끌고 싶어 하는 사용자는 처음부터 질문을 드물게, 고를 수 있는 형태로 묻는다 — 첫 답변에는 한 번 묻고
+     * 그 뒤로 턴을 건넌다. 다른 관점을 원하는 사용자는 재해석 방침으로 시작한다. 어느 쪽이든 이번 대화에서 나온
+     * 명시적 요청이 앞선다.
+     */
+    public StrategySignals startingSignals(boolean selfLed, boolean wantsOtherView) {
+        return new StrategySignals(selfLed ? resistanceThreshold : 0, 0,
+                wantsOtherView ? StrategySignals.OTHER_VIEW : null, 1, false, null,
+                selfLed ? SPARSE_QUESTION_GAP : 0, 0);
+    }
+
+    /** 주도성 신호로 세는 저항인가 — 답하지 않음 · 화제 전환 · 반박. */
+    public static boolean isResistance(String reaction) {
+        return reaction != null && RESISTANCE.contains(reaction);
+    }
+
     /** 확신이 기준 이상이고 '판단 불가'가 아닌 선택지만 돌려준다. 아니면 null. */
     private String signal(TurnJudgment judgment, JudgmentItem item) {
         ItemJudgment j = judgment.of(item);

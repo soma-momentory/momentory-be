@@ -58,6 +58,26 @@ class StrategyPolicyTest {
         return new StrategyPolicy.Decision(d.strategy(), policy.settle(d.signals(), d.strategy()));
     }
 
+    @Test
+    void aStoredSelfLedDispositionStartsWithSparseChoiceQuestions() {
+        StrategySignals start = policy.startingSignals(true, false);
+
+        // 첫 답변에는 한 번 묻되 고를 수 있는 형태로 묻고, 그 뒤로는 턴을 건넌다.
+        StrategyPolicy.Decision firstTurn = policy.decide(new J().build(), start, true);
+        assertStrategy(firstTurn, StrategyType.EXPLORE, QuestionFocus.OPEN);
+        assertThat(firstTurn.strategy().asChoices()).isTrue();
+        StrategyPolicy.Decision next = policy.decide(new J().build(),
+                policy.settle(firstTurn.signals(), firstTurn.strategy()), false);
+        assertStrategy(next, StrategyType.EXPLORE, QuestionFocus.NONE);
+    }
+
+    @Test
+    void aStoredOtherViewDispositionStartsWithReframingAndNoDispositionStartsAsBefore() {
+        assertStrategy(policy.decide(new J().build(), policy.startingSignals(false, true), true),
+                StrategyType.REFRAME, QuestionFocus.OPEN);
+        assertThat(policy.startingSignals(false, false)).isEqualTo(StrategySignals.initial());
+    }
+
     private static void assertStrategy(StrategyPolicy.Decision d, StrategyType type, QuestionFocus focus) {
         assertThat(d.strategy().type()).isEqualTo(type);
         assertThat(d.strategy().focus()).isEqualTo(focus);

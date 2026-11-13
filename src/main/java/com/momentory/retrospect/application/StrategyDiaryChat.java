@@ -99,6 +99,7 @@ public class StrategyDiaryChat {
         if (strategy.type() == StrategyType.CLOSE) {
             state.strategySignals(policy.settle(decision.signals(), strategy));
             state.logStrategy(strategy, StrategyPolicy.VERSION, true);
+            state.logAskedFeeling(false);
             return new Outcome(Kind.CLOSE, null, SafetyLevel.NONE, List.of());
         }
 
@@ -108,6 +109,7 @@ public class StrategyDiaryChat {
         String ack = PLAIN_ACK;
         String question = null;
         boolean newTopic = false;
+        boolean asksFeeling = false;
         SafetyLevel safetyLevel = SafetyLevel.NONE;
         List<String> safetyFlags = List.of();
         if (written.isPresent()) {
@@ -122,6 +124,7 @@ public class StrategyDiaryChat {
             String said = withoutVocative(state, RetrospectEngine.empathyStatements(reply.ack()));
             ack = said.isBlank() ? PLAIN_ACK : said;
             question = reply.nothingMoreToAsk() ? null : firstQuestion(withoutVocative(state, reply.question()));
+            asksFeeling = reply.questionAsksFeeling();
         } else {
             state.logGenerationFailed();
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
@@ -138,6 +141,8 @@ public class StrategyDiaryChat {
         boolean capped = state.diaryTurn() >= maxTurns;
         state.strategySignals(policy.settle(signals, done));
         state.logStrategy(done, StrategyPolicy.VERSION, !capped);
+        // 모델이 쓴 질문이 실제로 나간 턴만 센다 — 다른 기억 질문 · 마무리 제안 · 상한으로 끝난 턴은 기분을 물은 것이 아니다.
+        state.logAskedFeeling(!capped && done.focus() == QuestionFocus.OPEN && question != null && asksFeeling);
         if (capped) {
             return new Outcome(Kind.FINISH, ack, safetyLevel, safetyFlags);
         }

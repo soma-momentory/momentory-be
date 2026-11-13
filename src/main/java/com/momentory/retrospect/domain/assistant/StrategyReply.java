@@ -16,12 +16,23 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * @param nothingMoreToAsk 이 이야기에서 더 물을 것이 없는가 — 이미 충분히 들었거나, 사용자가 더 말하기 어려워한다
  * @param topic            지금 다루는 일의 짧은 이름(일기 대체문에 쓴다). 모르면 null
  * @param safetyLevel      none|caution|risk|imminent
+ * @param asksFeeling      이번 질문이 그때의 기분이나 마음을 묻는가 — 감정 강도 성향을 재는 데만 쓴다. 모르면 null
  */
 public record StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
-        String topic, String safetyLevel, List<String> safetyFlags) {
+        String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling) {
 
     public StrategyReply {
         safetyFlags = safetyFlags == null ? List.of() : List.copyOf(safetyFlags);
+    }
+
+    /** 질문이 기분을 묻는지 알리지 않은 응답. */
+    public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
+            String topic, String safetyLevel, List<String> safetyFlags) {
+        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, null);
+    }
+
+    public boolean questionAsksFeeling() {
+        return Boolean.TRUE.equals(asksFeeling);
     }
 
     public SafetyLevel safetyLevelOrNone() {

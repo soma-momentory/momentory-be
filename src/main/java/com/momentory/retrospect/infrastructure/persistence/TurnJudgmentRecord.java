@@ -118,6 +118,9 @@ public class TurnJudgmentRecord {
     @Column(name = "generation_failed", nullable = false)
     private boolean generationFailed;
 
+    @Column(name = "asked_feeling")
+    private Boolean askedFeeling;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -136,6 +139,7 @@ public class TurnJudgmentRecord {
         record.diaryTurn = log.diaryTurn();
         record.createdAt = Instant.now();
         record.generationFailed = log.generationFailed();
+        record.askedFeeling = log.askedFeeling();
         if (log.strategy() != null) {
             record.strategyType = log.strategy().type().name();
             record.questionFocus = log.strategy().focus().name();
@@ -200,4 +204,5 @@ public class TurnJudgmentRecord {
     public String getPolicyVersion() { return policyVersion; }
     public Boolean getStrategyApplied() { return strategyApplied; }
     public boolean isGenerationFailed() { return generationFailed; }
+    public Boolean getAskedFeeling() { return askedFeeling; }
 }

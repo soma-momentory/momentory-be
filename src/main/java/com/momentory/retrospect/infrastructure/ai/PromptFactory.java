@@ -236,6 +236,7 @@ public class PromptFactory {
                 - newTopic, topic, nothingMoreToAsk: 위 [먼저 흐름을 읽습니다]대로.
                 - ack: 받아주는 말 한 문장(길어도 두 문장). 질문은 넣지 않습니다.
                 - question: 방침이 질문을 허용하고 nothingMoreToAsk 가 false 일 때만 한 문장. 아니면 빈 문자열.
+                - asksFeeling: question 이 그때의 기분이나 마음을 물으면 true. 사실·이유·생각을 묻거나 질문이 없으면 false.
                 - safetyLevel: none|caution|risk|imminent.
                 """.formatted(state.diaryTurn(), orNone(state.event()), recentHistory(state), userText.strip(),
                 courseDirective(strategy), questionDirective(strategy));

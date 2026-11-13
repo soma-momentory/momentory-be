@@ -664,6 +664,13 @@ public class RetrospectState {
         }
     }
 
+    /** 방금 남긴 판단 기록에 이 턴에 바바가 그때의 기분을 물었는지를 덧붙인다. */
+    public void logAskedFeeling(boolean asked) {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withAskedFeeling(asked));
+        }
+    }
+
     /** 방금 남긴 판단 기록에 이 턴의 문장 생성이 실패했음을 표시한다. */
     public void logGenerationFailed() {
         if (!judgmentLogs.isEmpty()) {

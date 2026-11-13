@@ -119,9 +119,12 @@ final class GeminiResponseSchemas {
         props.put("ack", Map.of("type", "STRING", "description", "방금 답변을 받아주는 말. 질문은 넣지 않는다."));
         props.put("question", Map.of("type", "STRING", "description",
                 "이어서 물을 질문 한 문장. 묻지 않는 턴이거나 nothingMoreToAsk 가 true 면 빈 문자열."));
+        props.put("asksFeeling", Map.of("type", "BOOLEAN", "description",
+                "question 이 그때의 기분이나 마음을 물으면 true. 사실·이유·생각을 묻거나 질문이 없으면 false."));
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
-        return object(props, List.of("newTopic", "nothingMoreToAsk", "ack", "question", "safetyLevel"));
+        return object(props,
+                List.of("newTopic", "nothingMoreToAsk", "ack", "question", "asksFeeling", "safetyLevel"));
     }
 
     private static Map<String, Object> diaryDraftSchema() {
