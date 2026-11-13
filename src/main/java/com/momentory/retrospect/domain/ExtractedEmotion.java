@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * 대화에서 추출한 감정 한 건 (모델 비교 계획 §3.1).
  *
- * <p>{@code raw} 는 사용자가 실제로 쓴 표현("무시당한 느낌"), {@code normalized} 는 고정 10종
+ * <p>{@code raw} 는 사용자가 실제로 쓴 표현("무시당한 느낌"), {@code normalized} 는 고정 12종
  * {@link Emotion} 중 하나로 정규화한 값(아직 못 정했으면 {@code null}).
  *
  * <p>근거는 두 가지로 담는다 — {@code evidence} 는 근거가 된 사용자 문장 원문(추정이 아니라 실제

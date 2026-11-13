@@ -194,4 +194,62 @@ class RetrospectStateCodecTest {
         assertThat(restored.explorationEntered()).isTrue();
     }
 
+    @Test
+    @DisplayName("옛 10종 감정 이름으로 저장된 스냅샷을 새 12종으로 옮겨 읽는다")
+    void readsSnapshotSavedWithLegacyEmotionNames() {
+        RetrospectState state = new RetrospectState("legacy-emotions");
+        state.begin("면접 스터디", Emotion.JOY, 77L, "정민", "취업");
+        state.events(List.of(new ExtractedEvent(1, "면접 스터디", "답변이 막힘", List.of(1))));
+        state.emotions(List.of(
+                new ExtractedEmotion(1, "답답했어요", Emotion.DISAPPOINTED, 3, EmotionPhase.DURING,
+                        "답답했어요", List.of(1)),
+                new ExtractedEmotion(1, "기운이 없어요", Emotion.EXHAUSTED, 2, EmotionPhase.NOW,
+                        "기운이 없어요", List.of(1)),
+                new ExtractedEmotion(1, "불안했어요", Emotion.ANXIOUS, 2, EmotionPhase.BEFORE,
+                        "불안했어요", List.of(1))));
+        state.enterExploration();
+        state.confirmEmotions(List.of(Emotion.SAD));
+        // 10종 시절에 저장된 모양으로 되돌린다 — 그때의 상수 이름이 그대로 들어 있다.
+        String legacy = codec.serialize(state)
+                .replace("\"scheduleEmotion\":\"JOY\"", "\"scheduleEmotion\":\"HAPPY\"")
+                .replace("\"normalized\":\"DISAPPOINTED\"", "\"normalized\":\"FRUSTRATED\"")
+                .replace("\"normalized\":\"EXHAUSTED\"", "\"normalized\":\"LETHARGIC\"")
+                .replace("\"confirmedEmotions\":[\"SAD\"]", "\"confirmedEmotions\":[\"DEPRESSED\"]");
+        assertThat(legacy).contains("HAPPY", "FRUSTRATED", "LETHARGIC", "DEPRESSED");
+
+        RetrospectState restored = codec.deserialize(legacy);
+
+        assertThat(restored.scheduleEmotion()).isEqualTo(Emotion.JOY);
+        assertThat(restored.emotions()).extracting(ExtractedEmotion::normalized)
+                .containsExactly(Emotion.ANGRY, Emotion.EXHAUSTED, Emotion.ANXIOUS);
+        assertThat(restored.confirmedEmotions()).containsExactly(Emotion.SAD);
+        // 다시 저장하면 새 이름으로만 나간다.
+        assertThat(codec.serialize(restored))
+                .doesNotContain("HAPPY", "FRUSTRATED", "LETHARGIC", "DEPRESSED");
+    }
+
+    @Test
+    @DisplayName("옛 이름의 추론 감정도 옮겨 읽는다")
+    void readsLegacyInferredEmotion() {
+        RetrospectState state = new RetrospectState("legacy-inferred");
+        state.inferredEmotion(Emotion.CONFUSED);
+        String legacy = codec.serialize(state)
+                .replace("\"inferredEmotion\":\"CONFUSED\"", "\"inferredEmotion\":\"STUCK\"");
+        assertThat(legacy).contains("STUCK");
+
+        assertThat(codec.deserialize(legacy).inferredEmotion()).isEqualTo(Emotion.CONFUSED);
+    }
+
+    @Test
+    @DisplayName("어느 체계에도 없는 감정 값은 조용히 비우지 않고 실패한다")
+    void rejectsUnknownEmotionName() {
+        RetrospectState state = new RetrospectState("unknown-emotion");
+        state.inferredEmotion(Emotion.CALM);
+        String broken = codec.serialize(state)
+                .replace("\"inferredEmotion\":\"CALM\"", "\"inferredEmotion\":\"NOPE\"");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> codec.deserialize(broken))
+                .isInstanceOf(tools.jackson.core.JacksonException.class);
+    }
+
 }

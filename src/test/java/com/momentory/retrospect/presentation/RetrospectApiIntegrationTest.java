@@ -117,7 +117,7 @@ class RetrospectApiIntegrationTest {
         // 대화 끝 감정 추출 — 일기 대표 감정·태그의 근거.
         when(emotionExtractor.extract(any())).thenReturn(new EmotionExtraction(
                 List.of(new ExtractedEvent(1, "면접 스터디", "면접 스터디에서 말이 막혔다", List.of(1))),
-                List.of(new ExtractedEmotion(1, "우울한 느낌", Emotion.DEPRESSED, 2,
+                List.of(new ExtractedEmotion(1, "우울한 느낌", Emotion.SAD, 2,
                         EmotionPhase.NOW, "우울해요", List.of(1))),
                 null));
         // 바람 후보는 엔진 폴백(고정 앞자리)에 맡긴다.
@@ -185,7 +185,7 @@ class RetrospectApiIntegrationTest {
         Retrospect done = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
                 RetrospectStatus.COMPLETED, null, "{}"));
         diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(), "오늘 일기",
-                Emotion.DEPRESSED, null));
+                Emotion.SAD, null));
 
         mockMvc.perform(post("/api/v1/retrospect")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user))
@@ -208,7 +208,7 @@ class RetrospectApiIntegrationTest {
         Retrospect done = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
                 RetrospectStatus.COMPLETED, null, "{}"));
         Diary yesterday = diaryRepository.saveAndFlush(Diary.create(user.getId(), done.getId(),
-                "어제 일기", Emotion.DEPRESSED, null));
+                "어제 일기", Emotion.SAD, null));
         // created_at 을 어제로 되돌린다(@PrePersist 가 now 로 박으므로 직접 UPDATE).
         java.time.OffsetDateTime yesterdayAt = java.time.OffsetDateTime.ofInstant(
                 Instant.now().minus(java.time.Duration.ofDays(1)), java.time.ZoneOffset.UTC);
@@ -426,7 +426,7 @@ class RetrospectApiIntegrationTest {
                 completion.getResponse().getContentAsString(), "$.diary.diaryId");
         assertThat((long) responseDiaryId).isEqualTo(diary.getId());
         assertThat(diary.getOriginal()).isEqualTo("그냥 일기.");
-        assertThat(diary.getPrimaryEmotion()).isEqualTo(Emotion.DEPRESSED);
+        assertThat(diary.getPrimaryEmotion()).isEqualTo(Emotion.SAD);
         assertThat(diary.getCreatedAt()).isNotNull();
     }
 
@@ -541,7 +541,7 @@ class RetrospectApiIntegrationTest {
     void currentIsNoContentWhenTodayDiaryAlreadyExists() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         long sessionId = startSession(user);
-        diaryRepository.saveAndFlush(Diary.create(user.getId(), sessionId, "오늘 일기", Emotion.DEPRESSED, null));
+        diaryRepository.saveAndFlush(Diary.create(user.getId(), sessionId, "오늘 일기", Emotion.SAD, null));
 
         mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(status().isNoContent());

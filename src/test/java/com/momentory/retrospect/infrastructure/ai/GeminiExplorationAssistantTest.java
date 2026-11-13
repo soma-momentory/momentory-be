@@ -44,7 +44,7 @@ class GeminiExplorationAssistantTest {
     private static RetrospectState state() {
         var state = new RetrospectState("s1");
         state.events(List.of(new ExtractedEvent(1, "공원", "공원에서 혼자 쉬고 싶었던 일", List.of(1))));
-        state.confirmEmotions(List.of(Emotion.FRUSTRATED));
+        state.confirmEmotions(List.of(Emotion.DISAPPOINTED));
         return state;
     }
 }
