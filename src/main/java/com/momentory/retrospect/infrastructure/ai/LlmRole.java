@@ -22,6 +22,10 @@ public enum LlmRole {
     LETTER_NEEDS("AI-LETTER-NEEDS"),
     /** 편지 작은 일 번호 고르기 — 연결표 후보 중에서. */
     LETTER_ACTIONS("AI-LETTER-ACTIONS"),
+    /** 편지 생성 전 위험 판정 — 오늘 글과 지난 일기를 나눠 본다. 안전 게이트가 켜졌을 때 일기 1건당 1회. */
+    LETTER_JUDGE("AI-LETTER-JUDGE"),
+    /** 편지 생성 뒤 검증 — 전달 전에 규칙 위반을 찾는다. 안전 게이트가 켜졌을 때 편지 1통당 1~2회. */
+    LETTER_VERIFY("AI-LETTER-VERIFY"),
     /** 소원 심사 — 띄우기 전 판별과 이름 · 연락처 고치기. 소원 1건당 1회. */
     WISH_REVIEW("AI-WISH-REVIEW"),
     /** 주간 리포트의 글(표지 문장 · 바바가 본 한 주 · 좋은 말 · 공통점 문장). 그 주를 처음 열 때 1회. */
