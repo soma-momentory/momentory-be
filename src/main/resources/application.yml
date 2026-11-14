@@ -108,8 +108,9 @@ momentory:
       mode: ${LETTER_GATE_MODE:OFF}               # OFF | SHADOW(기록만) | ON(적용)
       experiment: false                           # true 일 때만 past-only-policy NORMAL 허용(평가 하네스 전용)
       past-only-policy: ${LETTER_GATE_PAST_ONLY_POLICY:GENTLE}
-      judge-model: ${LETTER_GATE_JUDGE_MODEL:gemini-flash-latest}      # 생성기(lite)와 다른 모델
-      verifier-model: ${LETTER_GATE_VERIFIER_MODEL:gemini-flash-latest}
+      # 생성기(lite)와 다른 모델. test2 로 잰 모델에 고정한다. latest 별칭은 모델이 몰래 바뀌어 잰 수치가 무의미해진다.
+      judge-model: ${LETTER_GATE_JUDGE_MODEL:gemini-3.8-flash}
+      verifier-model: ${LETTER_GATE_VERIFIER_MODEL:gemini-3.8-flash}
       past-diary-days: 7
       past-diary-chars: 400
       open-verify-timeout: 4s
