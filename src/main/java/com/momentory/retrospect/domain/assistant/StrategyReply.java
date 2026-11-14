@@ -17,9 +17,11 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * @param topic            지금 다루는 일의 짧은 이름(일기 대체문에 쓴다). 모르면 null
  * @param safetyLevel      none|caution|risk|imminent
  * @param asksFeeling      이번 질문이 그때의 기분이나 마음을 묻는가 — 감정 강도 성향을 재는 데만 쓴다. 모르면 null
+ * @param repeatsEarlier   이번 질문이 이 대화에서 바바가 이미 한 질문과 같은 것을 묻는가(말이 달라도) — 그렇다면 서버가
+ *                         질문을 버린다. 모르면 null
  */
 public record StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
-        String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling) {
+        String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier) {
 
     public StrategyReply {
         safetyFlags = safetyFlags == null ? List.of() : List.copyOf(safetyFlags);
@@ -28,7 +30,16 @@ public record StrategyReply(String ack, String question, boolean newTopic, boole
     /** 질문이 기분을 묻는지 알리지 않은 응답. */
     public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
             String topic, String safetyLevel, List<String> safetyFlags) {
-        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, null);
+        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, null, null);
+    }
+
+    public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
+            String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling) {
+        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, asksFeeling, null);
+    }
+
+    public boolean questionRepeatsEarlier() {
+        return Boolean.TRUE.equals(repeatsEarlier);
     }
 
     public boolean questionAsksFeeling() {
