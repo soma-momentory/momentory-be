@@ -35,9 +35,9 @@ class DiaryEmotionTagTest {
     @DisplayName("사실만 말하고 감정 탐색까지 건너뛰면 추론 감정이 일기 태그를 채운다")
     void inferredEmotionFillsWhenNothingElseExists() {
         RetrospectState state = state();
-        state.inferredEmotion(Emotion.STUCK);
+        state.inferredEmotion(Emotion.CONFUSED);
 
-        assertThat(RetrospectService.emotionTags(state)).containsExactly(Emotion.STUCK);
+        assertThat(RetrospectService.emotionTags(state)).containsExactly(Emotion.CONFUSED);
     }
 
     @Test
@@ -45,7 +45,7 @@ class DiaryEmotionTagTest {
     void extractedEmotionWins() {
         RetrospectState state = state();
         state.emotions(List.of(extracted(Emotion.ANGRY)));
-        state.inferredEmotion(Emotion.STUCK);
+        state.inferredEmotion(Emotion.CONFUSED);
 
         assertThat(RetrospectService.emotionTags(state)).containsExactly(Emotion.ANGRY);
     }
@@ -54,10 +54,10 @@ class DiaryEmotionTagTest {
     @DisplayName("사용자가 고른 감정이 있으면 추론 감정은 태그에 끼지 않는다")
     void confirmedEmotionWins() {
         RetrospectState state = state();
-        state.confirmEmotions(List.of(Emotion.HAPPY));
-        state.inferredEmotion(Emotion.STUCK);
+        state.confirmEmotions(List.of(Emotion.JOY));
+        state.inferredEmotion(Emotion.CONFUSED);
 
-        assertThat(RetrospectService.emotionTags(state)).containsExactly(Emotion.HAPPY);
+        assertThat(RetrospectService.emotionTags(state)).containsExactly(Emotion.JOY);
     }
 
     @Test

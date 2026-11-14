@@ -1077,7 +1077,7 @@ class RetrospectEngineTest {
         // 근거가 더 많은 '개발'이 대표 사건이 된다 — 마지막에 언급된 '친구와 다툼'이 아니라.
         fake.events.add(new ExtractedEvent(1, "개발", "카페에서 개발함", List.of(1, 2, 3)));
         fake.events.add(new ExtractedEvent(2, "친구와 다툼", "저녁에 다툼", List.of(4)));
-        fake.emotions.add(new ExtractedEmotion(1, "재밌었어", Emotion.HAPPY, 2,
+        fake.emotions.add(new ExtractedEmotion(1, "재밌었어", Emotion.JOY, 2,
                 EmotionPhase.DURING, "재밌었어", List.of(1)));
         assertThat(toBranch().phase()).isEqualTo(Phase.AWAIT_BRANCH.key());
 
@@ -1092,7 +1092,7 @@ class RetrospectEngineTest {
     @DisplayName("카드 상황은 사건 슬롯이 아니라 감정을 물은 대표 사건이다")
     void cardSituationIsTheSelectedEvent() {
         fake.events.add(new ExtractedEvent(1, "개발", "카페에서 개발함", List.of(1, 2, 3)));
-        fake.emotions.add(new ExtractedEmotion(1, "재밌었어", Emotion.HAPPY, 2,
+        fake.emotions.add(new ExtractedEmotion(1, "재밌었어", Emotion.JOY, 2,
                 EmotionPhase.DURING, "재밌었어", List.of(1)));
         toBranch();
         engine.handle(state, TurnCommand.option("1")); // 감정
@@ -1104,7 +1104,7 @@ class RetrospectEngineTest {
 
     @Test
     void typedFixedNeedIsRecognizedForCatalogSelection() {
-        fake.emotions.add(new ExtractedEmotion(1, "피곤해", Emotion.TIRED, null, null, "피곤해요", List.of()));
+        fake.emotions.add(new ExtractedEmotion(1, "피곤해", Emotion.EXHAUSTED, null, null, "피곤해요", List.of()));
         toBranch();
         engine.handle(state, TurnCommand.option("1")); // 감정
 
@@ -1140,7 +1140,7 @@ class RetrospectEngineTest {
     @Test
     void routineSchedulesAreHintsAndFallbackDoesNotInventThem() {
         var schedules = List.of(
-                new com.momentory.retrospect.domain.ScheduleItem(10L, "운동", Emotion.HAPPY, true),
+                new com.momentory.retrospect.domain.ScheduleItem(10L, "운동", Emotion.JOY, true),
                 new com.momentory.retrospect.domain.ScheduleItem(11L, "가스비 점검", null, true),
                 new com.momentory.retrospect.domain.ScheduleItem(12L, "공부", null, true),
                 new com.momentory.retrospect.domain.ScheduleItem(13L, "청소", null, true));
@@ -1159,7 +1159,7 @@ class RetrospectEngineTest {
     @Test
     void interestsRankOnlyEventfulCandidatesWithoutHomeEmotion() {
         var schedules = List.of(
-                new com.momentory.retrospect.domain.ScheduleItem(1L, "운동", Emotion.HAPPY, true),
+                new com.momentory.retrospect.domain.ScheduleItem(1L, "운동", Emotion.JOY, true),
                 new com.momentory.retrospect.domain.ScheduleItem(2L, "친구 약속", Emotion.ANGRY, true),
                 new com.momentory.retrospect.domain.ScheduleItem(3L, "인턴 면접", null, false));
         assertThat(engine.start(state, new StartCommand(schedules, null, "취업")).text())
@@ -1175,7 +1175,7 @@ class RetrospectEngineTest {
         fake.events.add(new ExtractedEvent(7, "면접", "면접에서 답변이 막혔던 일", List.of(1, 2, 3)));
         fake.events.add(new ExtractedEvent(9, "저녁", "친구와 저녁을 먹었던 일", List.of(4)));
         fake.emotions.add(new ExtractedEmotion(7, "불안", Emotion.ANXIOUS, 2, null, "불안", List.of(1)));
-        fake.emotions.add(new ExtractedEmotion(9, "행복", Emotion.HAPPY, 2, null, "행복", List.of(4)));
+        fake.emotions.add(new ExtractedEmotion(9, "행복", Emotion.JOY, 2, null, "행복", List.of(4)));
         fake.emotions.add(new ExtractedEmotion(null, "화남", Emotion.ANGRY, 2, null, "화남", List.of(5)));
         ReplyDto selection = toBranch();
         assertThat(selection.options()).extracting("label").containsExactly(
@@ -1186,13 +1186,13 @@ class RetrospectEngineTest {
         assertThat(state.selectedEventId()).isEqualTo(9);
         assertThat(state.explorationTurn()).isZero();
         assertThat(emotion.text()).contains("친구와 저녁을 먹었던 일");
-        assertThat(emotion.options()).extracting("label").containsExactly("행복함");
+        assertThat(emotion.options()).extracting("label").containsExactly("기쁨");
         // 사용자가 후보 대신 확인한 감정을 생성 입력에 사용한다.
-        engine.handle(state, TurnCommand.text("평온함"));
+        engine.handle(state, TurnCommand.text("평온"));
         var prompts = new com.momentory.retrospect.infrastructure.ai.PromptFactory(2000,
                 com.momentory.retrospect.infrastructure.ai.EmotionPromptVariant.ZERO_SHOT);
-        assertThat(prompts.needsPrompt(state)).contains("친구와 저녁을 먹었던 일", "평온함")
-                .doesNotContain("불안함", "행복함");
+        assertThat(prompts.needsPrompt(state)).contains("친구와 저녁을 먹었던 일", "확인된 감정: 평온")
+                .doesNotContain("불안", "기쁨");
         ReplyDto done = engine.handle(state, TurnCommand.option("1"));
         assertThat(done.wishCard().situation()).isEqualTo("친구와 저녁을 먹었던 일");
         assertThat(done.wishCard().emotions()).containsExactly("calm");

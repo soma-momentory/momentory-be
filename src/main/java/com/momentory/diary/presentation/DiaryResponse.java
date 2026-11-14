@@ -20,8 +20,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 public record DiaryResponse(
         @Schema(description = "일기 id", example = "1") Long id,
         @Schema(description = "그날의 회고 id — 직접 쓴 일기는 생략", example = "10") Long retrospectId,
-        @Schema(description = "대표 감정 키 — 없을 수 있음", example = "depressed") String primaryEmotion,
-        @Schema(description = "감정 태그 키 목록(일기에서 드러난 감정 전체)", example = "[\"angry\", \"frustrated\"]") List<String> emotions,
+        @Schema(description = "대표 감정 키 — 없을 수 있음", example = "sad") String primaryEmotion,
+        @Schema(description = "감정 태그 키 목록(일기에서 드러난 감정 전체)", example = "[\"angry\", \"disappointed\"]") List<String> emotions,
         @Schema(description = "일기 본문") String original,
         @Schema(description = "작성 시각(생성 시기)", example = "2026-08-14T02:23:47.850Z") Instant createdAt,
         @Schema(description = "기록 당시 위치의 날씨 예보 · 기온. 없는 기록은 생략", example = "맑음 · 22℃") String weather) {

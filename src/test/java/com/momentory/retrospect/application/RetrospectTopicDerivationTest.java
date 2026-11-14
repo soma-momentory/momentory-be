@@ -85,7 +85,7 @@ class RetrospectTopicDerivationTest {
         state.events(List.of(
                 new ExtractedEvent(1, "면접 스터디", "말이 막혔다", List.of(1)),
                 new ExtractedEvent(2, "친구와 다툼", "저녁에 다퉜다", List.of(2))));
-        state.emotions(List.of(emotion(1, Emotion.ANXIOUS), emotion(null, Emotion.TIRED)));
+        state.emotions(List.of(emotion(1, Emotion.ANXIOUS), emotion(null, Emotion.EXHAUSTED)));
 
         List<RetrospectCompleted.TopicData> topics = RetrospectService.topicsFrom(state);
 

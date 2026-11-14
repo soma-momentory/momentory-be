@@ -147,17 +147,17 @@ class ScriptsTest {
     @DisplayName("1턴 공통 질문 — 닉네임·일정·감정 2종이 PDF 문형 그대로 들어간다")
     void firstQuestion() {
         String q = Scripts.firstQuestion("정민", "면접 스터디", Emotion.ANXIOUS,
-                Emotion.DEPRESSED);
+                Emotion.SAD);
 
         // 공감(받아주기)과 질문은 줄바꿈으로 나뉜다.
-        assertThat(q).isEqualTo("정민님, 오늘 면접 스터디에서는 불안했고 지금은 우울하다고 했네요.\n"
+        assertThat(q).isEqualTo("정민님, 오늘 면접 스터디에서는 불안했고 지금은 속상하다고 했네요.\n"
                 + "면접 스터디 중 어떤 일이 있었을 때부터 마음이 무거워지기 시작했나요?");
     }
 
     @Test
     @DisplayName("닉네임이 없으면 호칭 없이 시작한다")
     void firstQuestionWithoutNickname() {
-        String q = Scripts.firstQuestion(null, "산책", Emotion.CALM, Emotion.TIRED);
+        String q = Scripts.firstQuestion(null, "산책", Emotion.CALM, Emotion.EXHAUSTED);
         assertThat(q).startsWith("오늘 산책에서는 평온했고 지금은 피곤하다고 했네요.");
     }
 
@@ -174,7 +174,7 @@ class ScriptsTest {
     @Test
     @DisplayName("일정 감정이 긍정이면 '무거워지기' 대신 좋았던 순간을 짚는 문형으로 분기한다")
     void firstQuestionWithPositiveEmotion() {
-        String q = Scripts.firstQuestion("정민", "발표", Emotion.HAPPY, Emotion.HAPPY);
+        String q = Scripts.firstQuestion("정민", "발표", Emotion.JOY, Emotion.JOY);
 
         assertThat(q).isEqualTo("정민님, 오늘 발표에서 행복했고, 지금도 여전히 행복하다고 했네요.\n"
                 + "발표 중 어떤 순간에 그 기분이 가장 크게 다가왔나요?");
@@ -184,7 +184,7 @@ class ScriptsTest {
     @Test
     @DisplayName("이해 확인 폴백도 극성에 맞춰 톤이 갈린다 — 긍정이면 '무거우셨겠어요'가 안 나온다")
     void understandingFallbackByValence() {
-        assertThat(Scripts.understandingFallback(Emotion.HAPPY))
+        assertThat(Scripts.understandingFallback(Emotion.JOY))
                 .doesNotContain("무거우셨겠어요");
         assertThat(Scripts.understandingFallback(Emotion.ANXIOUS))
                 .contains("무거우셨겠어요");
@@ -202,19 +202,24 @@ class ScriptsTest {
                 .isEqualTo("발표를 마쳤다");
         assertThat(Scripts.fill("{일정을} 마쳤다", "산책", null, null, null))
                 .isEqualTo("산책을 마쳤다");
-        assertThat(Scripts.fill("{감정2로} 이어졌다", null, null, Emotion.DEPRESSED, null))
-                .isEqualTo("우울로 이어졌다");
-        assertThat(Scripts.fill("{감정2로} 이어졌다", null, null, Emotion.LETHARGIC, null))
-                .isEqualTo("무기력으로 이어졌다");
+        // 12종의 어근은 모두 ㄹ 아닌 받침으로 끝나 '으로'가 붙는다. '로'는 일정 이름으로 확인한다.
+        assertThat(Scripts.fill("{감정2로} 이어졌다", null, null, Emotion.SAD, null))
+                .isEqualTo("속상으로 이어졌다");
+        assertThat(Scripts.fill("{감정2로} 이어졌다", null, null, Emotion.SORRY, null))
+                .isEqualTo("미안으로 이어졌다");
+        assertThat(Scripts.fill("{일정으로} 이어졌다", "발표", null, null, null))
+                .isEqualTo("발표로 이어졌다");
+        assertThat(Scripts.fill("{일정로} 이어졌다", "산책", null, null, null))
+                .isEqualTo("산책으로 이어졌다");
     }
 
     @Test
     @DisplayName("믿음 슬라이더 라벨 — 사전 측정은 생각을 인용하고, 사후 측정은 '처음 생각'으로 부른다")
     void beliefLabels() {
         String before = Scripts.measureLabel(MeasureField.BELIEF, "면접 스터디",
-                Emotion.ANXIOUS, Emotion.DEPRESSED, "나는 부족하다", false);
+                Emotion.ANXIOUS, Emotion.SAD, "나는 부족하다", false);
         String after = Scripts.measureLabel(MeasureField.BELIEF, "면접 스터디",
-                Emotion.ANXIOUS, Emotion.DEPRESSED, "나는 부족하다", true);
+                Emotion.ANXIOUS, Emotion.SAD, "나는 부족하다", true);
 
         assertThat(before).contains("나는 부족하다");
         assertThat(after).isEqualTo("처음 생각에 대한 믿음");
@@ -224,11 +229,11 @@ class ScriptsTest {
     @DisplayName("감정 슬라이더 라벨 — 일정 감정/현재 감정이 구분된다 (PDF 짧은 기록형 라벨)")
     void emotionLabels() {
         assertThat(Scripts.measureLabel(MeasureField.SCHEDULE_EMOTION, "면접 스터디",
-                Emotion.ANXIOUS, Emotion.DEPRESSED, null, false))
+                Emotion.ANXIOUS, Emotion.SAD, null, false))
                 .isEqualTo("면접 스터디에서 느낀 불안");
         assertThat(Scripts.measureLabel(MeasureField.CURRENT_EMOTION, "면접 스터디",
-                Emotion.ANXIOUS, Emotion.DEPRESSED, null, false))
-                .isEqualTo("지금 느끼는 우울");
+                Emotion.ANXIOUS, Emotion.SAD, null, false))
+                .isEqualTo("지금 느끼는 슬픔");
     }
 
     private static ScriptStep byId(List<ScriptStep> steps, String id) {
