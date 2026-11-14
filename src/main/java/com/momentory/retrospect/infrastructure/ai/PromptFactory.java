@@ -219,8 +219,7 @@ public class PromptFactory {
                   어디서, 무슨 얘기를, 그다음엔)이 아니라 안쪽(그때 사용자의 기분과 마음)을 향합니다.
                 - 사용자가 방금 한 말에서 한 걸음만 더 안쪽으로 묻습니다. 일어난 일만 말했으면 그때 기분이 어땠는지를,
                   기분을 말했으면 그때 자기 자신에 대해서는 어떤 마음이 들었는지를, 자기 마음을 스스로 짚었으면 방금 짚은
-                  것을 묻습니다. 방금 답이 앞의 답보다 더 안쪽으로 가지 않았으면 이어 묻지 않습니다 — 언제 멈출지는
-                  서버도 함께 봅니다.
+                  것을 묻습니다.
                 - 무슨 일이었는지 알 수 있게 됐으면 사실을 더 캐묻지 않고 그때의 기분을 묻습니다. 사실을 묻는 것은 무슨
                   일이 있었는지조차 알 수 없을 때 한 번뿐입니다.
                 - 사용자가 방금 쓴 구체적인 말을 받아서, 가까운 사람이 물을 법한 쉬운 말로 묻습니다. 기분은 그 일에 붙여서
@@ -244,6 +243,8 @@ public class PromptFactory {
                 - ack: 받아주는 말 한 문장(길어도 두 문장). 질문은 넣지 않습니다.
                 - question: 방침이 질문을 허용하고 nothingMoreToAsk 가 false 일 때만 한 문장. 아니면 빈 문자열.
                 - asksFeeling: question 이 그때의 기분이나 마음을 물으면 true. 사실·이유·생각을 묻거나 질문이 없으면 false.
+                - repeatsEarlier: question 을 쓴 뒤 [대화]에서 바바가 한 질문들과 견줍니다. 말이 달라도 묻는 내용이 같으면
+                  true 입니다. true 인 질문은 서버가 내보내지 않습니다.
                 - safetyLevel: none|caution|risk|imminent.
                 """.formatted(state.diaryTurn(), orNone(state.event()), recentHistory(state), userText.strip(),
                 courseDirective(strategy) + heardDirective(strategy), questionDirective(strategy));

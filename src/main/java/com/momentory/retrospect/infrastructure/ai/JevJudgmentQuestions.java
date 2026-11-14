@@ -19,8 +19,11 @@ final class JevJudgmentQuestions {
      *
      * <p>v3 (2026-11-12): '의아해하거나 이의를 닮'을 더했다 — 바바의 질문이 과하거나 엉뚱해서 "뭐?" 라고 한 답이 '판단 불가'로
      * 나왔다. '첫 턴' 선택지는 뺐다. 첫 턴인지는 서버가 알고, 이 선택지가 다른 판단의 확률을 깎았다.
+     *
+     * <p>v4 (2026-11-14): 「일기를 만들어 달라」는 말을 종료 요청에 넣었다. 대화를 마치고 정리하겠다는 뜻인데 종료로 읽히지
+     * 않아 바바가 대화를 이어갔다.
      */
-    static final String VERSION = "v3";
+    static final String VERSION = "v4";
 
     private JevJudgmentQuestions() {
     }
@@ -53,7 +56,8 @@ final class JevJudgmentQuestions {
         Map<String, String> c = new LinkedHashMap<>();
         switch (item) {
             case END_INTENT -> {
-                c.put("end_request", "대화를 끝내거나 그만하겠다고 분명히 말했다");
+                c.put("end_request", "대화를 끝내거나 그만하겠다고 분명히 말했다. 지금까지의 이야기로 일기를 만들거나 "
+                        + "정리해 달라고 한 것도 여기서 마치겠다는 뜻이다");
                 c.put("continue", "이야기를 이어가려는 의사가 보인다");
                 c.put("unclear", "끝내려는지 알 수 없다. 피곤하다는 말만으로는 종료로 보지 않는다");
             }

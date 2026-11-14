@@ -101,7 +101,7 @@ public class StrategyDiaryChat {
                 .map(j -> policy.decide(j, state.strategySignals(), noReaction))
                 .orElseGet(() -> policy.decideWithoutJudgment(state.strategySignals(), stopPhrase));
         // 이 이야기에서 기분을 이미 들었는지(방금 답변 포함)를 문장 생성 모델에 알린다 — 들은 기분을 다시 묻지 않게 한다.
-        boolean feelingKnown = policy.afterAnswer(decision.signals(), judgment.orElse(null)).signals()
+        boolean feelingKnown = policy.observeAnswer(decision.signals(), judgment.orElse(null))
                 .questionsAfterFeeling() != null;
         TurnStrategy strategy = decision.strategy().withFeelingKnown(feelingKnown);
         if (strategy.type() == StrategyType.CLOSE) {
@@ -120,6 +120,7 @@ public class StrategyDiaryChat {
         String question = null;
         boolean newTopic = false;
         boolean asksFeeling = false;
+        boolean repeatsEarlierQuestion = false;
         SafetyLevel safetyLevel = SafetyLevel.NONE;
         List<String> safetyFlags = List.of();
         if (written.isPresent()) {
@@ -139,6 +140,7 @@ public class StrategyDiaryChat {
             }
             question = reply.nothingMoreToAsk() ? null : firstQuestion(withoutVocative(state, reply.question()));
             asksFeeling = reply.questionAsksFeeling();
+            repeatsEarlierQuestion = reply.questionRepeatsEarlier();
         } else {
             state.logGenerationFailed();
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
@@ -151,11 +153,9 @@ public class StrategyDiaryChat {
         StrategySignals signals = newTopic ? policy.movedToNewTopic(decision.signals(), strategy.reaction())
                 : decision.signals();
         TurnStrategy done = newTopic && policy.gotNoAnswer(strategy) ? strategy.withoutReaction() : strategy;
-        // 마음을 들은 뒤에는 한 번 더 묻고, 그다음부터는 답이 깊어졌을 때만 이어 묻는다 — 아니면 모델이 질문을 썼어도 버린다.
-        // 다른 관점을 원한 사용자의 재해석 질문은 예외다.
-        StrategyPolicy.FollowUp followUp = policy.afterAnswer(signals, judgment.orElse(null));
-        signals = followUp.signals();
-        if (strategy.type() != StrategyType.REFRAME && !followUp.mayAsk()) {
+        signals = policy.observeAnswer(signals, judgment.orElse(null));
+        // 모델이 쓴 질문이 앞에서 바바가 이미 한 질문과 같은 것을 묻는다면 버린다 — 같은 내용을 다시 묻지 않는다.
+        if (repeatsEarlierQuestion) {
             question = null;
         }
         if (!newTopic && strategy.focus() == QuestionFocus.OPEN && policy.gotNoAnswer(strategy)) {
