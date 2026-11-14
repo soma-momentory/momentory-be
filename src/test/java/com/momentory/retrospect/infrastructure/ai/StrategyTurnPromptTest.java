@@ -26,7 +26,7 @@ class StrategyTurnPromptTest {
     void leavesWhatToAskToTheWriterWithOnePrinciple() {
         String prompt = prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
 
-        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "발표 망쳐서 허무해.",
+        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "더 안쪽으로 가지 않았으면 이어 묻지 않습니다", "발표 망쳐서 허무해.",
                 "이미 말한 것을 다시 묻지 않습니다", "이유를 이미 말했는데 이유를 또 묻지 않습니다",
                 "언제 마무리할지는 서버가 정합니다");
         // 옛 고정 순서나 단계별로 정해 둔 질문은 없다.
@@ -75,6 +75,31 @@ class StrategyTurnPromptTest {
                 .contains("(답하려 했지만 말하기 어려워함)");
         assertThat(prompt(new TurnStrategy(StrategyType.YIELD, QuestionFocus.OPEN, false,
                 "no_answer_or_topic_change"))).contains("사용자가 꺼낸 얘기를 따라갑니다");
+    }
+
+    @Test
+    void tellsTheWriterNotToRepeatWhatBabaAlreadySaid() {
+        assertThat(prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false)))
+                .contains("[되풀이하지 않습니다]", "이미 한 말과 뜻이 같은 말을 다시 하지 않습니다",
+                        "받아주는 말과 질문 모두에 해당하고", "새로 받을 내용이 없으면 앞의 공감을 다시 쓰지 않고",
+                        "쓰기 전에 [대화]에서 바바의 앞선 말을 확인합니다");
+    }
+
+    @Test
+    void tellsTheWriterWhenTheFeelingIsAlreadyKnown() {
+        TurnStrategy asks = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+        assertThat(prompt(asks.withFeelingKnown(true)))
+                .contains("그때의 기분은 이미 들었습니다", "기분을 다시 묻지 않고", "방금 답변이 새 이야기가 아니라면");
+        assertThat(prompt(asks)).doesNotContain("그때의 기분은 이미 들었습니다");
+    }
+
+    @Test
+    void tellsTheWriterNotToEchoARequestToBeHeard() {
+        String heard = prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false, null, true));
+        assertThat(heard).contains("「묻지 않고 듣겠다」는 답은 서버가 따로 합니다", "그 요청을 해석하거나 되풀이하지 말고",
+                "요청뿐이면 ack 를 빈 문자열로 둡니다");
+        assertThat(prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false)))
+                .doesNotContain("서버가 따로 합니다");
     }
 
     @Test
