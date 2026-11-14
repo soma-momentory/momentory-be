@@ -184,7 +184,7 @@ class TurnJudgmentPersistenceIntegrationTest {
     @Test
     @DisplayName("전략 선택 대상 계정은 방침이 판단 옆에 남고, 문장 생성 모델이 쓴 말이 나간다")
     void recordsTheChosenCourseAndUsesTheWriter() throws Exception {
-        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(asking("none", "none")));
         when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
                 "말이 끊겨 당황하셨군요.", "그때 스스로한테는 어떤 마음이 드셨어요?", false, false, "면접 스터디", "none",
                 List.of())));
@@ -242,7 +242,7 @@ class TurnJudgmentPersistenceIntegrationTest {
         long sessionId = startSession(user);
 
         // 1턴: 바바가 기분을 묻는다.
-        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_1_2")));
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(asking("none", "none")));
         when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
                 "말이 끊기셨군요.", "그때 기분이 어땠어요?", false, false, "면접 스터디", "none", List.of(), true)));
         say(user, sessionId, "팀원이 말을 끊었어요.");
@@ -293,7 +293,7 @@ class TurnJudgmentPersistenceIntegrationTest {
     @Test
     @DisplayName("반영을 켠 계정은 지난 대화에서 되풀이된 신호로 시작하고, 집단과 도출된 성향이 남는다")
     void startsFromTheStoredDispositionForATreatedUser() throws Exception {
-        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_1_2")));
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(asking("none", "none")));
         when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
                 "말이 끊기셨군요.", "속상하셨을까요, 아니면 당황하셨을까요?", false, false, "면접 스터디", "none",
                 List.of(), true)));

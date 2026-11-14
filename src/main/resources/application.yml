@@ -126,6 +126,9 @@ momentory:
     # 대화 분량 — 턴 수로 끊지 않고 전략이 마무리를 제안한다. 바바의 질문이 question-cap 에 닿으면 더 묻지 않고,
     # max-turns 는 끝없이 이어지지 않게 하는 안전 상한이다. 둘 다 근거가 쌓이기 전의 임시값이다.
     question-cap: ${TURN_STRATEGY_QUESTION_CAP:8}
+    # 한 이야기에서 그때의 마음을 들은 뒤 더 묻는 횟수의 상한. 첫 번째는 누구에게나 묻고, 그 뒤로는 답이 앞보다
+    # 깊어졌을 때만 묻는다(체험 깊이 판단, 확신이 낮으면 깊어지지 않은 것으로 본다). 임시값.
+    follow-up-limit: ${TURN_STRATEGY_FOLLOW_UP_LIMIT:3}
     max-turns: ${TURN_STRATEGY_MAX_TURNS:12}
   gate:
     reask-cap: ${RETRO_REASK_CAP:1}

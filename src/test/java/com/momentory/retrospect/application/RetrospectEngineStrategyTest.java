@@ -79,13 +79,27 @@ class RetrospectEngineStrategyTest {
 
     /** 방침에 쓰이는 신호만 바꿔 쓴다. 감정 · 사건 · 깊이는 측정값이라 무엇이든 방침이 같다. */
     private static TurnJudgment judged(String end, String requested, String reaction) {
+        return judged(end, requested, reaction, "none");
+    }
+
+    /** @param emotion 감정 표현 — "clear" 면 사건과 마음을 모두 들은 답변이다(사건 정보는 늘 specific) */
+    private static TurnJudgment judged(String end, String requested, String reaction, String emotion) {
+        return judged(end, requested, reaction, emotion, "stage_3");
+    }
+
+    private static TurnJudgment judged(String end, String requested, String reaction, String emotion, String depth) {
         Map<JudgmentItem, ItemJudgment> items = new EnumMap<>(JudgmentItem.class);
         Map<JudgmentItem, String> choices = Map.of(
                 JudgmentItem.END_INTENT, end, JudgmentItem.REQUESTED_MODE, requested,
-                JudgmentItem.EMOTION_EXPRESSION, "clear", JudgmentItem.EVENT_INFO, "specific",
-                JudgmentItem.REACTION, reaction, JudgmentItem.EXPERIENCING_DEPTH, "stage_3");
+                JudgmentItem.EMOTION_EXPRESSION, emotion, JudgmentItem.EVENT_INFO, "specific",
+                JudgmentItem.REACTION, reaction, JudgmentItem.EXPERIENCING_DEPTH, depth);
         choices.forEach((item, choice) -> items.put(item, new ItemJudgment(choice, 0.9, Map.of(choice, 0.9))));
         return new TurnJudgment("jev-test", "v3", items, 0, 0);
+    }
+
+    /** 무슨 일인지와 그때의 마음을 모두 말한 답변. */
+    private static TurnJudgment heard() {
+        return judged("continue", "none", "agree_or_elaborate", "clear");
     }
 
     private static TurnJudgment plain() {
@@ -120,8 +134,30 @@ class RetrospectEngineStrategyTest {
 
         ReplyDto said = say("그냥 들어줘. 발표 망쳐서 허무해.", judged("continue", "listen", "agree_or_elaborate"));
 
-        assertThat(said.text()).isEqualTo("발표가 뜻대로 되지 않아 허무하셨군요.");
+        // 들어 달라고 한 턴에는 그러겠다는 답이 먼저 나가고, 함께 한 이야기는 그 뒤에 받는다.
+        assertThat(said.text()).isEqualTo("네, 묻지 않고 들을게요. 발표가 뜻대로 되지 않아 허무하셨군요.");
         assertThat(courses.getLast().focus()).isEqualTo(QuestionFocus.NONE);
+        assertThat(courses.getLast().askedToBeHeard()).isTrue();
+    }
+
+    @Test
+    void answersABareRequestToBeHeardWithAPlainPromiseAndOnlyOnThatTurn() {
+        say("친구랑 크게 싸웠어.", plain());
+        reply = wrote("", "");
+
+        ReplyDto said = say("그냥 들어줘.", judged("continue", "listen", "agree_or_elaborate"));
+        assertThat(said.text()).isEqualTo("네, 묻지 않고 들을게요. 편하게 이야기해 주세요.");
+
+        // 다음 턴부터는 묻지 않고 받아주기만 한다 — 약속을 되풀이하지 않는다.
+        reply = wrote("먼저 약속을 깼는데 예민하다는 말을 들으셨군요.", "어떤 기분이 드셨어요?");
+        ReplyDto next = say("걔가 먼저 약속을 깼는데 내가 예민하대.", plain());
+        assertThat(next.text()).isEqualTo("먼저 약속을 깼는데 예민하다는 말을 들으셨군요.");
+        assertThat(courses.getLast().askedToBeHeard()).isFalse();
+
+        // 다시 요청하면 다시 답한다. 문장 생성이 실패해도 같은 답이 나간다.
+        reply = null;
+        ReplyDto again = say("아니 조언하지 말고 그냥 듣기만 해", judged("continue", "none", "refuse_question"));
+        assertThat(again.text()).isEqualTo("네, 묻지 않고 들을게요. 편하게 이야기해 주세요.");
     }
 
     @Test
@@ -173,6 +209,114 @@ class RetrospectEngineStrategyTest {
         reply = new StrategyReply("속상하셨군요.", "", false, true, "오늘의 일", "none", List.of(), true);
         say("속상했어.", plain());
         assertThat(lastLog().askedFeeling()).isFalse();
+    }
+
+    @Test
+    void asksOnceMoreAfterTheFeelingThenLeavesTheStoryWhenTheAnswerIsNoDeeper() {
+        reply = wrote("오늘 발표를 하셨군요.", "발표했을 때 기분이 어땠어요?");
+        say("오늘 발표했어.", plain());
+        // 마음을 들었다 — 한 걸음 더 안쪽 질문을 한 번은 한다.
+        reply = wrote("좌절과 불안감이 남으셨군요.", "그때 스스로에게는 어떤 마음이 들었어요?");
+        ReplyDto deeper = say("좌절과 불안감이 남았어", heard());
+        assertThat(deeper.text()).isEqualTo("좌절과 불안감이 남으셨군요.\n그때 스스로에게는 어떤 마음이 들었어요?");
+
+        // 답이 더 깊어지지 않았다 — 모델이 질문을 또 써 와도 이 이야기는 더 묻지 않고 다른 기억으로 넘어간다.
+        reply = wrote("그런 마음이 드셨군요.", "언제 그런 마음이 제일 커지나요?");
+        ReplyDto moved = say("그냥 그런 마음이었어", heard());
+        assertThat(moved.text()).isEqualTo("그런 마음이 드셨군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+        TurnJudgmentLog log = lastLog();
+        assertThat(log.strategy().focus()).isEqualTo(QuestionFocus.OTHER_TOPIC);
+        assertThat(log.askedFeeling()).isFalse();
+    }
+
+    @Test
+    void tellsTheWriterOnceTheFeelingIsKnown() {
+        say("오늘 발표했어.", plain());
+        assertThat(courses.getLast().feelingKnown()).isFalse();
+        // 방금 답변에서 기분을 말한 턴부터 알린다.
+        say("좌절과 불안감이 남았어", heard());
+        assertThat(courses.getLast().feelingKnown()).isTrue();
+    }
+
+    @Test
+    void keepsAskingWhileTheAnswersGetDeeper() {
+        say("오늘 발표했어.", plain());
+        say("좌절과 불안감이 남았어", heard());
+        reply = wrote("스스로가 못나 보이셨군요.", "언제 그런 마음이 제일 커지나요?");
+
+        ReplyDto said = say("내가 좀 못나 보였어", judged("continue", "none", "agree_or_elaborate", "clear", "stage_4"));
+
+        assertThat(said.text()).isEqualTo("스스로가 못나 보이셨군요.\n언제 그런 마음이 제일 커지나요?");
+        assertThat(state.strategySignals().questionsAfterFeeling()).isEqualTo(2);
+    }
+
+    @Test
+    void aNewStoryGetsItsOwnQuestionsAfterTheFirstOneIsSpent() {
+        say("발표 망쳐서 허무해.", heard());
+        reply = nothingMore("허무하셨군요.");
+        say("그냥 다 허무했어", heard());
+        // 새 이야기는 마음을 아직 듣지 못한 것으로 시작한다 — 기분을 묻는 질문이 나간다.
+        reply = newStory("엄마와 통화를 하셨군요.", "통화를 하고 나서 마음이 어땠어요?", "엄마와의 통화");
+        ReplyDto second = say("오늘 엄마랑 통화했어.", plain());
+
+        assertThat(second.text()).isEqualTo("엄마와 통화를 하셨군요.\n통화를 하고 나서 마음이 어땠어요?");
+        assertThat(state.strategySignals().questionsAfterFeeling()).isNull();
+    }
+
+    @Test
+    void stillAsksForGroundsWhenTheUserWantedAnotherViewEvenAfterTheLimit() {
+        say("실망했어.", heard());
+        say("내가 한심했어.", heard());
+        reply = wrote("실망하셨군요.", "그렇게 생각하게 된 까닭이 있을까요?");
+
+        ReplyDto said = say("내가 잘못 생각하는 건가?", judged("continue", "other_view", "agree_or_elaborate", "clear"));
+
+        assertThat(said.text()).isEqualTo("실망하셨군요.\n그렇게 생각하게 된 까닭이 있을까요?");
+        assertThat(courses.getLast().type()).isEqualTo(StrategyType.REFRAME);
+    }
+
+    @Test
+    void proposesWrapUpInsteadOfAnotherMemoryWhenTheUserCannotAnswer() {
+        reply = wrote("오늘 발표를 하셨군요.", "발표했을 때 기분이 어땠어요?");
+        say("오늘 발표했어.", plain());
+        reply = wrote("말로 꺼내기 어려울 수 있어요.", "다르게 여쭤볼게요, 떨리셨나요?");
+
+        ReplyDto said = say("그냥 그랬어", judged("continue", "none", "struggle_to_answer"));
+
+        // 바꿔 묻거나 다른 기억을 묻지 않고, 여기서 정리할지를 묻는다.
+        assertThat(said.text()).isEqualTo("말로 꺼내기 어려울 수 있어요.\n여기까지 일기로 정리해볼까요?");
+        assertThat(said.options()).extracting(ReplyDto.OptionDto::label)
+                .containsExactly("이제 정리할래요", "조금 더 이야기할래요");
+        assertThat(lastLog().strategy().focus()).isEqualTo(QuestionFocus.WRAP_UP);
+    }
+
+    @Test
+    void followsANewStoryRightAwayEvenIfThePreviousOneWasNotFinished() {
+        reply = wrote("오늘 발표를 하셨군요.", "발표했을 때 기분이 어땠어요?");
+        say("오늘 발표했어.", plain());
+        // 기분을 묻는 질문에 답하지 않고 다른 일을 꺼냈다 — 정리하자고 하지 않고 그 이야기를 따라간다.
+        reply = newStory("친구와 저녁을 드셨군요.", "저녁을 먹으면서 기분이 어땠어요?", "친구와의 저녁");
+
+        ReplyDto said = say("아 맞다 오늘 친구랑 저녁 먹었어", judged("continue", "none", "no_answer_or_topic_change"));
+
+        assertThat(said.text()).isEqualTo("친구와 저녁을 드셨군요.\n저녁을 먹으면서 기분이 어땠어요?");
+        TurnJudgmentLog log = lastLog();
+        assertThat(log.strategy().focus()).isEqualTo(QuestionFocus.OPEN);
+        // 새 이야기를 꺼낸 것은 저항으로 세지 않는다.
+        assertThat(log.strategy().reaction()).isNull();
+        assertThat(state.strategySignals().resistanceCount()).isZero();
+        assertThat(state.strategySignals().topicNumber()).isEqualTo(2);
+    }
+
+    @Test
+    void doesNotSayTheSameShortAcknowledgementTwiceInARow() {
+        reply = wrote("", "그때 기분이 어땠어요?");
+        assertThat(say("오늘 팀장한테 또 한 소리 들었어.", plain()).text())
+                .isEqualTo("네, 듣고 있어요.\n그때 기분이 어땠어요?");
+
+        // 받아줄 말이 또 없다 — 같은 문장을 되풀이하지 않고 다른 짧은 말로 받는다.
+        reply = nothingMore("");
+        assertThat(say("맞아", plain()).text()).isEqualTo("네.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
     }
 
     @Test

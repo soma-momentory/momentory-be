@@ -3,6 +3,7 @@ package com.momentory.retrospect.domain.strategy;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -243,18 +244,167 @@ class StrategyPolicyTest {
     }
 
     @Test
+    void proposesWrapUpAgainAfterTwoQuietTurns() {
+        StrategySignals second = policy.movedToNewTopic(first(new J()).signals());
+        StrategyPolicy.Decision d = policy.decide(new J().build(), second, false);
+        TurnStrategy proposal = policy.whenNothingMoreToAsk(d.strategy(), d.signals(), true);
+        assertThat(proposal.focus()).isEqualTo(QuestionFocus.WRAP_UP);
+        StrategySignals s = policy.settle(d.signals(), proposal);
+
+        // 제안 뒤 두 턴은 받아주기만 한다.
+        for (int quiet = 0; quiet < 2; quiet++) {
+            StrategyPolicy.Decision next = policy.decide(new J().build(), s, false);
+            TurnStrategy done = policy.whenNothingMoreToAsk(next.strategy(), next.signals(), true);
+            assertThat(done.focus()).isEqualTo(QuestionFocus.NONE);
+            s = policy.settle(next.signals(), done);
+        }
+        // 그래도 물을 것이 없으면 같은 공감을 되풀이하지 않고 다시 제안한다. 그 뒤로 다시 두 턴을 센다.
+        StrategyPolicy.Decision third = policy.decide(new J().build(), s, false);
+        TurnStrategy again = policy.whenNothingMoreToAsk(third.strategy(), third.signals(), true);
+        assertThat(again.focus()).isEqualTo(QuestionFocus.WRAP_UP);
+        s = policy.settle(third.signals(), again);
+        StrategyPolicy.Decision after = policy.decide(new J().build(), s, false);
+        assertThat(policy.whenNothingMoreToAsk(after.strategy(), after.signals(), true).focus())
+                .isEqualTo(QuestionFocus.NONE);
+    }
+
+    @Test
+    void neverProposesWrapUpJustBecauseAListenedToUserKeepsTalking() {
+        StrategySignals s = first(new J()).signals();
+        for (int turn = 0; turn < 6; turn++) {
+            StrategyPolicy.Decision d = policy.decide(new J().set(JudgmentItem.REQUESTED_MODE, "listen", 0.9).build(),
+                    s, false);
+            assertThat(d.strategy().focus()).isEqualTo(QuestionFocus.NONE);
+            s = policy.settle(d.signals(), d.strategy());
+        }
+    }
+
+    @Test
     void aNewStoryStartsFreshAndStoriesStopAtTwo() {
+        StrategySignals proposed = policy.settle(first(new J()).signals(),
+                new TurnStrategy(StrategyType.REFLECT, QuestionFocus.WRAP_UP, false));
+        // 제안한 뒤 한 턴이 지나고 새 이야기가 나왔다 — 새 이야기에서는 아직 제안한 적이 없는 것으로 둔다.
+        StrategySignals later = policy.settle(proposed, new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false));
+
+        StrategySignals second = policy.movedToNewTopic(later);
+        assertThat(second.topicNumber()).isEqualTo(2);
+        assertThat(second.wrapUpProposed()).isFalse();
+        // 셋째 이야기도 따라간다 — 마음을 들은 뒤의 질문 수는 이야기마다 다시 센다.
+        StrategySignals third = policy.movedToNewTopic(second.withQuestionsAfterFeeling(1));
+        assertThat(third.topicNumber()).isEqualTo(3);
+        assertThat(third.questionsAfterFeeling()).isNull();
+    }
+
+    @Test
+    void aNewStoryBroughtUpInsteadOfAnAnswerIsNotResistance() {
+        StrategyPolicy.Decision d = policy.decide(
+                new J().set(JudgmentItem.REACTION, "no_answer_or_topic_change", 0.9).build(),
+                first(new J()).signals(), false);
+        assertThat(d.signals().resistanceCount()).isEqualTo(1);
+        assertThat(d.signals().yieldStreak()).isEqualTo(1);
+
+        StrategySignals moved = policy.movedToNewTopic(d.signals(), d.strategy().reaction());
+
+        assertThat(moved.resistanceCount()).isZero();
+        assertThat(moved.yieldStreak()).isZero();
+        assertThat(moved.topicNumber()).isEqualTo(2);
+    }
+
+    @Test
+    void proposesWrapUpWhenAQuestionGetsNoAnswer() {
+        for (String reaction : List.of("struggle_to_answer", "no_answer_or_topic_change")) {
+            StrategyPolicy.Decision d = policy.decide(new J().set(JudgmentItem.REACTION, reaction, 0.9).build(),
+                    first(new J()).signals(), false);
+            assertThat(policy.gotNoAnswer(d.strategy())).isTrue();
+            assertThat(policy.whenNoAnswer(d.strategy(), d.signals()).focus()).isEqualTo(QuestionFocus.WRAP_UP);
+        }
+        // 고쳐 말하거나 의아해한 것은 답을 못 얻은 것이 아니다 — 물러서되 대화는 이어간다.
+        StrategyPolicy.Decision puzzled = policy.decide(
+                new J().set(JudgmentItem.REACTION, "puzzled_or_objecting", 0.9).build(), first(new J()).signals(), false);
+        assertThat(policy.gotNoAnswer(puzzled.strategy())).isFalse();
+    }
+
+    private static J said(String emotion, String depth, double depthConfidence) {
+        return new J().set(JudgmentItem.EMOTION_EXPRESSION, emotion, 0.9)
+                .set(JudgmentItem.EXPERIENCING_DEPTH, depth, depthConfidence);
+    }
+
+    /** 답변 하나를 반영하고, 물어도 되면 질문이 나간 것으로 마무리한다. */
+    private StrategyPolicy.FollowUp answered(StrategySignals s, J j) {
+        StrategyPolicy.FollowUp f = policy.afterAnswer(s, j.build());
+        TurnStrategy done = new TurnStrategy(StrategyType.EXPLORE, f.mayAsk() ? QuestionFocus.OPEN : QuestionFocus.NONE,
+                false);
+        return new StrategyPolicy.FollowUp(policy.settle(f.signals(), done), f.mayAsk());
+    }
+
+    @Test
+    void keepsAskingOnlyWhileTheAnswersGetDeeper() {
+        // 일만 말함 → 기분을 묻는다(마음을 듣기 전의 질문은 세지 않는다).
+        StrategyPolicy.FollowUp f = answered(StrategySignals.initial(), said("none", "stage_1_2", 0.9));
+        assertThat(f.mayAsk()).isTrue();
+        assertThat(f.signals().questionsAfterFeeling()).isNull();
+        // 기분을 말함 → 누구에게나 한 번 더 묻는다.
+        f = answered(f.signals(), said("clear", "stage_3", 0.9));
+        assertThat(f.mayAsk()).isTrue();
+        assertThat(f.signals().questionsAfterFeeling()).isEqualTo(1);
+        // 답이 더 깊어짐 → 이어 묻는다.
+        f = answered(f.signals(), said("clear", "stage_4", 0.9));
+        assertThat(f.mayAsk()).isTrue();
+        // 같은 깊이에 머묾 → 멈춘다.
+        f = answered(f.signals(), said("clear", "stage_4", 0.9));
+        assertThat(f.mayAsk()).isFalse();
+    }
+
+    @Test
+    void stopsAfterTheFirstFollowUpWhenTheAnswerDoesNotGoDeeper() {
+        StrategyPolicy.FollowUp f = answered(StrategySignals.initial(), said("clear", "stage_3", 0.9));
+        assertThat(f.mayAsk()).isTrue();
+
+        assertThat(answered(f.signals(), said("clear", "stage_3", 0.9)).mayAsk()).isFalse();
+        // 깊어졌다는 판단의 확신이 낮거나 판단할 수 없으면 깊어지지 않은 것으로 본다. 판단이 없는 턴도 같다.
+        assertThat(answered(f.signals(), said("clear", "stage_5_plus", 0.3)).mayAsk()).isFalse();
+        assertThat(answered(f.signals(), said("clear", "undeterminable", 0.9)).mayAsk()).isFalse();
+        assertThat(policy.afterAnswer(f.signals(), null).mayAsk()).isFalse();
+    }
+
+    @Test
+    void stopsAtTheLimitEvenIfAnswersKeepGettingDeeper() {
+        StrategyPolicy two = new StrategyPolicy(0.5, 0.8, 2, 8, 2);
+        StrategySignals s = StrategySignals.initial();
+        TurnStrategy asked = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+        boolean[] expected = {true, true, false};
+        String[] depths = {"stage_3", "stage_4", "stage_5_plus"};
+        for (int i = 0; i < depths.length; i++) {
+            StrategyPolicy.FollowUp f = two.afterAnswer(s, said("clear", depths[i], 0.9).build());
+            assertThat(f.mayAsk()).isEqualTo(expected[i]);
+            s = two.settle(f.signals(), f.mayAsk() ? asked : asked.withFocus(QuestionFocus.NONE));
+        }
+    }
+
+    @Test
+    void aNewStoryStartsItsFollowUpsAndDepthAfresh() {
+        StrategyPolicy.FollowUp f = answered(StrategySignals.initial(), said("clear", "stage_4", 0.9));
+
+        StrategySignals moved = policy.movedToNewTopic(f.signals());
+
+        assertThat(moved.questionsAfterFeeling()).isNull();
+        assertThat(moved.deepestStage()).isNull();
+        // 다른 기억을 묻는 질문은 앞 이야기의 질문으로 세지 않는다.
+        assertThat(policy.settle(f.signals(), new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OTHER_TOPIC, false))
+                .questionsAfterFeeling()).isEqualTo(f.signals().questionsAfterFeeling());
+    }
+
+    @Test
+    void doesNotProposeWrapUpAgainRightAfterProposingEvenForANewStory() {
         StrategySignals proposed = policy.settle(first(new J()).signals(),
                 new TurnStrategy(StrategyType.REFLECT, QuestionFocus.WRAP_UP, false));
 
         StrategySignals second = policy.movedToNewTopic(proposed);
-        assertThat(second.topicNumber()).isEqualTo(2);
-        assertThat(second.wrapUpProposed()).isFalse();
-        // 사건은 둘까지 뽑는다 — 셋째 이야기는 세지 않는다.
-        assertThat(policy.movedToNewTopic(second)).isEqualTo(second);
-    }
 
-    // ── 분량 ──
+        assertThat(second.topicNumber()).isEqualTo(2);
+        StrategyPolicy.Decision d = policy.decide(new J().build(), second, true);
+        assertThat(policy.whenNothingMoreToAsk(d.strategy(), second, true).focus()).isEqualTo(QuestionFocus.NONE);
+    }
 
     @Test
     void proposesWrapUpOnceTheQuestionCapIsReached() {

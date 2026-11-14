@@ -12,11 +12,14 @@ package com.momentory.retrospect.domain.strategy;
  * @param topicNumber        지금 몇 번째 이야기인가(1부터)
  * @param wrapUpProposed     지금 이야기에서 마무리를 이미 제안했는가
  * @param lastType           직전 턴의 방침. 없으면 null
- * @param turnsSinceQuestion 마지막 질문 뒤로 지난 턴 수
+ * @param turnsSinceQuestion 마지막 질문이나 마무리 제안 뒤로 지난 턴 수
  * @param questionsAsked     이 대화에서 바바가 한 질문 수(첫 질문은 세지 않는다)
+ * @param questionsAfterFeeling 지금 이야기에서 그때의 마음을 들은 뒤로 바바가 한 질문 수. 아직 마음을 듣지 못했으면 null
+ * @param deepestStage 지금 이야기에서 가장 깊었던 체험 깊이(1~2단계=1 … 5단계 이상=4). 판단된 적이 없으면 null
  */
 public record StrategySignals(int resistanceCount, Integer yieldStreak, String explicitMode, Integer topicNumber,
-        Boolean wrapUpProposed, StrategyType lastType, int turnsSinceQuestion, Integer questionsAsked) {
+        Boolean wrapUpProposed, StrategyType lastType, int turnsSinceQuestion, Integer questionsAsked,
+        Integer questionsAfterFeeling, Integer deepestStage) {
 
     public static final String LISTEN = "LISTEN";
     public static final String OTHER_VIEW = "OTHER_VIEW";
@@ -26,6 +29,23 @@ public record StrategySignals(int resistanceCount, Integer yieldStreak, String e
         topicNumber = topicNumber == null ? 1 : topicNumber;
         wrapUpProposed = wrapUpProposed != null && wrapUpProposed;
         questionsAsked = questionsAsked == null ? 0 : questionsAsked;
+    }
+
+    /** 지금 이야기에서 아직 마음을 듣지 못한 신호. */
+    public StrategySignals(int resistanceCount, Integer yieldStreak, String explicitMode, Integer topicNumber,
+            Boolean wrapUpProposed, StrategyType lastType, int turnsSinceQuestion, Integer questionsAsked) {
+        this(resistanceCount, yieldStreak, explicitMode, topicNumber, wrapUpProposed, lastType, turnsSinceQuestion,
+                questionsAsked, null, null);
+    }
+
+    public StrategySignals withQuestionsAfterFeeling(Integer count) {
+        return withFollowUp(count, deepestStage);
+    }
+
+    /** 지금 이야기에서 마음을 들은 뒤의 질문 수와 가장 깊었던 단계를 바꾼다. */
+    public StrategySignals withFollowUp(Integer count, Integer deepest) {
+        return new StrategySignals(resistanceCount, yieldStreak, explicitMode, topicNumber, wrapUpProposed, lastType,
+                turnsSinceQuestion, questionsAsked, count, deepest);
     }
 
     public static StrategySignals initial() {

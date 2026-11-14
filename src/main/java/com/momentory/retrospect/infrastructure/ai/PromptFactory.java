@@ -203,17 +203,24 @@ public class PromptFactory {
                 - newTopic: 방금 답변이 [지금 다루는 일]과 다른 새 이야기를 꺼냈으면 true. 같은 일을 이어 말했으면 false.
                   새 이야기라면 앞 이야기의 감정이나 사정을 새 이야기에 끌어오지 않습니다 — 둘은 따로 있었던 일입니다.
                 - topic: 지금 다루는 일의 짧은 이름. 같은 일이면 위 [지금 다루는 일]을 그대로 씁니다.
-                - nothingMoreToAsk: 이 이야기에서 더 물을 것이 없으면 true. 일어난 일과 그때의 마음, 그렇게 느낀 까닭까지
-                  이미 들었거나, 사용자가 더 말하기 어려워하거나 원치 않으면 true 입니다. 빈칸을 다 채우는 것이 목표가 아닙니다.
+                - nothingMoreToAsk: 이 이야기에서 더 물을 것이 없으면 true. 무슨 일이 있었는지와 그때의 마음, 그리고 그때
+                  자기 자신에 대해 든 마음까지 들었으면 true 입니다. 사용자가 더 말하기 어려워하거나 원치 않아도 true 입니다.
+                  빈칸을 다 채우는 것이 목표가 아닙니다.
                   다만 이 이야기에서 그때의 마음을 아직 한 번도 묻지 않았고 사용자도 말하지 않았다면 false 입니다 —
                   일어난 일만 듣고 끝내지 않습니다. 반대로 바바가 이미 물었는데 사용자가 그 물음에 답하지 않았으면
                   ('응', '맞아' 같은 말만 했거나 다른 말을 했으면) 같은 것을 다시 묻지 않고 true 로 둡니다.
+                [되풀이하지 않습니다]
+                - 바바가 이 대화에서 이미 한 말과 뜻이 같은 말을 다시 하지 않습니다. 받아주는 말과 질문 모두에 해당하고,
+                  낱말이나 어미만 바꾼 것도 같은 말입니다. 쓰기 전에 [대화]에서 바바의 앞선 말을 확인합니다.
+                - 방금 답변에 새로 받을 내용이 없으면 앞의 공감을 다시 쓰지 않고 ack 를 한두 낱말로 아주 짧게 씁니다.
+                - 한 번 물은 것은 답을 듣지 못했어도 다시 묻지 않습니다.
                 [질문을 할 때]
                 - 이 대화에서 듣고 싶은 것은 일의 자세한 내용이 아니라 그 일을 겪은 사용자의 마음입니다. 질문은 바깥(누가,
                   어디서, 무슨 얘기를, 그다음엔)이 아니라 안쪽(그때 사용자의 기분과 마음)을 향합니다.
                 - 사용자가 방금 한 말에서 한 걸음만 더 안쪽으로 묻습니다. 일어난 일만 말했으면 그때 기분이 어땠는지를,
-                  기분을 말했으면 그때 자기 자신에 대해서는 어떤 마음이나 생각이 들었는지를, 자기 마음을 스스로 짚었으면
-                  방금 짚은 것을 조금 더 묻습니다.
+                  기분을 말했으면 그때 자기 자신에 대해서는 어떤 마음이 들었는지를, 자기 마음을 스스로 짚었으면 방금 짚은
+                  것을 묻습니다. 방금 답이 앞의 답보다 더 안쪽으로 가지 않았으면 이어 묻지 않습니다 — 언제 멈출지는
+                  서버도 함께 봅니다.
                 - 무슨 일이었는지 알 수 있게 됐으면 사실을 더 캐묻지 않고 그때의 기분을 묻습니다. 사실을 묻는 것은 무슨
                   일이 있었는지조차 알 수 없을 때 한 번뿐입니다.
                 - 사용자가 방금 쓴 구체적인 말을 받아서, 가까운 사람이 물을 법한 쉬운 말로 묻습니다. 기분은 그 일에 붙여서
@@ -239,7 +246,18 @@ public class PromptFactory {
                 - asksFeeling: question 이 그때의 기분이나 마음을 물으면 true. 사실·이유·생각을 묻거나 질문이 없으면 false.
                 - safetyLevel: none|caution|risk|imminent.
                 """.formatted(state.diaryTurn(), orNone(state.event()), recentHistory(state), userText.strip(),
-                courseDirective(strategy), questionDirective(strategy));
+                courseDirective(strategy) + heardDirective(strategy), questionDirective(strategy));
+    }
+
+    /** 들어 달라고 한 턴 — 「그러겠다」는 답은 서버가 앞에 붙인다. 모델은 요청을 해석하거나 되풀이하지 않는다. */
+    private static String heardDirective(TurnStrategy strategy) {
+        if (!strategy.askedToBeHeard()) {
+            return "";
+        }
+        return " 사용자가 방금 묻지 말고 들어 달라고 했습니다. 「묻지 않고 듣겠다」는 답은 서버가 따로 합니다 — "
+                + "그 요청을 해석하거나 되풀이하지 말고, 듣겠다는 말도 "
+                + "쓰지 않습니다. 요청 말고 다른 이야기를 함께 했으면 그 이야기만 한 문장으로 받고, 요청뿐이면 ack 를 "
+                + "빈 문자열로 둡니다.";
     }
 
     private static String courseDirective(TurnStrategy strategy) {
@@ -270,12 +288,19 @@ public class PromptFactory {
         };
     }
 
+    private static String knownFeelingNote(TurnStrategy strategy) {
+        return strategy.feelingKnown()
+                ? " 방금 답변이 새 이야기가 아니라면, 이 이야기에서 그때의 기분은 이미 들었습니다 — 기분을 다시 묻지 않고, "
+                        + "물을 것이 있다면 그보다 안쪽을 묻습니다."
+                : "";
+    }
+
     private static String questionDirective(TurnStrategy strategy) {
         return switch (strategy.focus()) {
             case OPEN -> strategy.asChoices()
                     ? "질문: 해도 됩니다. 둘 중 고를 수 있는 형태로 가볍게 묻고('~였을까요, 아니면 ~였을까요?'), "
-                            + "답하지 않아도 괜찮다는 여지를 둡니다."
-                    : "질문: 해도 됩니다.";
+                            + "답하지 않아도 괜찮다는 여지를 둡니다." + knownFeelingNote(strategy)
+                    : "질문: 해도 됩니다." + knownFeelingNote(strategy);
             case WRAP_UP -> "질문: 하지 않습니다. 여기까지 정리할지는 서버가 묻습니다. question은 빈 문자열이고, "
                     + "대화를 마무리하는 말이나 작별 인사를 넣지 않습니다.";
             default -> "질문: 이번 턴에는 하지 않습니다. question은 빈 문자열이고, 제안이나 권유도 넣지 않습니다.";

@@ -47,8 +47,13 @@ public class StrategyDiaryChat {
     /** 문장 생성 모델이 받아주는 말을 쓰지 못했을 때의 짧은 말. */
     static final String PLAIN_ACK = "네, 듣고 있어요.";
     /** 문장 생성 모델이 실패한 턴에 질문이 필요하면 쓰는 말 — 무엇을 물을지 알 수 없으므로 이야기를 열어 둔다. */
+    /** 받아줄 말이 따로 없을 때 쓰는 짧은 말들 — 바로 앞에서 한 말과 같은 것은 고르지 않는다. */
+    static final List<String> PLAIN_ACKS = List.of(PLAIN_ACK, "네.", "그랬군요.");
     static final String PLAIN_QUESTION = "조금 더 들려주실래요?";
     static final String WRAP_UP_QUESTION = "여기까지 일기로 정리해볼까요?";
+    /** 들어 달라는 요청에 먼저 하는 답 — 요청을 해석하지 않고 그러겠다고만 한다. */
+    static final String WILL_LISTEN = "네, 묻지 않고 들을게요.";
+    static final String GO_ON = "편하게 이야기해 주세요.";
 
     enum Kind {
         /** 바바의 말을 그대로 내보낸다. */
@@ -95,7 +100,10 @@ public class StrategyDiaryChat {
         StrategyPolicy.Decision decision = judgment
                 .map(j -> policy.decide(j, state.strategySignals(), noReaction))
                 .orElseGet(() -> policy.decideWithoutJudgment(state.strategySignals(), stopPhrase));
-        TurnStrategy strategy = decision.strategy();
+        // 이 이야기에서 기분을 이미 들었는지(방금 답변 포함)를 문장 생성 모델에 알린다 — 들은 기분을 다시 묻지 않게 한다.
+        boolean feelingKnown = policy.afterAnswer(decision.signals(), judgment.orElse(null)).signals()
+                .questionsAfterFeeling() != null;
+        TurnStrategy strategy = decision.strategy().withFeelingKnown(feelingKnown);
         if (strategy.type() == StrategyType.CLOSE) {
             state.strategySignals(policy.settle(decision.signals(), strategy));
             state.logStrategy(strategy, StrategyPolicy.VERSION, true);
@@ -106,7 +114,9 @@ public class StrategyDiaryChat {
         Optional<StrategyReply> written = writer.write(state, content, strategy);
         state.bumpDiaryTurn();
 
-        String ack = PLAIN_ACK;
+        // 들어 달라고 한 턴에는 그러겠다는 답이 먼저다. 요청 말고 한 말이 있으면 모델이 쓴 받아주는 말을 그 뒤에 잇는다.
+        boolean willListen = strategy.askedToBeHeard();
+        String ack = willListen ? WILL_LISTEN + " " + GO_ON : PLAIN_ACK;
         String question = null;
         boolean newTopic = false;
         boolean asksFeeling = false;
@@ -122,7 +132,11 @@ public class StrategyDiaryChat {
                 state.event(reply.topic());
             }
             String said = withoutVocative(state, RetrospectEngine.empathyStatements(reply.ack()));
-            ack = said.isBlank() ? PLAIN_ACK : said;
+            if (willListen) {
+                ack = said.isBlank() ? WILL_LISTEN + " " + GO_ON : WILL_LISTEN + " " + said;
+            } else {
+                ack = said.isBlank() ? PLAIN_ACK : said;
+            }
             question = reply.nothingMoreToAsk() ? null : firstQuestion(withoutVocative(state, reply.question()));
             asksFeeling = reply.questionAsksFeeling();
         } else {
@@ -131,11 +145,24 @@ public class StrategyDiaryChat {
             question = PLAIN_QUESTION;
         }
 
+        ack = notRepeated(state, ack);
         // 새 이야기로 넘어갔는지를 먼저 반영한 뒤에, 더 물을 것이 없을 때 어디로 갈지를 정한다.
-        StrategySignals signals = newTopic ? policy.movedToNewTopic(decision.signals()) : decision.signals();
-        TurnStrategy done = strategy;
-        if (strategy.focus() == QuestionFocus.OPEN && question == null) {
-            done = policy.whenNothingMoreToAsk(strategy, signals, otherMemoryAsked(state));
+        // 새 이야기를 꺼냈으면 앞 이야기를 다 듣지 못했어도 그 이야기를 따라간다. 그것은 받아들이지 않은 것이 아니다.
+        StrategySignals signals = newTopic ? policy.movedToNewTopic(decision.signals(), strategy.reaction())
+                : decision.signals();
+        TurnStrategy done = newTopic && policy.gotNoAnswer(strategy) ? strategy.withoutReaction() : strategy;
+        // 마음을 들은 뒤에는 한 번 더 묻고, 그다음부터는 답이 깊어졌을 때만 이어 묻는다 — 아니면 모델이 질문을 썼어도 버린다.
+        // 다른 관점을 원한 사용자의 재해석 질문은 예외다.
+        StrategyPolicy.FollowUp followUp = policy.afterAnswer(signals, judgment.orElse(null));
+        signals = followUp.signals();
+        if (strategy.type() != StrategyType.REFRAME && !followUp.mayAsk()) {
+            question = null;
+        }
+        if (!newTopic && strategy.focus() == QuestionFocus.OPEN && policy.gotNoAnswer(strategy)) {
+            // 답하기 어려워했거나 질문과 맞지 않는 말을 했다 — 더 묻지 않고 여기서 정리할지를 묻는다.
+            done = policy.whenNoAnswer(strategy, signals);
+        } else if (strategy.focus() == QuestionFocus.OPEN && question == null) {
+            done = policy.whenNothingMoreToAsk(done, signals, otherMemoryAsked(state));
         }
         // 안전 상한 — 방침이 무엇이든 여기서 정리한다. 이 턴의 방침은 '적용 안 됨'으로 남는다.
         boolean capped = state.diaryTurn() >= maxTurns;
@@ -154,6 +181,24 @@ public class StrategyDiaryChat {
             case OPEN -> new Outcome(Kind.REPLY, ack + "\n" + question, safetyLevel, safetyFlags);
             default -> new Outcome(Kind.REPLY, ack, safetyLevel, safetyFlags);
         };
+    }
+
+    /**
+     * 바바가 바로 앞에서 한 말과 같은 받아주는 말이면 다른 짧은 말로 바꾼다 — 같은 문장을 연달아 하지 않는다.
+     * 뜻이 같은 다른 문장까지는 여기서 가려내지 못한다(문장 생성 지시가 맡는다).
+     */
+    static String notRepeated(RetrospectState state, String ack) {
+        String last = null;
+        for (var m : state.messages()) {
+            if (m.isAssistant()) {
+                last = m.content();
+            }
+        }
+        if (last == null || !last.contains(ack)) {
+            return ack;
+        }
+        String said = last;
+        return PLAIN_ACKS.stream().filter(a -> !said.contains(a)).findFirst().orElse(ack);
     }
 
     /** 이 대화에서 바바가 다른 기억을 이미 물었는가 — 그 문장은 고정이라 대화 기록에서 알아본다. */
