@@ -55,6 +55,12 @@ class LetterSafetyGateMonotonicityTest {
                     grounded);
         }
 
+        /** F1 — 불확실해도 판정 세 칸 · 규칙 두 칸이 모두 NONE 이면 일반 편지라 판정 없음(GENTLE)보다 낮다(의도). */
+        boolean signalFree() {
+            return uncertain && ruleToday == SafetyLevel.NONE && ruleHistory == SafetyLevel.NONE
+                    && current == SafetyLevel.NONE && mentioned == SafetyLevel.NONE && history == SafetyLevel.NONE;
+        }
+
         Case trust(boolean u, boolean g) {
             return new Case(crisis, event, ruleToday, ruleHistory, current, mentioned, history, trajectory, u, g);
         }
@@ -89,7 +95,7 @@ class LetterSafetyGateMonotonicityTest {
                         lessTrustedButLowered.add(c.toString());
                     }
                 }
-            } else if (p.ordinal() < c.withoutJudgment(pastOnly).ordinal()) {
+            } else if (!c.signalFree() && p.ordinal() < c.withoutJudgment(pastOnly).ordinal()) {
                 loweredByUntrusted.add(c.toString());
             }
         }
@@ -126,9 +132,10 @@ class LetterSafetyGateMonotonicityTest {
         return all;
     }
 
+    /** 규칙 바닥 — RISK 면 적어도 GENTLE, IMMINENT 면 QUIET. CAUTION(욕설 목록)은 판정이 있으면 바닥이 아니다(F2). */
     private static LetterPolicy ruleFloor(SafetyLevel rule) {
         return rule == SafetyLevel.IMMINENT ? LetterPolicy.QUIET
-                : rule == SafetyLevel.NONE ? LetterPolicy.NORMAL : LetterPolicy.GENTLE;
+                : rule == SafetyLevel.RISK ? LetterPolicy.GENTLE : LetterPolicy.NORMAL;
     }
 
     private static SafetyLevel up(SafetyLevel s) {

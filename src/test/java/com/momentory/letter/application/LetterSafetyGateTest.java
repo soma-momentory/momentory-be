@@ -66,7 +66,7 @@ class LetterSafetyGateTest {
     @Test
     @DisplayName("「지금 > 언급」 모순은 버리지 않고 언급을 지금까지 올려 읽는다 — 위험을 더 말한 판정이 정책을 낮추지 않음")
     void contradictionIsReadUpward() {
-        assertDecision(input(C, N, judged(N, N, R, Trajectory.ESCALATION), true), "QUIET", "D6");
+        assertDecision(input(N, N, judged(C, N, R, Trajectory.ESCALATION), true), "QUIET", "D6");
         assertDecision(input(C, N, judged(C, N, R, Trajectory.ESCALATION), true), "QUIET", "D6");
         assertDecision(input(R, N, judged(C, N, N), true), "GENTLE", "D7");
     }
@@ -113,9 +113,10 @@ class LetterSafetyGateTest {
     }
 
     @Test
-    @DisplayName("T13 규칙 CAUTION(욕설) · T14 판정 CAUTION → GENTLE(D8)")
+    @DisplayName("T13 규칙 CAUTION(욕설)만이면 판정이 있을 때 주의로 세지 않음(F2, D10) · 판정이 없으면 GENTLE(D4b) · T14 판정 CAUTION → GENTLE(D8)")
     void caution() {
-        assertDecision(input(C, N, judged(N, N, N), true), "GENTLE", "D8");
+        assertDecision(input(C, N, judged(N, N, N), true), "NORMAL", "D10");
+        assertDecision(input(C, N, Optional.empty(), false), "GENTLE", "D4b");
         assertDecision(input(N, N, judged(C, C, N), true), "GENTLE", "D8");
     }
 
@@ -129,9 +130,19 @@ class LetterSafetyGateTest {
     }
 
     @Test
-    @DisplayName("T17 규칙 지난 RISK + ESCALATION 이어도 오늘 NONE 이면 QUIET 아님 → GENTLE(D9)")
-    void escalationWithoutTodaySignal() {
-        assertDecision(input(N, R, judged(N, N, N, Trajectory.ESCALATION), true), "GENTLE", "D9");
+    @DisplayName("T17 지난 일기 키워드(규칙 RISK)를 판정이 지난 위험 없음으로 보면 D9 가 아님(F3, D10) · 오늘 주의 + 악화면 규칙 지난 RISK 로 QUIET(D6)")
+    void pastRuleKeywordCanBeClearedByJudge() {
+        assertDecision(input(N, R, judged(N, N, N, Trajectory.ESCALATION), true), "NORMAL", "D10");
+        assertDecision(input(N, R, judged(C, C, N, Trajectory.ESCALATION), true), "QUIET", "D6");
+    }
+
+    @Test
+    @DisplayName("F1 불확실해도 판정 · 규칙이 모두 NONE 이면 일반 편지(D4c) · 지난 일기 규칙만 RISK 여도 D4b")
+    void uncertainWithoutAnySignal() {
+        Optional<RiskJudgment> unsure = Optional.of(new RiskJudgment(N, N, N, Trajectory.STABLE, true, List.of()));
+        assertDecision(input(N, N, unsure, false), "NORMAL", "D4c");
+        assertDecision(input(N, R, unsure, false), "GENTLE", "D4b");
+        assertDecision(input(C, N, unsure, false), "GENTLE", "D4b");
     }
 
     @Test

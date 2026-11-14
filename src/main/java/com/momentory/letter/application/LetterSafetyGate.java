@@ -52,6 +52,10 @@ public final class LetterSafetyGate {
         }
         // 쓸 수 없는 판정(불확실 · 근거가 원문에 없음)은 위험 쪽으로만 쓴다 — 판정 없음(D4)보다 낮아지지 않는다.
         // 불확실하다고 했으면 지난 위험이 이어지는지 모른다는 뜻이라 악화(D6)를 배제하지 않는다.
+        // 다만 판정 세 칸과 규칙 두 칸이 모두 NONE 이면 막을 신호가 하나도 없으니 일반 편지다(F1, D4c).
+        if (j.uncertain() && allNone(in, j)) {
+            return new Decision(LetterPolicy.NORMAL, "D4c");
+        }
         Decision floor = noJudgment(in.ruleToday().atLeast(SafetyLevel.RISK)
                 || j.todayCurrent().atLeast(SafetyLevel.RISK));
         RiskJudgment raised = j.uncertain() ? j.withTrajectory(RiskJudgment.Trajectory.ESCALATION) : j;
@@ -63,11 +67,25 @@ public final class LetterSafetyGate {
         return risk ? quiet("D4a") : new Decision(LetterPolicy.GENTLE, "D4b");
     }
 
-    /** 판정을 쓰는 줄(D5~D10). 「지금 &gt; 언급」 모순은 판정을 버리지 않고 언급을 지금까지 올려 읽는다. */
+    private static boolean allNone(Input in, RiskJudgment j) {
+        return in.ruleToday() == SafetyLevel.NONE && in.ruleHistory() == SafetyLevel.NONE
+                && j.todayCurrent() == SafetyLevel.NONE && j.todayMentioned() == SafetyLevel.NONE
+                && j.historyRisk() == SafetyLevel.NONE;
+    }
+
+    /**
+     * 판정을 쓰는 줄(D5~D10). 「지금 &gt; 언급」 모순은 판정을 버리지 않고 언급을 지금까지 올려 읽는다.
+     *
+     * <p>규칙 CAUTION 은 욕설 목록에서만 나오므로 판정이 있으면 「오늘 주의」로 세지 않는다(F2). 규칙 RISK 이상은
+     * 그대로 판정이 낮출 수 없다(D3 · D7). 지난 기록만 위험인 날(D9)은 판정의 지난 기록 칸으로 본다 — 지난 일기의
+     * 「너무 힘들어서」 같은 키워드를 판정이 지난 일로 가릴 수 있게(F3). 악화(D6)는 규칙과 판정 중 높은 쪽을 그대로 본다.
+     */
     private static Decision table(Input in, RiskJudgment j, LetterPolicy pastOnlyPolicy) {
-        SafetyLevel today = SafetyLevel.max(in.ruleToday(), j.todayCurrent());
+        SafetyLevel ruleToday = in.ruleToday().atLeast(SafetyLevel.RISK) ? in.ruleToday() : SafetyLevel.NONE;
+        SafetyLevel today = SafetyLevel.max(ruleToday, j.todayCurrent());
         SafetyLevel mentioned = SafetyLevel.max(j.todayMentioned(), j.todayCurrent());
         SafetyLevel history = SafetyLevel.max(in.ruleHistory(), j.historyRisk());
+        boolean pastRisk = j.historyRisk().atLeast(SafetyLevel.RISK);
         if (j.todayCurrent().atLeast(SafetyLevel.RISK)) {
             return quiet("D5");
         }
@@ -76,7 +94,7 @@ public final class LetterSafetyGate {
             return quiet("D6");
         }
         // 지난 위험이 있으면 D7 · D8 도 D9(past-only-policy)보다 약하지 않다 — 오늘 신호가 붙어 정책이 내려가지 않게.
-        LetterPolicy gentle = history.atLeast(SafetyLevel.RISK) && pastOnlyPolicy.ordinal() > LetterPolicy.GENTLE.ordinal()
+        LetterPolicy gentle = pastRisk && pastOnlyPolicy.ordinal() > LetterPolicy.GENTLE.ordinal()
                 ? pastOnlyPolicy : LetterPolicy.GENTLE;
         if (in.ruleToday() == SafetyLevel.RISK || mentioned.atLeast(SafetyLevel.RISK)) {
             return new Decision(gentle, "D7");
@@ -84,7 +102,7 @@ public final class LetterSafetyGate {
         if (today == SafetyLevel.CAUTION) {
             return new Decision(gentle, "D8");
         }
-        if (history.atLeast(SafetyLevel.RISK)) {
+        if (pastRisk) {
             return new Decision(pastOnlyPolicy, "D9");
         }
         return new Decision(LetterPolicy.NORMAL, "D10");

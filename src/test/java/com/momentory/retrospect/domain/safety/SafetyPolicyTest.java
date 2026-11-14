@@ -83,11 +83,32 @@ class SafetyPolicyTest {
     }
 
     @Test
-    @DisplayName("[알려진 오탐] 부분일치라 '손목'이 든 무해한 문장도 imminent 로 잡힌다")
-    void knownFalsePositive() {
-        // 원본 docstring 이 밝힌 대로 키워드 목록은 임상 검수 전 시드다.
-        // 고치는 게 아니라 '지금 이렇다'를 고정해 두는 테스트다 — 목록 교체 시 여기가 깨져야 한다.
-        assertThat(policy.scan("손목이 아파요").level()).isEqualTo(SafetyLevel.IMMINENT);
+    @DisplayName("관용 표현 · 다른 대상은 위기로 보지 않는다(손목 통증 · 목숨을 걸고 · 번지점프에서 뛰어내릴 때)")
+    void idiomsAreNotCrisis() {
+        for (String text : List.of("요즘 손목이 너무 아프다.", "손목터널증후군 초기래", "돌아오는 길에 손목 받침대를 샀다",
+                "정말 목숨을 걸고 새로고침을 눌렀다.", "진짜 목숨 걸고 새로고침 눌렀다",
+                "친구들과 번지점프를 했다. 처음 뛰어내릴 때는 다리가 후들거렸다.")) {
+            assertThat(policy.scan(text).isClean()).as(text).isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("실제 위험 문장은 관용 표현과 섞여 있어도 그대로 imminent 다")
+    void realRiskStillImminent() {
+        for (String text : List.of("손목을 긋고 싶다", "손목에 상처를 냈다", "손목이 아파도 긋고 싶다",
+                "손목이 아프다. 그래도 칼을 들었다", "뛰어내리고 싶다", "옥상에서 뛰어내릴 때를 자꾸 생각한다",
+                "번지점프 말고 그냥 다리에서 뛰어내리고 싶다", "목숨을 끊고 싶다", "목숨 걸고 죽어버리고 싶다",
+                "목숨이 아깝지 않다", "손목")) {
+            assertThat(policy.scan(text).level()).as(text).isEqualTo(SafetyLevel.IMMINENT);
+        }
+    }
+
+    @Test
+    @DisplayName("[알려진 한계] 과거 언급과 문맥으로만 가를 말은 이번에 빼지 않았다 — 임상 검수 뒤에 다룬다")
+    void knownLimits() {
+        assertThat(policy.scan("작년에는 정말 죽고 싶었다. 지금은 괜찮다").level()).isEqualTo(SafetyLevel.IMMINENT);
+        assertThat(policy.scan("교수님 앞에서 정말 사라지고 싶었다").level()).isEqualTo(SafetyLevel.IMMINENT);
+        assertThat(policy.scan("정상 직전에는 너무 힘들어서 포기할 뻔했다").level()).isEqualTo(SafetyLevel.RISK);
     }
 
     @Nested
