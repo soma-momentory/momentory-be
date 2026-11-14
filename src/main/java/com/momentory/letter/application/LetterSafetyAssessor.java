@@ -33,6 +33,10 @@ class LetterSafetyAssessor {
         LetterPolicy policy() {
             return decision.policy();
         }
+
+        Assessment withDecision(LetterSafetyGate.Decision d) {
+            return new Assessment(d, judgment, usable, ruleToday, ruleHistory, pastDiaries, judgeMillis);
+        }
     }
 
     private final LetterMaterialsReader materialsReader;
