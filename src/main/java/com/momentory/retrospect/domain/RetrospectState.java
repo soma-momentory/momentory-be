@@ -6,7 +6,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
+import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
+import com.momentory.retrospect.domain.strategy.StrategySignals;
+import com.momentory.retrospect.domain.strategy.TurnStrategy;
 
 /**
  * 회고 세션 애그리거트 루트 (채팅흐름_v2).
@@ -112,6 +115,17 @@ public class RetrospectState {
      * userId 를 묶어 넣어준다. 엔진은 작은 행동을 제안할 때만 부른다.
      */
     private transient PriorActionCardFinder priorCardFinder = PriorActionCardFinder.NONE;
+
+    /**
+     * 이번 요청에서 턴 판단을 할 것인가 — 저장하지 않는다. 대상 계정인지는 애플리케이션 서비스가 정해 켠다.
+     */
+    private transient boolean turnJudgingEnabled;
+    /** 이번 요청에서 판단으로 전략을 골라 응답에 적용할 것인가 — 저장하지 않는다. 켜면 턴 판단도 함께 켜진다. */
+    private transient boolean turnStrategyEnabled;
+    /** 이번 대화에서 관찰한 전략 신호 — 전략 선택을 한 번도 하지 않았으면 null. */
+    private StrategySignals strategySignals;
+    /** 이번 요청에서 생긴 판단 기록 — 저장하지 않는다. 애플리케이션 서비스가 꺼내 따로 기록한다. */
+    private final transient List<TurnJudgmentLog> judgmentLogs = new ArrayList<>();
 
     public RetrospectState(String id) {
         this.id = id;
@@ -329,6 +343,17 @@ public class RetrospectState {
         }
     }
 
+    /** 「해 봤어요」 뒤에 해 보니 어땠는지를 물었다. */
+    public void askTodayActionReflection() {
+        if (todayAction != null) {
+            this.todayAction = todayAction.askedReflection();
+        }
+    }
+
+    public boolean awaitingTodayActionReflection() {
+        return todayAction != null && todayAction.awaitingReflection();
+    }
+
     public boolean awaitingEventSelection() {
         return awaitingEventSelection;
     }
@@ -433,7 +458,7 @@ public class RetrospectState {
     }
 
     /**
-     * 대화 끝에 추출한 감정으로 채운다 — <b>정규화된 것만</b> 남긴다. 10종 밖이라 {@code normalized}
+     * 대화 끝에 추출한 감정으로 채운다 — <b>정규화된 것만</b> 남긴다. 12종 밖이라 {@code normalized}
      * 가 비는 항목은 어디서도 쓰지 못하면서 {@link #inferredEmotion(Emotion)} 게이트만 막으므로
      * 여기서 걸러낸다.
      */
@@ -602,6 +627,64 @@ public class RetrospectState {
         this.priorCardFinder = finder == null ? PriorActionCardFinder.NONE : finder;
     }
 
+    public void enableTurnJudging() {
+        this.turnJudgingEnabled = true;
+    }
+
+    public boolean turnJudgingEnabled() {
+        return turnJudgingEnabled;
+    }
+
+    public void enableTurnStrategy() {
+        this.turnJudgingEnabled = true;
+        this.turnStrategyEnabled = true;
+    }
+
+    public boolean turnStrategyEnabled() {
+        return turnStrategyEnabled;
+    }
+
+    public StrategySignals strategySignals() {
+        return strategySignals == null ? StrategySignals.initial() : strategySignals;
+    }
+
+    public void strategySignals(StrategySignals signals) {
+        this.strategySignals = signals;
+    }
+
+    public void logJudgment(TurnJudgmentLog log) {
+        judgmentLogs.add(log);
+    }
+
+    /** 방금 남긴 판단 기록에 고른 전략과 적용 여부를 덧붙인다. */
+    public void logStrategy(TurnStrategy strategy, String policyVersion, boolean applied) {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1,
+                    judgmentLogs.getLast().withStrategy(strategy, policyVersion, applied));
+        }
+    }
+
+    /** 방금 남긴 판단 기록에 이 턴에 바바가 그때의 기분을 물었는지를 덧붙인다. */
+    public void logAskedFeeling(boolean asked) {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withAskedFeeling(asked));
+        }
+    }
+
+    /** 방금 남긴 판단 기록에 이 턴의 문장 생성이 실패했음을 표시한다. */
+    public void logGenerationFailed() {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withGenerationFailed());
+        }
+    }
+
+    /** 이번 요청에서 생긴 판단 기록을 꺼내고 비운다. */
+    public List<TurnJudgmentLog> drainJudgmentLogs() {
+        List<TurnJudgmentLog> drained = List.copyOf(judgmentLogs);
+        judgmentLogs.clear();
+        return drained;
+    }
+
     // ── 메시지 ───────────────────────────────────────────────────────────
 
     public Message addAssistantMessage(String content) {
@@ -639,7 +722,7 @@ public class RetrospectState {
                         safety.level(), safety.flags(), safety.lastFlaggedMsgId()),
                 List.copyOf(lastOptions), messageSeq, scheduleHint, topicTurn, topicEmotionSeen,
                 topicMeaningSeen, selectedEventId, awaitingEventSelection, todayAction, topicCauseDiscussed,
-                topicEmotionConfirmAsked);
+                topicEmotionConfirmAsked, strategySignals);
     }
 
     public static RetrospectState fromSnapshot(RetrospectStateSnapshot s) {
@@ -694,6 +777,7 @@ public class RetrospectState {
         state.topicEmotionSeen = Boolean.TRUE.equals(s.topicEmotionSeen());
         state.topicCauseDiscussed = Boolean.TRUE.equals(s.topicCauseDiscussed());
         state.topicEmotionConfirmAsked = Boolean.TRUE.equals(s.topicEmotionConfirmAsked());
+        state.strategySignals = s.strategySignals();
         state.topicMeaningSeen = Boolean.TRUE.equals(s.topicMeaningSeen());
         state.selectedEventId = s.selectedEventId();
         state.awaitingEventSelection = Boolean.TRUE.equals(s.awaitingEventSelection());

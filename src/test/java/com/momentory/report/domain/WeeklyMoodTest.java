@@ -25,7 +25,7 @@ class WeeklyMoodTest {
     @DisplayName("최다 감정이 하나면 그 감정을 넣어 멘트를 만든다")
     void singleDominantEmotionShapesMessage() {
         WeeklyMood mood = WeeklyMood.of(week(
-                Emotion.DEPRESSED, Emotion.HAPPY, Emotion.CALM, null, Emotion.CALM, null, null));
+                Emotion.SAD, Emotion.JOY, Emotion.CALM, null, Emotion.CALM, null, null));
 
         assertThat(mood.dominantEmotion()).isEqualTo(Emotion.CALM);
         assertThat(mood.message()).isEqualTo("이번 주에는 평온한 마음을 가장 많이 느꼈어요. "
@@ -46,7 +46,7 @@ class WeeklyMoodTest {
     @DisplayName("최다 횟수를 여러 감정이 나눠 가지면 '여러 마음' 멘트로 바뀐다")
     void tiedEmotionsFallBackToMixedMessage() {
         WeeklyMood mood = WeeklyMood.of(week(
-                Emotion.CALM, Emotion.CALM, Emotion.TIRED, Emotion.TIRED, Emotion.HAPPY, null, null));
+                Emotion.CALM, Emotion.CALM, Emotion.EXHAUSTED, Emotion.EXHAUSTED, Emotion.JOY, null, null));
 
         assertThat(mood.dominantEmotion()).isNull();
         assertThat(mood.message()).isEqualTo(MIXED_MESSAGE);
@@ -88,15 +88,15 @@ class WeeklyMoodTest {
     }
 
     @Test
-    @DisplayName("우울함·피곤함은 어근을 붙인 말이 아니라 정해둔 표현을 쓴다")
+    @DisplayName("슬픔·지침은 어근을 붙인 말이 아니라 정해둔 표현을 쓴다")
     void messagesUseTheirOwnWording() {
-        assertThat(WeeklyMood.of(week(Emotion.DEPRESSED, null, null, null, null, null, null))
+        assertThat(WeeklyMood.of(week(Emotion.SAD, null, null, null, null, null, null))
                 .message())
-                .isEqualTo("이번 주에는 가라앉은 마음을 가장 많이 느꼈어요. "
+                .isEqualTo("이번 주에는 슬픈 마음을 가장 많이 느꼈어요. "
                         + "마음을 무겁게 만든 일이 무엇이었는지 천천히 살펴보세요.");
-        assertThat(WeeklyMood.of(week(Emotion.TIRED, null, null, null, null, null, null))
+        assertThat(WeeklyMood.of(week(Emotion.EXHAUSTED, null, null, null, null, null, null))
                 .message())
-                .isEqualTo("이번 주에는 피곤함을 가장 많이 느꼈어요. "
+                .isEqualTo("이번 주에는 지친 마음을 가장 많이 느꼈어요. "
                         + "몸과 마음이 보내는 휴식 신호를 지나치고 있지는 않은지 살펴보세요.");
         assertThat(WeeklyMood.of(week(Emotion.ANGRY, null, null, null, null, null, null))
                 .message())
@@ -125,10 +125,10 @@ class WeeklyMoodTest {
         // 「늦게 일어나서 기분 안좋았는데 라면 먹고 기분 좋아졌어」 — 대표 감정만 세면 행복함은
         // 한 주 요약에 한 번도 안 잡힌다. 이 주는 행복함 2 · 우울함 1 · 평온함 1 이라 행복함이다.
         WeeklyMood mood = WeeklyMood.of(List.of(
-                DailyMood.of(WEEK_START, List.of(Emotion.DEPRESSED, Emotion.HAPPY)),
-                DailyMood.of(WEEK_START.plusDays(1), List.of(Emotion.CALM, Emotion.HAPPY))));
+                DailyMood.of(WEEK_START, List.of(Emotion.SAD, Emotion.JOY)),
+                DailyMood.of(WEEK_START.plusDays(1), List.of(Emotion.CALM, Emotion.JOY))));
 
-        assertThat(mood.dominantEmotion()).isEqualTo(Emotion.HAPPY);
+        assertThat(mood.dominantEmotion()).isEqualTo(Emotion.JOY);
     }
 
     @Test
@@ -136,7 +136,7 @@ class WeeklyMoodTest {
     void tieAcrossAllEmotionsStillMixes() {
         // 우울함 1 · 행복함 1 — 대표 감정만 셌다면 우울함 하나가 이겼을 자리다.
         WeeklyMood mood = WeeklyMood.of(List.of(
-                DailyMood.of(WEEK_START, List.of(Emotion.DEPRESSED, Emotion.HAPPY))));
+                DailyMood.of(WEEK_START, List.of(Emotion.SAD, Emotion.JOY))));
 
         assertThat(mood.dominantEmotion()).isNull();
         assertThat(mood.message()).isEqualTo("여러 마음이 번갈아 찾아온 한 주였어요.");

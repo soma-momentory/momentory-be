@@ -9,7 +9,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * 회고 세션 상태 ↔ JSON 문자열 변환. 도메인은 Jackson 을 모른 채로 두고, 직렬화는 순수
- * 스냅샷 record 를 대상으로 여기서만 한다.
+ * 스냅샷 record 를 대상으로 여기서만 한다. 옛 10종 감정 이름으로 저장된 스냅샷도 읽는다
+ * ({@link EmotionJsonModule}).
  */
 @Component
 public class RetrospectStateCodec {
@@ -17,7 +18,7 @@ public class RetrospectStateCodec {
     private final ObjectMapper objectMapper;
 
     public RetrospectStateCodec(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+        this.objectMapper = EmotionJsonModule.applyTo(objectMapper);
     }
 
     public String serialize(RetrospectState state) {

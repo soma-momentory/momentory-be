@@ -35,6 +35,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import com.momentory.actioncard.domain.ActionCard;
+import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.actioncard.infrastructure.persistence.ActionCardRepository;
 import com.momentory.auth.token.application.AccessTokenIssuer;
 import com.momentory.common.time.DayBoundary;
@@ -85,6 +86,7 @@ class LetterRetrospectLinkIntegrationTest {
     }
 
     @MockitoBean GeminiLetterWriter writer;
+    @MockitoBean DiaryChatAssistant diaryChatAssistant;
 
     @Autowired WebApplicationContext webApplicationContext;
     @Autowired UserRepository userRepository;
@@ -133,13 +135,44 @@ class LetterRetrospectLinkIntegrationTest {
 
         ReplyDto answered = retrospectService.handle(user.getId(), started.id(), TurnCommand.option("1"));
 
-        assertThat(answered.text()).isEqualTo("해 봤군요, 잘했어요. 정민님, 오늘 하루 중에서 가장 기억에 남는 일은 뭐였어요?");
+        assertThat(answered.text()).isEqualTo("해 봤군요, 잘했어요. 해 보니 어땠어요?");
         LetterAction action = chosen(seeded.letter());
         assertThat(action.getResult()).isEqualTo("DONE");
         assertThat(action.getResultAt()).isNotNull();
         ActionCard checked = card(seeded);
         assertThat(checked.isDone()).isTrue();
         assertThat(checked.getDoneAt()).isNotNull();
+        assertThat(checked.getReflection()).isNull();
+
+        // 해 보니 어땠는지의 답이 바람카드의 느낀 점으로 남고, 원래 첫 질문이 이어진다.
+        when(diaryChatAssistant.summarizeReflection(any(), any(), any()))
+                .thenReturn(Optional.of("생각보다 개운했다."));
+        ReplyDto reflected = retrospectService.handle(user.getId(), started.id(),
+                TurnCommand.text("생각보다 개운했어"));
+
+        assertThat(reflected.text()).isEqualTo("들려줘서 고마워요. 정민님, 오늘 하루 중에서 가장 기억에 남는 일은 뭐였어요?");
+        ActionCard written = card(seeded);
+        assertThat(written.getReflection()).isEqualTo("생각보다 개운했다.");
+        assertThat(written.isDone()).isTrue();
+        assertThat(written.getDoneAt()).isEqualTo(checked.getDoneAt());
+    }
+
+    @Test
+    void reflectionDoesNotOverwriteWhatTheUserWroteInShelter() {
+        User user = userRepository.saveAndFlush(User.create());
+        Seeded seeded = letterWithCard(user, yesterday());
+        letterService.chooseAction(user.getId(), seeded.letter().getId(), 1, null, null, null);
+        RetrospectResult started = retrospectService.start(user.getId(), StartCommand.today("정민", null));
+        retrospectService.handle(user.getId(), started.id(), TurnCommand.option("1"));
+        // 회고 도중 쉼터에서 느낀 점을 직접 적었다.
+        ActionCard own = card(seeded);
+        own.changeCompletion(true, "내가 직접 적은 글", java.time.Instant.now());
+        actionCardRepository.saveAndFlush(own);
+        when(diaryChatAssistant.summarizeReflection(any(), any(), any())).thenReturn(Optional.of("개운했다."));
+
+        retrospectService.handle(user.getId(), started.id(), TurnCommand.text("개운했어"));
+
+        assertThat(card(seeded).getReflection()).isEqualTo("내가 직접 적은 글");
     }
 
     @Test

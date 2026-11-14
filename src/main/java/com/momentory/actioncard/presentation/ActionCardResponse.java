@@ -23,7 +23,7 @@ public record ActionCardResponse(
         @Schema(description = "바람 카드 id", example = "1") Long id,
         @Schema(description = "그날의 회고 id — 일기 조회에 쓴다", example = "10") Long retrospectId,
         @Schema(description = "상황", example = "팀플 회의에서 의견을 말하던 중 팀원이 말을 끊었다") String situation,
-        @Schema(description = "확인된 감정 키 목록", example = "[\"angry\", \"frustrated\"]") List<String> emotions,
+        @Schema(description = "확인된 감정 키 목록", example = "[\"angry\", \"disappointed\"]") List<String> emotions,
         @Schema(description = "내 마음이 바랐던 것(단어+뜻)") List<NeedDto> needs,
         @Schema(description = "바랐던 모습", example = "내 말을 끝까지 듣고 나서 의견을 말해주는 것") String desiredState,
         @Schema(description = "작은 행동(없을 수 있음)", example = "회의가 끝난 뒤 느낀 점을 한 문장으로 전해보기") String targetAction,

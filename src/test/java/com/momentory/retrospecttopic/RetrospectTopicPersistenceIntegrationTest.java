@@ -114,7 +114,7 @@ class RetrospectTopicPersistenceIntegrationTest {
         Retrospect retro = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(),
                 RetrospectStatus.COMPLETED, null, "{}"));
         topicRepository.saveAndFlush(RetrospectTopic.keyword(user.getId(), retro.getId(), "취업",
-                LocalDate.of(2026, 8, 31), List.of(Emotion.ANXIOUS, Emotion.STUCK)));
+                LocalDate.of(2026, 8, 31), List.of(Emotion.ANXIOUS, Emotion.CONFUSED)));
 
         // 회고를 먼저 지워 retrospects FK 를 풀고, 사용자를 native 로 지워 DB cascade 를 관찰한다.
         retrospectRepository.deleteAllInBatch();

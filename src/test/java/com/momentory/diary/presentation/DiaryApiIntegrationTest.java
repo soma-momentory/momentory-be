@@ -107,11 +107,11 @@ class DiaryApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
 
         // 8월(KST · 04:00 하루 경계) — 셋. 하나는 8/1 04:00 KST 경계(포함).
-        seedDiary(user, "8월 늦은 일기", Emotion.DEPRESSED, Instant.parse("2026-08-20T10:00:00Z"));
+        seedDiary(user, "8월 늦은 일기", Emotion.SAD, Instant.parse("2026-08-20T10:00:00Z"));
         seedDiary(user, "8월 중간 일기", Emotion.ANGRY, Instant.parse("2026-08-14T02:23:47Z"));
         seedDiary(user, "8월 경계 포함", Emotion.CALM, Instant.parse("2026-07-31T19:00:00Z")); // = 2026-08-01T04:00 KST (하루 경계)
         // 7월(KST) 경계 제외 — 2026-08-01 03:59:59 KST 는 4시 전이라 아직 7/31 이다.
-        seedDiary(user, "7월 경계 제외", Emotion.TIRED, Instant.parse("2026-07-31T18:59:59Z"));
+        seedDiary(user, "7월 경계 제외", Emotion.EXHAUSTED, Instant.parse("2026-07-31T18:59:59Z"));
         // 9월(KST) 제외.
         seedDiary(user, "9월 일기", Emotion.PROUD, Instant.parse("2026-09-01T00:00:00Z"));
 
@@ -123,7 +123,7 @@ class DiaryApiIntegrationTest {
                 .andExpect(jsonPath("$.diaries.length()").value(3))
                 // 최신순: 8/20 → 8/14 → 8/1(경계)
                 .andExpect(jsonPath("$.diaries[0].original").value("8월 늦은 일기"))
-                .andExpect(jsonPath("$.diaries[0].primaryEmotion").value("depressed"))
+                .andExpect(jsonPath("$.diaries[0].primaryEmotion").value("sad"))
                 .andExpect(jsonPath("$.diaries[0].createdAt").exists())
                 .andExpect(jsonPath("$.diaries[0].retrospectId").exists())
                 .andExpect(jsonPath("$.diaries[1].original").value("8월 중간 일기"))
@@ -135,8 +135,8 @@ class DiaryApiIntegrationTest {
     void monthlyListIsScopedToOwner() throws Exception {
         User owner = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
-        seedDiary(owner, "내 8월 일기", Emotion.DEPRESSED, Instant.parse("2026-08-10T01:00:00Z"));
-        seedDiary(other, "남의 8월 일기", Emotion.HAPPY, Instant.parse("2026-08-11T01:00:00Z"));
+        seedDiary(owner, "내 8월 일기", Emotion.SAD, Instant.parse("2026-08-10T01:00:00Z"));
+        seedDiary(other, "남의 8월 일기", Emotion.JOY, Instant.parse("2026-08-11T01:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries")
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner))
@@ -154,7 +154,7 @@ class DiaryApiIntegrationTest {
 
         // 여러 달에 걸친 일기 — 월 경계와 무관하게 전부 와야 한다.
         seedDiary(user, "9월 일기", Emotion.PROUD, Instant.parse("2026-09-01T00:00:00Z"));
-        seedDiary(user, "8월 일기", Emotion.DEPRESSED, Instant.parse("2026-08-14T02:00:00Z"));
+        seedDiary(user, "8월 일기", Emotion.SAD, Instant.parse("2026-08-14T02:00:00Z"));
         seedDiary(user, "7월 일기", Emotion.CALM, Instant.parse("2026-07-10T01:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries/all")
@@ -172,8 +172,8 @@ class DiaryApiIntegrationTest {
     void listAllIsScopedToOwner() throws Exception {
         User owner = userRepository.saveAndFlush(User.create());
         User other = userRepository.saveAndFlush(User.create());
-        seedDiary(owner, "내 일기", Emotion.DEPRESSED, Instant.parse("2026-08-10T01:00:00Z"));
-        seedDiary(other, "남의 일기", Emotion.HAPPY, Instant.parse("2026-08-11T01:00:00Z"));
+        seedDiary(owner, "내 일기", Emotion.SAD, Instant.parse("2026-08-10T01:00:00Z"));
+        seedDiary(other, "남의 일기", Emotion.JOY, Instant.parse("2026-08-11T01:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries/all")
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
@@ -205,14 +205,14 @@ class DiaryApiIntegrationTest {
     @DisplayName("단건 조회 — 전체 본문을 돌려준다")
     void getOneReturnsFullBody() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(user, "본문 전체", Emotion.DEPRESSED, Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(user, "본문 전체", Emotion.SAD, Instant.parse("2026-08-14T02:00:00Z"));
 
         mockMvc.perform(get("/api/v1/diaries/{id}", diaryId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value((int) diaryId))
                 .andExpect(jsonPath("$.original").value("본문 전체"))
-                .andExpect(jsonPath("$.primaryEmotion").value("depressed"))
+                .andExpect(jsonPath("$.primaryEmotion").value("sad"))
                 .andExpect(jsonPath("$.createdAt").exists());
     }
 
@@ -308,7 +308,7 @@ class DiaryApiIntegrationTest {
     @DisplayName("본문 수정 — 회고 id 로 찾아 original 을 바꾼다(대표 감정은 그대로)")
     void updateByRetrospectChangesOriginal() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        long diaryId = seedDiary(user, "원래 본문", Emotion.DEPRESSED, Instant.parse("2026-08-14T02:00:00Z"));
+        long diaryId = seedDiary(user, "원래 본문", Emotion.SAD, Instant.parse("2026-08-14T02:00:00Z"));
         long retrospectId = jdbcTemplate.queryForObject(
                 "SELECT retrospect_id FROM diaries WHERE id = ?", Long.class, diaryId);
 
@@ -320,7 +320,7 @@ class DiaryApiIntegrationTest {
                 .andExpect(jsonPath("$.id").value((int) diaryId))
                 .andExpect(jsonPath("$.original").value("내가 고친 본문"))
                 // 대표 감정은 건드리지 않는다
-                .andExpect(jsonPath("$.primaryEmotion").value("depressed"));
+                .andExpect(jsonPath("$.primaryEmotion").value("sad"));
 
         String stored = jdbcTemplate.queryForObject(
                 "SELECT original FROM diaries WHERE id = ?", String.class, diaryId);
@@ -505,25 +505,59 @@ class DiaryApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
         mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"original\":\"행복했던 하루\",\"emotion\":\"happy\"}"))
+                        .content("{\"original\":\"행복했던 하루\",\"emotion\":\"joy\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.primaryEmotion").value("happy"))
-                .andExpect(jsonPath("$.emotions[0]").value("happy"));
+                .andExpect(jsonPath("$.primaryEmotion").value("joy"))
+                .andExpect(jsonPath("$.emotions[0]").value("joy"));
         var diary = diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst();
-        org.junit.jupiter.api.Assertions.assertEquals(Emotion.HAPPY, diary.getPrimaryEmotion());
-        org.junit.jupiter.api.Assertions.assertEquals("happy", diary.getEmotions());
+        org.junit.jupiter.api.Assertions.assertEquals(Emotion.JOY, diary.getPrimaryEmotion());
+        org.junit.jupiter.api.Assertions.assertEquals("joy", diary.getEmotions());
         mockMvc.perform(get("/api/v1/diaries/{id}", diary.getId()).header(HttpHeaders.AUTHORIZATION, bearer(user)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.emotions[0]").value("happy"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.emotions[0]").value("joy"));
         mockMvc.perform(put("/api/v1/diaries/{id}", diary.getId()).header(HttpHeaders.AUTHORIZATION, bearer(user))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"고친 본문\"}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.primaryEmotion").value("happy"));
-        org.junit.jupiter.api.Assertions.assertEquals("happy", diaryRepository.findById(diary.getId()).orElseThrow().getEmotions());
+                .andExpect(status().isOk()).andExpect(jsonPath("$.primaryEmotion").value("joy"));
+        org.junit.jupiter.api.Assertions.assertEquals("joy", diaryRepository.findById(diary.getId()).orElseThrow().getEmotions());
+    }
+
+    @Test
+    void newTwelveEmotionKeysAreAcceptedForThePhotoEmotion() throws Exception {
+        for (String key : new String[] { "affection", "disappointed", "ashamed", "sorry", "exhausted" }) {
+            User user = userRepository.saveAndFlush(User.create());
+            mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"original\":\"본문\",\"emotion\":\"" + key + "\"}"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.primaryEmotion").value(key))
+                    .andExpect(jsonPath("$.emotions[0]").value(key));
+            org.junit.jupiter.api.Assertions.assertEquals(key,
+                    diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst().getEmotions());
+        }
+    }
+
+    @Test
+    void legacyTenEmotionKeysFromOlderAppsAreStoredAsTheNewKeys() throws Exception {
+        String[][] pairs = { { "happy", "joy" }, { "depressed", "sad" }, { "frustrated", "angry" },
+                { "stuck", "confused" }, { "lethargic", "exhausted" }, { "tired", "exhausted" } };
+        for (String[] pair : pairs) {
+            User user = userRepository.saveAndFlush(User.create());
+            mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"original\":\"본문\",\"emotion\":\"" + pair[0] + "\"}"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.primaryEmotion").value(pair[1]))
+                    .andExpect(jsonPath("$.emotions[0]").value(pair[1]));
+            var diary = diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst();
+            org.junit.jupiter.api.Assertions.assertEquals(Emotion.fromKey(pair[1]).orElseThrow(),
+                    diary.getPrimaryEmotion());
+            org.junit.jupiter.api.Assertions.assertEquals(pair[1], diary.getEmotions());
+        }
     }
 
     @Test
     void invalidPhotoEmotionDoesNotCreateADiary() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
-        for (String emotion : new String[] { "unknown", "", "HAPPY" }) {
+        for (String emotion : new String[] { "unknown", "", "HAPPY", "JOY", "ANGRY_FRUSTRATED" }) {
             mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"original\":\"본문\",\"emotion\":\"" + emotion + "\"}"))
@@ -550,14 +584,14 @@ class DiaryApiIntegrationTest {
         });
         mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"original\":\"친구와 산책하며 차분해졌다. 회의가 길어 피곤했다.\",\"emotion\":\"happy\"}"))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.primaryEmotion").value("happy"));
+                        .content("{\"original\":\"친구와 산책하며 차분해졌다. 회의가 길어 피곤했다.\",\"emotion\":\"joy\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.primaryEmotion").value("joy"));
         var diary = diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).getFirst();
         var events = diaryEventCodec.deserialize(diary.getEventsJson());
         org.assertj.core.api.Assertions.assertThat(events).extracting(com.momentory.diary.domain.DiaryEvent::label)
                 .containsExactly("친구와 산책", "회사 회의");
         org.assertj.core.api.Assertions.assertThat(events.getFirst().emotions()).containsExactly(Emotion.CALM);
-        org.junit.jupiter.api.Assertions.assertEquals(Emotion.HAPPY, diary.getPrimaryEmotion());
+        org.junit.jupiter.api.Assertions.assertEquals(Emotion.JOY, diary.getPrimaryEmotion());
         org.mockito.Mockito.doReturn(
                 new com.momentory.retrospect.domain.assistant.EmotionExtraction(java.util.List.of(
                         new com.momentory.retrospect.domain.ExtractedEvent(1, "책 읽기", "집에서 책을 읽었다", java.util.List.of(1))), java.util.List.of(), Emotion.CALM))
@@ -570,7 +604,7 @@ class DiaryApiIntegrationTest {
         var updatedEvents = diaryEventCodec.deserialize(updated.getEventsJson());
         org.assertj.core.api.Assertions.assertThat(updatedEvents).extracting(com.momentory.diary.domain.DiaryEvent::label).containsExactly("책 읽기");
         org.assertj.core.api.Assertions.assertThat(updatedEvents.getFirst().emotions()).isEmpty();
-        org.junit.jupiter.api.Assertions.assertEquals(Emotion.HAPPY, updated.getPrimaryEmotion());
+        org.junit.jupiter.api.Assertions.assertEquals(Emotion.JOY, updated.getPrimaryEmotion());
     }
 
     @Test
@@ -578,7 +612,7 @@ class DiaryApiIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
         org.mockito.Mockito.when(emotionExtractor.extract(org.mockito.ArgumentMatchers.any())).thenReturn(
                 new com.momentory.retrospect.domain.assistant.EmotionExtraction(java.util.List.of(
-                        new com.momentory.retrospect.domain.ExtractedEvent(1, "산책", "산책했다", java.util.List.of(1))), java.util.List.of(), Emotion.TIRED));
+                        new com.momentory.retrospect.domain.ExtractedEvent(1, "산책", "산책했다", java.util.List.of(1))), java.util.List.of(), Emotion.EXHAUSTED));
         mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"산책했다.\"}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.primaryEmotion").doesNotExist())
@@ -596,7 +630,7 @@ class DiaryApiIntegrationTest {
                         new com.momentory.retrospect.domain.ExtractedEvent(1, "산책", "산책했다", java.util.List.of(1))),
                         java.util.List.of(
                                 new com.momentory.retrospect.domain.ExtractedEmotion(1, "화남", Emotion.ANGRY, 2, null, "산책했다", java.util.List.of(2)),
-                                new com.momentory.retrospect.domain.ExtractedEmotion(1, "행복", Emotion.HAPPY, 2, null, "행복했다", java.util.List.of(1)),
+                                new com.momentory.retrospect.domain.ExtractedEmotion(1, "행복", Emotion.JOY, 2, null, "행복했다", java.util.List.of(1)),
                                 new com.momentory.retrospect.domain.ExtractedEmotion(1, "평온", Emotion.CALM, 2, null, "", java.util.List.of(1))), null));
         mockMvc.perform(post("/api/v1/diaries").header(HttpHeaders.AUTHORIZATION, bearer(user))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"산책했다.\"}"))
