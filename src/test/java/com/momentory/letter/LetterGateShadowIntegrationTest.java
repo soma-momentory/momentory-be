@@ -137,7 +137,7 @@ class LetterGateShadowIntegrationTest {
 
     @Test
     void vt8_shadowRecordsVerdictButDeliversCurrentLetter() {
-        when(verifier.verify(any(), any(), any())).thenReturn(LetterVerification.of(List.of(
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(LetterVerification.of(List.of(
                 new Violation("R1", true, Target.INSIGHT, "잘하고 싶었기", null))));
 
         Letter letter = generate();
@@ -146,7 +146,7 @@ class LetterGateShadowIntegrationTest {
         assertThat(letter.getQuote()).isEqualTo(USER_WORD);
         assertThat(letter.getSafetyPolicy()).isNull();
         verify(judge, times(1)).judge(any(), any(), anyList(), anyList());
-        verify(verifier, times(1)).verify(any(), any(), any());
+        verify(verifier, times(1)).verify(any(), any(), any(), any());
         verify(writer, never()).writeBody(any(), any(), anyList());
     }
 

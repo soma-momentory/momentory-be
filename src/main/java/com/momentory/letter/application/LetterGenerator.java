@@ -31,6 +31,7 @@ import com.momentory.letter.infrastructure.LetterActionRepository;
 import com.momentory.letter.infrastructure.LetterRepository;
 import com.momentory.letter.infrastructure.ai.GeminiLetterVerifier;
 import com.momentory.letter.infrastructure.ai.GeminiLetterWriter;
+import com.momentory.letter.infrastructure.ai.GeminiRiskJudge.PastDiary;
 import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.NeedActionCatalog;
 import com.momentory.retrospect.domain.Needs;
@@ -194,7 +195,7 @@ public class LetterGenerator {
             logGate("on", m, a, "FAILED", "-", 0);
             return Optional.empty();
         }
-        Closed closed = gate.ablation().verify() ? close(m, policy, draft.get(), true)
+        Closed closed = gate.ablation().verify() ? close(m, policy, draft.get(), true, assessor.pastForVerifier(letter))
                 : new Closed(draft.get(), "SKIPPED", 0); // 비교 실험 P − 검증기
         logGate("on", m, a, closed.draft().status().name(), closed.verdict(), closed.regenerations());
         return Optional.of(closed.draft());
@@ -209,7 +210,8 @@ public class LetterGenerator {
         Optional<Draft> current = m.crisis() ? Optional.of(quiet(m)) : fullDraft(m);
         String verdict = "-";
         if (current.isPresent() && current.get().status() == LetterStatus.READY) {
-            verdict = verifier.verify(m, LetterPolicy.NORMAL, verifierDraft(current.get())).outcome().name();
+            verdict = verifier.verify(m, LetterPolicy.NORMAL, verifierDraft(current.get()),
+                    assessor.pastForVerifier(letter)).outcome().name();
         }
         logGate("shadow", m, a, current.map(d -> d.status().name()).orElse("FAILED"), verdict, 0);
         return current;
@@ -233,7 +235,8 @@ public class LetterGenerator {
                     p.source() != NeedsSource.DEFAULT, p.ids());
         }
         Draft draft = withActions(body.get(), m, p.needs(), p.source(), p.source() != NeedsSource.DEFAULT, p.ids());
-        return gate.ablation().verify() ? close(m, policy, draft, false).draft() : draft;
+        return gate.ablation().verify() ? close(m, policy, draft, false, assessor.pastForVerifier(letter)).draft()
+                : draft;
     }
 
     /** 게이트 ON · 다른 쪽이 만드는 중이라 이번에만 보여 주는 편지. */
@@ -294,11 +297,12 @@ public class LetterGenerator {
      * 인용 없는 고정 기본 편지다. 설계서와 다른 점: 위반이 작은 일 맞춤 제목에만 있으면 본문을 다시 쓰지 않고
      * 정본 제목으로 바꿔 닫는다 — 정본 제목은 연결표에서 검토를 마친 문장이라 다시 쓰기보다 싸고 확실하다.
      */
-    private Closed close(LetterMaterials m, LetterPolicy policy, Draft draft, boolean background) {
-        LetterVerification v = verify(m, policy, draft, background);
+    private Closed close(LetterMaterials m, LetterPolicy policy, Draft draft, boolean background,
+            List<PastDiary> past) {
+        LetterVerification v = verify(m, policy, draft, background, past);
         if (background && v.outcome() == LetterVerification.Outcome.UNUSABLE) {
             pause(); // V4 — 문제가 편지가 아니라 검증 호출에 있으니 검증만 한 번 더
-            v = verify(m, policy, draft, true);
+            v = verify(m, policy, draft, true, past);
         }
         String verdict = v.outcome().name() + "(" + v.rules() + ")";
         switch (v.outcome()) {
@@ -333,7 +337,7 @@ public class LetterGenerator {
         if (titlesFlagged) {
             second = canonicalTitles(second);
         }
-        LetterVerification again = verify(m, policy, second, true);
+        LetterVerification again = verify(m, policy, second, true, past);
         String both = verdict + ">" + again.outcome().name() + "(" + again.rules() + ")";
         if (again.outcome() == LetterVerification.Outcome.PASS) {
             return new Closed(second, both, 1);
@@ -344,9 +348,10 @@ public class LetterGenerator {
         return new Closed(fixedFallback(m, policy, second), both, 1);
     }
 
-    private LetterVerification verify(LetterMaterials m, LetterPolicy policy, Draft draft, boolean background) {
+    private LetterVerification verify(LetterMaterials m, LetterPolicy policy, Draft draft, boolean background,
+            List<PastDiary> past) {
         GeminiLetterVerifier.Draft target = verifierDraft(draft);
-        return background ? verifier.verify(m, policy, target) : verifier.verifyOnOpen(m, policy, target);
+        return background ? verifier.verify(m, policy, target, past) : verifier.verifyOnOpen(m, policy, target, past);
     }
 
     /** 검증기에 넘기는 글 — 작은 일은 모델이 다시 쓴 맞춤 제목만(정본 제목은 연결표에서 검토를 마쳤다). */

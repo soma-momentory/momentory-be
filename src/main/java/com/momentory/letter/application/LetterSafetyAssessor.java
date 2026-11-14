@@ -113,6 +113,15 @@ class LetterSafetyAssessor {
                 : new LetterSafetyGate.Decision(LetterPolicy.NORMAL, "B1-none");
     }
 
+    /**
+     * 생성 뒤 검증기에 넘길 지난 일기 — 판정자와 같은 범위(같은 날 수 · 하루치 앞부분)다. 제거 실험 P − 지난 일기면 비운다.
+     */
+    List<PastDiary> pastForVerifier(Letter letter) {
+        return properties.ablation().history() ? pastDiaries(letter).stream()
+                .map(d -> new PastDiary(DayBoundary.toLocalDate(d.getCreatedAt()), cut(d.getOriginal())))
+                .toList() : List.of();
+    }
+
     /** 일기 날 전 N일의 일기, 날짜순(이 편지의 일기는 뺀다). */
     private List<Diary> pastDiaries(Letter letter) {
         return diaryRepository.findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(

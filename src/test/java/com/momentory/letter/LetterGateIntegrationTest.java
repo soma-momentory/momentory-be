@@ -138,20 +138,20 @@ class LetterGateIntegrationTest {
 
     @Test
     void vt1_passingLetterIsDeliveredAsIs() {
-        when(verifier.verify(any(), any(), any())).thenReturn(PASS);
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(PASS);
 
         Letter letter = generate();
 
         assertThat(letter.getStatus()).isEqualTo(LetterStatus.READY);
         assertThat(letter.getQuote()).isEqualTo(USER_WORD);
         assertThat(letter.getSafetyPolicy()).isEqualTo(LetterPolicy.NORMAL);
-        verify(verifier, times(1)).verify(any(), any(), any());
+        verify(verifier, times(1)).verify(any(), any(), any(), any());
         verify(writer, times(1)).writeBody(any(), any(), anyList());
     }
 
     @Test
     void vt2_minorViolationIsRewrittenOnceWithFixNotes() {
-        when(verifier.verify(any(), any(), any())).thenReturn(MINOR, PASS);
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(MINOR, PASS);
 
         Letter letter = generate();
 
@@ -162,7 +162,7 @@ class LetterGateIntegrationTest {
 
     @Test
     void vt3_stillFailingAfterRewriteClosesWithFixedFallbackWithoutQuote() {
-        when(verifier.verify(any(), any(), any())).thenReturn(MINOR, MINOR);
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(MINOR, MINOR);
 
         Letter letter = generate();
 
@@ -174,7 +174,7 @@ class LetterGateIntegrationTest {
 
     @Test
     void vt5_majorR1ClosesQuietWithoutRewrite() {
-        when(verifier.verify(any(), any(), any())).thenReturn(LetterVerification.of(List.of(
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(LetterVerification.of(List.of(
                 new Violation("R1", true, Target.INSIGHT, "잘하고 싶었기", null))));
 
         Letter letter = generate();
@@ -186,13 +186,13 @@ class LetterGateIntegrationTest {
 
     @Test
     void vt6_verifierUnavailableTwiceInBackgroundGivesFixedFallback() {
-        when(verifier.verify(any(), any(), any())).thenReturn(LetterVerification.unusable());
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(LetterVerification.unusable());
 
         Letter letter = generate();
 
         assertThat(letter.getStatus()).isEqualTo(LetterStatus.FALLBACK);
         assertThat(letter.getQuote()).isNull();
-        verify(verifier, times(2)).verify(any(), any(), any());
+        verify(verifier, times(2)).verify(any(), any(), any(), any());
         verify(writer, times(1)).writeBody(any(), any(), anyList());
     }
 
@@ -200,7 +200,7 @@ class LetterGateIntegrationTest {
     void vt7_openPathVerifierUnavailableOnceGivesFixedFallback() throws Exception {
         when(writer.writeBody(any(), any(), anyList())).thenReturn(Optional.empty()); // 뒤에서 실패 → 열 때 보충
         when(writer.writeBodyOnOpen(any(), any())).thenReturn(Optional.of(BODY));
-        when(verifier.verifyOnOpen(any(), any(), any())).thenReturn(LetterVerification.unusable());
+        when(verifier.verifyOnOpen(any(), any(), any(), any())).thenReturn(LetterVerification.unusable());
         Letter letter = generate();
         assertThat(letter.getStatus()).isEqualTo(LetterStatus.FAILED);
 
@@ -208,7 +208,7 @@ class LetterGateIntegrationTest {
                 .andExpect(jsonPath("$.status").value("FALLBACK"))
                 .andExpect(jsonPath("$.quote").doesNotExist());
 
-        verify(verifier, times(1)).verifyOnOpen(any(), any(), any());
+        verify(verifier, times(1)).verifyOnOpen(any(), any(), any(), any());
         verify(judge, times(1)).judge(any(), any(), anyList(), anyList()); // 열 때는 판정자를 다시 부르지 않는다
     }
 
@@ -220,7 +220,7 @@ class LetterGateIntegrationTest {
         String tailored = "엄마와 언성이 높아진 일의 사실·내 해석·다른 해석을 한 줄씩 적기";
         when(writer.pickNeeds(any())).thenReturn(List.of(Needs.byWord("성찰").orElseThrow()));
         when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(new ActionPick(List.of(tailorableId), tailored)));
-        when(verifier.verify(any(), any(), any())).thenReturn(LetterVerification.of(List.of(
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(LetterVerification.of(List.of(
                 new Violation("R6", true, Target.ACTION_TITLE, "엄마와 언성이 높아진 일", "사건을 넣지 않는다"))));
 
         Letter letter = generate();
@@ -243,7 +243,7 @@ class LetterGateIntegrationTest {
         assertThat(letter.getStatus()).isEqualTo(LetterStatus.QUIET);
         assertThat(letter.getSafetyPolicy()).isEqualTo(LetterPolicy.QUIET);
         verify(writer, never()).writeBody(any(), any(), anyList());
-        verify(verifier, never()).verify(any(), any(), any());
+        verify(verifier, never()).verify(any(), any(), any(), any());
     }
 
     @Test
@@ -255,7 +255,7 @@ class LetterGateIntegrationTest {
         pastDiary("다 끝내고 싶다는 생각만 들었다.");
         when(writer.writeBody(any(), any(), anyList())).thenReturn(Optional.empty());
         when(writer.writeBodyOnOpen(any(), any())).thenReturn(Optional.of(BODY));
-        when(verifier.verifyOnOpen(any(), any(), any())).thenReturn(PASS);
+        when(verifier.verifyOnOpen(any(), any(), any(), any())).thenReturn(PASS);
         Letter failed = generate();
         assertThat(failed.getStatus()).isEqualTo(LetterStatus.FAILED);
         assertThat(failed.getSafetyPolicy()).isEqualTo(LetterPolicy.GENTLE);
@@ -279,7 +279,7 @@ class LetterGateIntegrationTest {
         when(judge.judge(any(), any(), anyList(), anyList())).thenReturn(Optional.empty());
         when(writer.pickNeeds(any())).thenReturn(List.of(Needs.byWord("휴식").orElseThrow()));
         when(writer.pickActionIds(any(), anyList())).thenReturn(Optional.of(new ActionPick(List.of(), "")));
-        when(verifier.verify(any(), any(), any())).thenReturn(PASS);
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(PASS);
 
         Letter letter = generate();
 

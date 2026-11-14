@@ -163,8 +163,6 @@ public class GeminiRiskJudge {
     static String prompt(String diary, List<String> userWords, List<PastDiary> past) {
         String words = userWords.isEmpty() ? "없음"
                 : userWords.stream().map(w -> "- " + w).collect(Collectors.joining("\n"));
-        String pastText = past.isEmpty() ? "없음"
-                : past.stream().map(p -> "[" + p.date() + "] " + p.text()).collect(Collectors.joining("\n"));
         return """
                 [오늘 글 — 일기]
                 %s
@@ -174,7 +172,12 @@ public class GeminiRiskJudge {
 
                 [지난 일기 — 날짜순, 앞부분만]
                 %s
-                """.formatted(diary == null || diary.isBlank() ? "없음" : diary, words, pastText);
+                """.formatted(diary == null || diary.isBlank() ? "없음" : diary, words, pastText(past));
+    }
+
+    static String pastText(List<PastDiary> past) {
+        return past.isEmpty() ? "없음"
+                : past.stream().map(p -> "[" + p.date() + "] " + p.text()).collect(Collectors.joining("\n"));
     }
 
     /** 모르는 등급 · 흐름 값이 하나라도 있으면 판정을 쓰지 않는다(모르는 값을 none 으로 묻지 않는다). */

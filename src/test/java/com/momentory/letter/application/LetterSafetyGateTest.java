@@ -55,6 +55,31 @@ class LetterSafetyGateTest {
     }
 
     @Test
+    @DisplayName("불확실해도 위험 쪽 신호는 쓴다 — 오늘 CAUTION + 지난 RISK + 불확실이면 악화를 배제하지 않아 QUIET(D4+D6)")
+    void uncertainKeepsRiskSignals() {
+        assertDecision(input(N, N, Optional.of(new RiskJudgment(C, C, R, Trajectory.SWITCH, true, List.of())), false),
+                "QUIET", "D4+D6");
+        // 확실한 판정이 같은 칸을 말하면 흐름을 그대로 믿는다(악화가 아니면 GENTLE)
+        assertDecision(input(N, N, judged(C, C, R, Trajectory.SWITCH), true), "GENTLE", "D8");
+    }
+
+    @Test
+    @DisplayName("「지금 > 언급」 모순은 버리지 않고 언급을 지금까지 올려 읽는다 — 위험을 더 말한 판정이 정책을 낮추지 않음")
+    void contradictionIsReadUpward() {
+        assertDecision(input(C, N, judged(N, N, R, Trajectory.ESCALATION), true), "QUIET", "D6");
+        assertDecision(input(C, N, judged(C, N, R, Trajectory.ESCALATION), true), "QUIET", "D6");
+        assertDecision(input(R, N, judged(C, N, N), true), "GENTLE", "D7");
+    }
+
+    @Test
+    @DisplayName("past-only-policy QUIET 이면 지난 RISK 에 오늘 CAUTION 이 붙어도 QUIET(D8)")
+    void pastOnlyQuietIsNotLoweredByTodaySignal() {
+        LetterSafetyGate.Input in = input(N, N, judged(C, C, R), true);
+        assertThat(LetterSafetyGate.decide(in, LetterPolicy.QUIET))
+                .isEqualTo(new LetterSafetyGate.Decision(LetterPolicy.QUIET, "D8"));
+    }
+
+    @Test
     @DisplayName("T7 판정 오늘 현재 RISK → QUIET(D5)")
     void currentRisk() {
         assertDecision(input(N, N, judged(R, R, N), true), "QUIET", "D5");

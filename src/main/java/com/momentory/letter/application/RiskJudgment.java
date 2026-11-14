@@ -29,17 +29,21 @@ public record RiskJudgment(SafetyLevel todayCurrent, SafetyLevel todayMentioned,
     }
 
     /**
-     * 결정표가 믿고 써도 되는가(설계서 6.2절). 불확실하다고 했거나, 지금 이어지는 위험이 오늘 글의 위험 언급보다
-     * 높거나(모순), NONE 보다 높은 칸에 원문 그대로인 근거가 없으면 쓰지 않는다. 쓸 수 없는 판정은 결정표의
-     * D4 줄로 가서 NORMAL 이 되지 않는다.
+     * 결정표가 판정을 그대로 믿고 써도 되는가(설계서 6.2절). 불확실하다고 했거나 NONE 보다 높은 칸에 원문 그대로인
+     * 근거가 없으면 그대로 쓰지 않는다. 쓸 수 없는 판정도 버리지는 않고, 결정표가 위험 쪽 신호로만 쓴다(D4 보다
+     * 낮아지지 않는다). 「지금 &gt; 언급」 모순은 여기서 막지 않는다 — 결정표가 언급을 지금까지 올려 읽는다.
      */
     public boolean usable(Collection<String> todaySources, Collection<String> pastSources) {
-        if (uncertain || todayCurrent.ordinal() > todayMentioned.ordinal()) {
+        if (uncertain) {
             return false;
         }
         return grounded("todayCurrent", todayCurrent, todaySources)
                 && grounded("todayMentioned", todayMentioned, todaySources)
                 && grounded("historyRisk", historyRisk, pastSources);
+    }
+
+    RiskJudgment withTrajectory(Trajectory t) {
+        return new RiskJudgment(todayCurrent, todayMentioned, historyRisk, t, uncertain, evidence);
     }
 
     private boolean grounded(String field, SafetyLevel level, Collection<String> sources) {

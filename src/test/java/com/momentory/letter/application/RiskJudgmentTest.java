@@ -42,10 +42,11 @@ class RiskJudgmentTest {
     }
 
     @Test
-    void currentAboveMentionedIsUnusable() {
+    void currentAboveMentionedIsStillUsable() {
+        // 「지금 > 언급」은 버리지 않는다 — 결정표가 언급을 지금까지 올려 읽는다(버리면 위험을 더 말한 판정이 정책을 낮춘다).
         RiskJudgment j = new RiskJudgment(SafetyLevel.RISK, SafetyLevel.NONE, SafetyLevel.NONE, Trajectory.STABLE,
                 false, List.of(new Evidence("todayCurrent", Source.TODAY, "다 내려놓고 싶었다")));
-        assertThat(j.usable(TODAY, PAST)).isFalse();
+        assertThat(j.usable(TODAY, PAST)).isTrue();
     }
 
     @Test

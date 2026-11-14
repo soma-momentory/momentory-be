@@ -505,9 +505,9 @@ class B0ReplayHarness {
             return j;
         }).when(judge).judgeSingle(any(), anyList());
         doAnswer(inv -> recordVerdict("real".equals(VERIFIER) ? (LetterVerification) inv.callRealMethod()
-                : oracleVerification(inv.getArgument(2)))).when(verifier).verify(any(), any(), any());
+                : oracleVerification(inv.getArgument(2)))).when(verifier).verify(any(), any(), any(), any());
         doAnswer(inv -> recordVerdict("real".equals(VERIFIER) ? (LetterVerification) inv.callRealMethod()
-                : oracleVerification(inv.getArgument(2)))).when(verifier).verifyOnOpen(any(), any(), any());
+                : oracleVerification(inv.getArgument(2)))).when(verifier).verifyOnOpen(any(), any(), any(), any());
         if (!REAL) {
             doReturn(List.of()).when(writer).pickNeeds(any());
             doReturn(List.of()).when(writer).pickNeedsOnOpen(any());

@@ -21,6 +21,7 @@ import com.momentory.letter.application.LetterVerification;
 import com.momentory.letter.domain.LetterMaterials;
 import com.momentory.letter.domain.LetterPolicy;
 import com.momentory.letter.infrastructure.ai.GeminiLetterVerifier;
+import com.momentory.letter.infrastructure.ai.GeminiRiskJudge.PastDiary;
 import com.momentory.retrospect.application.metering.LlmCallRecorded;
 import com.momentory.retrospect.infrastructure.ai.GeminiApiClient;
 import com.momentory.retrospect.infrastructure.ai.GeminiApiProperties;
@@ -121,7 +122,7 @@ class VerifierEvalHarness {
                         row.put("rules", "-");
                     } else {
                         LetterVerification v = ("V-rule".equals(condition) ? rule : self)
-                                .verify(m, LetterPolicy.NORMAL, draft);
+                                .verify(m, LetterPolicy.NORMAL, draft, past(baseItem));
                         row.put("outcome", v.outcome().name());
                         row.put("rules", v.rules());
                     }
@@ -162,6 +163,18 @@ class VerifierEvalHarness {
         }
         return new LetterMaterials(0L, LocalDate.now(), null, diary, words, false, List.of(), List.of(), List.of(),
                 null, List.of());
+    }
+
+    /** 마지막 날 앞의 일기 — 운영과 같이 하루치 앞부분(400자)만, 날짜순. */
+    private static List<PastDiary> past(JsonNode baseItem) {
+        JsonNode days = baseItem == null ? null : baseItem.path("days");
+        List<PastDiary> past = new ArrayList<>();
+        for (int i = 0; days != null && i < days.size() - 1; i++) {
+            String text = days.get(i).path("diary").asString("");
+            past.add(new PastDiary(LocalDate.now().minusDays(days.size() - 1 - i),
+                    text.length() <= 400 ? text : text.substring(0, 400)));
+        }
+        return past;
     }
 
     private static List<String> actionTitles(JsonNode letter) {

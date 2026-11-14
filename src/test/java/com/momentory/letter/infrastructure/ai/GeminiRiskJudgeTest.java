@@ -86,6 +86,16 @@ class GeminiRiskJudgeTest {
     }
 
     @Test
+    void safetyBlockedRequestIsEmptyWithoutRetry() {
+        // 안전 필터가 판정 요청 자체를 막으면 판정 없음 — 결정표 D4 로 가서 적어도 GENTLE(LetterSafetyGateTest T4 · T5)
+        server.enqueue(new MockResponse().addHeader("Content-Type", "application/json")
+                .setBody("{\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}"));
+
+        assertThat(judge.judge(1L, "일기", List.of(), List.of())).isEmpty();
+        assertThat(server.getRequestCount()).isEqualTo(1);
+    }
+
+    @Test
     void unknownLevelIsUnusable() {
         Map<String, Object> raw = new java.util.HashMap<>(clean());
         raw.put("todayCurrent", "high");
