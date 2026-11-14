@@ -219,8 +219,10 @@ public class LetterGenerator {
 
     /** 게이트 ON · 열 때 보충 — 판정자를 부르지 않는다(8초). 뒤에서 남긴 정책이 있으면 그것을 쓴다. */
     private Draft guardedOpenDraft(Letter letter, LetterMaterials m) {
-        LetterPolicy policy = openPolicy(letter, m);
+        LetterSafetyAssessor.Assessment a = openAssessment(letter, m);
+        LetterPolicy policy = a.policy();
         if (policy == LetterPolicy.QUIET) {
+            logGate("on-open", m, a, "QUIET", "-", 0);
             return quiet(m, LetterPolicy.QUIET);
         }
         CompletableFuture<OpenPick> pick = CompletableFuture
@@ -231,12 +233,16 @@ public class LetterGenerator {
                 .map(b -> applyPolicy(b, policy));
         OpenPick p = pick.join();
         if (body.isEmpty()) { // 본문 실패 — AI 글이 없으니 검증할 것도 없다. 기본 편지로.
-            return withActions(applyPolicy(fallbackBody(m), policy), m, p.needs(), p.source(),
+            Draft fallback = withActions(applyPolicy(fallbackBody(m), policy), m, p.needs(), p.source(),
                     p.source() != NeedsSource.DEFAULT, p.ids());
+            logGate("on-open", m, a, fallback.status().name(), "-", 0);
+            return fallback;
         }
         Draft draft = withActions(body.get(), m, p.needs(), p.source(), p.source() != NeedsSource.DEFAULT, p.ids());
-        return gate.ablation().verify() ? close(m, policy, draft, false, assessor.pastForVerifier(letter)).draft()
-                : draft;
+        Closed closed = gate.ablation().verify() ? close(m, policy, draft, false, assessor.pastForVerifier(letter))
+                : new Closed(draft, "SKIPPED", 0);
+        logGate("on-open", m, a, closed.draft().status().name(), closed.verdict(), closed.regenerations());
+        return closed.draft();
     }
 
     /** 게이트 ON · 다른 쪽이 만드는 중이라 이번에만 보여 주는 편지. */
@@ -251,11 +257,17 @@ public class LetterGenerator {
     }
 
     private LetterPolicy openPolicy(Letter letter, LetterMaterials m) {
+        return openAssessment(letter, m).policy();
+    }
+
+    /** 열 때 쓸 정책과 로그 재료. 뒤에서 남긴 정책이 있으면 줄 이름을 stored 로 남긴다. */
+    private LetterSafetyAssessor.Assessment openAssessment(Letter letter, LetterMaterials m) {
+        LetterSafetyAssessor.Assessment a = assessor.assess(letter, m, false);
         if (m.crisis()) { // 안전 기록은 뒤에서 남긴 정책보다 늦게 생겼을 수 있다(P0-2 · P0-3)
-            return LetterPolicy.QUIET;
+            return a.withDecision(new LetterSafetyGate.Decision(LetterPolicy.QUIET, a.decision().row()));
         }
         LetterPolicy stored = letter.getSafetyPolicy();
-        return stored != null ? stored : assessor.assess(letter, m, false).policy();
+        return stored == null ? a : a.withDecision(new LetterSafetyGate.Decision(stored, "stored"));
     }
 
     private Optional<Draft> fullDraft(LetterMaterials m, LetterPolicy policy, List<String> fixes) {
