@@ -101,6 +101,19 @@ typesafe:
     read-timeout: ${TYPESAFE_READ_TIMEOUT:3s}
 
 momentory:
+  safety:
+    # 편지 안전 게이트(AI 안전성 설계서 5 · 6절). OFF 면 지금 경로 그대로다. 실제 사용자 일기를 판정자에
+    # 한 번 더 보내게 되므로, SHADOW · ON 으로 켜기 전에 처리방침 범위를 먼저 확인한다(설계서 5.9 · 12절).
+    letter-gate:
+      mode: ${LETTER_GATE_MODE:OFF}               # OFF | SHADOW(기록만) | ON(적용)
+      experiment: false                           # true 일 때만 past-only-policy NORMAL 허용(평가 하네스 전용)
+      past-only-policy: ${LETTER_GATE_PAST_ONLY_POLICY:GENTLE}
+      # 생성기(lite)와 다른 모델. test2 로 잰 모델에 고정한다. latest 별칭은 모델이 몰래 바뀌어 잰 수치가 무의미해진다.
+      judge-model: ${LETTER_GATE_JUDGE_MODEL:gemini-3.8-flash}
+      verifier-model: ${LETTER_GATE_VERIFIER_MODEL:gemini-3.8-flash}
+      past-diary-days: 7
+      past-diary-chars: 400
+      open-verify-timeout: 4s
   judge:
     # 턴 판단을 켤 사용자 id 목록(쉼표 구분). 비어 있으면 아무에게도 켜지 않는다.
     # 대화 원문이 TypeSafe 로 나가므로, 처리위탁 고지 전에는 테스트 계정과 동의한 참여자만 넣는다.

@@ -93,6 +93,10 @@
           "valueFrom": "/momentory/prod/GEMINI_API_KEY"
         },
         {
+          "name": "LETTER_GATE_MODE",
+          "valueFrom": "/momentory/prod/LETTER_GATE_MODE"
+        },
+        {
           "name": "APPLE_PRIVATE_KEY",
           "valueFrom": "/momentory/prod/APPLE_PRIVATE_KEY"
         }

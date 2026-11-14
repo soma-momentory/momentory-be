@@ -12,8 +12,8 @@ import java.util.regex.Pattern;
  * 스프링 애노테이션이 없는 순수 자바다 — 빈 등록은 설정 계층이 한다.
  *
  * <p><b>주의</b>: 아래 키워드 목록은 원본 docstring 이 밝힌 대로 임상 검수 전 시드다.
- * 부분일치라 오탐이 있다(예: "손목이 아파요" → imminent). 원본 동작을 그대로 재현하며,
- * 목록 교체는 임상 검수 후에 한다.
+ * 부분일치라 오탐이 있다. 「손목이 아파요」 같은 관용 표현 몇 가지만 {@link #IDIOMS} 로 좁게 뺐고,
+ * 목록 자체의 교체는 임상 검수 후에 한다.
  */
 public class SafetyPolicy {
 
@@ -23,6 +23,21 @@ public class SafetyPolicy {
             List.of("살기 싫", "다 끝내", "의미 없", "없어지고 싶", "혼자 견디", "너무 힘들어서");
     private static final List<String> PROFANITY =
             List.of("씨발", "시발", "개새", "좆", "닥쳐");
+
+    /**
+     * 위험과 무관한 관용 표현 · 다른 대상 — 키워드를 보기 전에 공백 없앤 글에서 지운다. 일부러 좁게 둔다:
+     * 「손목이 아프다」, 「손목터널」, 「목숨을 걸고 새로고침」 같은 꼴만이다. 과거 언급(「작년엔 죽고 싶었다」)이나
+     * 문맥으로만 가를 수 있는 말(「사라지고 싶었다」, 「너무 힘들어서」)은 여기서 다루지 않는다.
+     */
+    private static final List<Pattern> IDIOMS = List.of(
+            Pattern.compile("손목(이|도)?(너무|좀|계속|자꾸|많이|살짝|조금|약간)?(아프|아파|아팠|시큰|저리|저려|저렸)"),
+            Pattern.compile("손목(터널|보호대|받침|시계|밴드|스트레칭|통증|염좌)"),
+            Pattern.compile("목숨(을|까지)?걸(고|었|어)"));
+    /** 같은 글에 번지점프 같은 활동이 있을 때만, 뛰어내리는 「순간」을 말한 꼴을 지운다(「뛰어내리고 싶다」는 남는다). */
+    private static final Pattern JUMP_ACTIVITY = Pattern.compile("번지점프|스카이다이빙|다이빙대|패러글라이딩|낙하산");
+    private static final Pattern JUMP_MOMENT = Pattern.compile("뛰어내(릴|렸을|리는|린|리기)(때|순간|직전|전)");
+    /** 자해 · 죽음과 이어지는 말이 같은 글에 하나라도 있으면 관용 표현을 지우지 않는다(「손목이 아파도 긋고 싶다」). */
+    private static final Pattern HARM = Pattern.compile("긋|그었|그어|칼|커터|면도|상처|피가|피를|자해|끊|죽|버리고싶|끝내");
 
     public static final String FLAG_CRISIS = "crisis_expression";
     public static final String FLAG_PROFANITY = "profanity";
@@ -64,7 +79,8 @@ public class SafetyPolicy {
      * imminent 와 risk 는 배타(elif), profanity 는 별도 축이라 caution 으로 병합된다.
      */
     public ScanResult scan(String text) {
-        String t = withoutWhitespace(text == null ? "" : text);
+        String raw = withoutWhitespace(text == null ? "" : text);
+        String t = withoutIdioms(raw);
         List<String> flags = new ArrayList<>();
         SafetyLevel level = SafetyLevel.NONE;
 
@@ -75,11 +91,22 @@ public class SafetyPolicy {
             level = SafetyLevel.RISK;
             flags.add(FLAG_CRISIS);
         }
-        if (containsAny(t, PROFANITY)) {
+        if (containsAny(raw, PROFANITY)) {
             flags.add(FLAG_PROFANITY);
             level = SafetyLevel.max(level, SafetyLevel.CAUTION);
         }
         return new ScanResult(level, flags);
+    }
+
+    private static String withoutIdioms(String spaceless) {
+        if (HARM.matcher(spaceless).find()) {
+            return spaceless;
+        }
+        String t = spaceless;
+        for (Pattern idiom : IDIOMS) {
+            t = idiom.matcher(t).replaceAll("·");
+        }
+        return JUMP_ACTIVITY.matcher(t).find() ? JUMP_MOMENT.matcher(t).replaceAll("·") : t;
     }
 
     /** 키워드도 공백을 제거해서 비교한다(사용자가 "죽 고 싶 다"처럼 띄어써도 잡힌다). */

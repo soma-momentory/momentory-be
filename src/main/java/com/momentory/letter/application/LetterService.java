@@ -12,6 +12,7 @@ import com.momentory.actioncard.domain.ActionCard;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.letter.domain.Letter;
 import com.momentory.letter.domain.LetterAction;
+import com.momentory.letter.domain.LetterPolicy;
 import com.momentory.letter.domain.LetterStatus;
 import com.momentory.letter.infrastructure.LetterActionRepository;
 import com.momentory.letter.infrastructure.LetterRepository;
@@ -139,7 +140,7 @@ public class LetterService {
             // 작은 일은 싣지 않는다. 다음에 열면 저장된 편지가 작은 일과 함께 나간다.
             LetterGenerator.Draft d = unsaved.get();
             return new LetterView(letter.getId(), letter.getLetterDate(), d.status(), d.quote(), d.insight(),
-                    d.tonightQuestion(), List.of(), helplines(d.status()), letter.isNewOn(today),
+                    d.tonightQuestion(), List.of(), helplines(d.status(), d.policy()), letter.isNewOn(today),
                     letter.getOpenedAt());
         }
         Letter fresh = letterRepository.findById(letter.getId()).orElseThrow(LetterNotFoundException::new);
@@ -154,10 +155,14 @@ public class LetterService {
                 letter.getInsight(), letter.getTonightQuestion(),
                 actions.stream().map(a -> new LetterView.Action(a.getPosition(), a.getTitle(), a.getSource(),
                         a.isChosen(), a.getWhenLabel(), a.getScheduleId(), a.getRemindAt())).toList(),
-                helplines(letter.getStatus()), letter.isNewOn(today), letter.getOpenedAt());
+                helplines(letter.getStatus(), letter.getSafetyPolicy()), letter.isNewOn(today), letter.getOpenedAt());
     }
 
-    private List<String> helplines(LetterStatus status) {
-        return status == LetterStatus.QUIET ? safetyPolicy.resources() : List.of();
+    /** 조용한 편지는 도움받을 곳 전부, 안전 게이트가 조심스럽게(GENTLE) 쓴 편지는 첫 줄(24시간 상담) 하나. */
+    private List<String> helplines(LetterStatus status, LetterPolicy policy) {
+        if (status == LetterStatus.QUIET) {
+            return safetyPolicy.resources();
+        }
+        return policy == LetterPolicy.GENTLE ? safetyPolicy.resources().subList(0, 1) : List.of();
     }
 }

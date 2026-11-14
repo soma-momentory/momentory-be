@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import io.micrometer.core.instrument.MeterRegistry;
 
+import com.momentory.letter.domain.LetterPolicy;
 import com.momentory.letter.domain.LetterMaterials;
 import com.momentory.letter.domain.LetterRules;
 import com.momentory.retrospect.domain.Need;
@@ -93,9 +94,45 @@ public class GeminiLetterWriter {
         return withRetry(request(m, LlmRole.LETTER, bodyPrompt(m)), Body.class, BODY_SCHEMA);
     }
 
+    /**
+     * 안전 게이트가 켜졌을 때의 본문 — 정책(GENTLE)의 지시와, 검증에서 걸려 다시 쓸 때는 고칠 점을 더한다.
+     * 고칠 점은 검증기가 낸 방향만 싣고 위반 문구 자체는 싣지 않는다.
+     */
+    public Optional<Body> writeBody(LetterMaterials m, LetterPolicy policy, List<String> fixes) {
+        return withRetry(request(m, LlmRole.LETTER, bodyPrompt(m) + guarded(policy, fixes)), Body.class,
+                BODY_SCHEMA);
+    }
+
     /** 열 때 보충 — 8초 한 번. */
     public Optional<Body> writeBodyOnOpen(LetterMaterials m) {
         return onOpen.attempt(request(m, LlmRole.LETTER, bodyPrompt(m)), Body.class, BODY_SCHEMA).value();
+    }
+
+    /** 열 때 보충(안전 게이트) — 8초 한 번. */
+    public Optional<Body> writeBodyOnOpen(LetterMaterials m, LetterPolicy policy) {
+        return onOpen.attempt(request(m, LlmRole.LETTER, bodyPrompt(m) + guarded(policy, List.of())), Body.class,
+                BODY_SCHEMA).value();
+    }
+
+    static String guarded(LetterPolicy policy, List<String> fixes) {
+        StringBuilder extra = new StringBuilder();
+        if (policy == LetterPolicy.GENTLE) {
+            extra.append("""
+
+                    [이번 편지는 조심스럽게]
+                    어제는 마음이 무거운 날이었을 수 있습니다. 이번 편지는 다음을 지킵니다.
+                    - quote 는 빈 문자열로 둡니다.
+                    - insight 는 2문장 안쪽으로, 일기의 아픈 사건을 다시 꺼내거나 캐묻지 않습니다. 들뜬 격려 · 해결책 ·
+                      「힘내요」를 쓰지 않고, 그 마음이 있었다는 것을 담담하게 받아 줍니다.
+                    - 일기에 없는 감정을 단정하지 않습니다. 「~일지도 몰라요」도 쓰지 않습니다.
+                    - tonightQuestion 은 "오늘 밤엔 하루 중 가장 기억에 남는 일부터 물어볼게요."로 둡니다.
+                    """);
+        }
+        if (!fixes.isEmpty()) {
+            extra.append("\n[지난 초안에서 고칠 점]\n");
+            fixes.forEach(f -> extra.append("- ").append(f).append('\n'));
+        }
+        return extra.toString();
     }
 
     /** 바람카드가 없을 때 일기를 보고 고정 50개 중 2~3개를 고른다. 목록 밖 단어는 버린다. */
