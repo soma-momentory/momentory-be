@@ -40,11 +40,16 @@ import com.momentory.retrospect.domain.judgment.TurnJudgment;
  *     저항으로 세지 않는다. 이야기 수에 따라 새 이야기를 막지 않는다(사건은 여전히 둘까지 뽑는다).
  *     들어 달라고 한 바로 그 턴에는 서버가 「묻지 않고 듣겠다」고 먼저 답한다 — 문장 생성 모델에 맡기면 요청을 해석하거나
  *     되풀이해서("그저 털어놓고 싶었던 거군요") 사용자가 같은 요청을 다시 해야 했다.
+ * <li>v10: v9 가운데 둘을 되돌렸다 — 마음을 들은 뒤의 질문을 서버가 세어 멈추던 것(답이 깊어질 때만, 상한 3)과
+ *     마무리 제안을 다시 내던 것. 한 걸음씩 더 안쪽으로 묻는 것은 v8 처럼 문장 생성 모델에 맡기고, 막을 것은
+ *     「같은 내용을 다시 묻는 것」 하나로 좁혔다: 모델이 자기 질문이 앞에서 한 질문과 같은 것을 묻는지 함께 알리고,
+ *     그렇다면 그 질문을 버린다. v9 의 나머지(답을 얻지 못하면 마무리 제안 · 새 이야기는 바로 따라감 · 들어 달라는
+ *     요청에 먼저 답함 · 같은 문장의 받아주는 말을 잇달아 쓰지 않음)는 그대로다.
  * </ul>
  */
 public class StrategyPolicy {
 
-    public static final String VERSION = "v9";
+    public static final String VERSION = "v10";
 
     /** 한 대화에서 다루는 이야기 수 — 사건은 둘까지 뽑는다. */
     public static final int MAX_TOPICS = 2;
@@ -52,8 +57,6 @@ public class StrategyPolicy {
     static final int YIELD_STREAK_LIMIT = 2;
     /** 저항이 반복된 사용자에게는 이만큼 턴을 건너 한 번만 묻는다. */
     static final int SPARSE_QUESTION_GAP = 2;
-    /** 마무리를 제안한 뒤 질문 없는 턴이 이만큼 이어지면 다시 제안한다. */
-    static final int REPROPOSE_AFTER_QUIET_TURNS = 2;
 
     /** 바바의 직전 말을 받아들이지 않은 반응 — 종류는 달라도 대처는 같다: 물러선다. */
     private static final Set<String> NOT_ACCEPTED = Set.of("correct_interpretation", "argue", "struggle_to_answer",
@@ -68,27 +71,18 @@ public class StrategyPolicy {
     private final double closeConfidence;
     private final int resistanceThreshold;
     private final int questionCap;
-    private final int followUpLimit;
 
     /**
      * @param minConfidence       이 값 미만의 신호는 없는 것으로 본다
      * @param closeConfidence     종료 요청은 이 값 이상일 때만 바로 마무리한다(회고는 하루 한 번이라 되돌릴 수 없다)
      * @param resistanceThreshold 저항이 이 횟수부터 질문을 줄이고 선택지 형태로 묻는다
      * @param questionCap         바바의 질문이 이 수에 닿으면 더 묻지 않고 마무리를 제안한다
-     * @param followUpLimit       한 이야기에서 그때의 마음을 들은 뒤 더 묻는 횟수의 상한 — 답이 깊어지는 동안에만 쓴다
      */
-    public StrategyPolicy(double minConfidence, double closeConfidence, int resistanceThreshold, int questionCap,
-            int followUpLimit) {
+    public StrategyPolicy(double minConfidence, double closeConfidence, int resistanceThreshold, int questionCap) {
         this.minConfidence = minConfidence;
         this.closeConfidence = closeConfidence;
         this.resistanceThreshold = resistanceThreshold;
         this.questionCap = questionCap;
-        this.followUpLimit = followUpLimit;
-    }
-
-    /** 마음을 들은 뒤의 질문을 세 번까지로 두는 기본 규칙. */
-    public StrategyPolicy(double minConfidence, double closeConfidence, int resistanceThreshold, int questionCap) {
-        this(minConfidence, closeConfidence, resistanceThreshold, questionCap, 3);
     }
 
     /** 고른 방침과, 이번 턴의 신호까지 반영한 값. 턴이 끝나면 {@link #settle} 로 마무리한다. */
@@ -179,12 +173,9 @@ public class StrategyPolicy {
         return chosen.withFocus(wrapUpDue(s) ? QuestionFocus.WRAP_UP : QuestionFocus.NONE);
     }
 
-    /**
-     * 지금 마무리를 제안할 차례인가 — 이 이야기에서 아직 제안하지 않았거나, 제안한 뒤 질문 없는 턴이 이어졌다.
-     * 더 물을 것이 없는데 제안도 다시 하지 않으면 바바가 같은 공감만 되풀이하고, 사용자는 끝낼 길을 찾지 못한다.
-     */
+    /** 지금 마무리를 제안할 차례인가 — 이야기마다 한 번만 제안한다. */
     private static boolean wrapUpDue(StrategySignals s) {
-        return !s.wrapUpProposed() || s.turnsSinceQuestion() >= REPROPOSE_AFTER_QUIET_TURNS;
+        return !s.wrapUpProposed();
     }
 
     /**
@@ -244,39 +235,26 @@ public class StrategyPolicy {
                 selfLed ? SPARSE_QUESTION_GAP : 0, 0);
     }
 
-    /** 방금 답변을 반영한 신호와, 이 이야기에서 더 물어도 되는지. */
-    public record FollowUp(StrategySignals signals, boolean mayAsk) {
-    }
-
     private static final Map<String, Integer> DEPTH_RANK = Map.of(
             "stage_1_2", 1, "stage_3", 2, "stage_4", 3, "stage_5_plus", 4);
 
     /**
-     * 방금 답변으로 이 이야기를 더 물어도 되는지 정한다 — 한 걸음 더 깊어질 기회는 주되, 이미 답한 사람에게 질문을 잇지 않는다.
-     *
-     * <ul>
-     * <li>그때의 마음을 아직 듣지 못했으면 물어도 된다.
-     * <li>마음을 들은 턴에는 한 번 더 물어도 된다(누구에게나 한 번).
-     * <li>그 뒤로는 방금 답이 이 이야기에서 가장 깊었던 답보다 더 깊어졌을 때만, 상한에 닿기 전까지 묻는다.
-     * </ul>
-     *
-     * 확신이 기준에 못 미치거나 판단할 수 없는 깊이는 깊어지지 않은 것으로 본다. 판단이 없는 턴(판단 모델 실패)도 같다.
+     * 방금 답변에서 본 것을 신호에 남긴다 — 이 이야기에서 그때의 마음을 들었는지와, 가장 깊었던 체험 깊이.
+     * 둘 다 방침을 고르는 데 쓰지 않는다. 마음을 들었는지는 문장 생성 모델이 들은 기분을 다시 묻지 않게 알리는 데 쓰고,
+     * 깊이는 기록으로만 남는다. 확신이 기준에 못 미치는 판단은 없는 것으로 본다.
      *
      * @param judgment 방금 답변의 판단. 없으면 null
      */
-    public FollowUp afterAnswer(StrategySignals s, TurnJudgment judgment) {
-        Integer rank = judgment == null ? null : DEPTH_RANK.get(signalOrEmpty(judgment, JudgmentItem.EXPERIENCING_DEPTH));
-        boolean heardNow = judgment != null && "clear".equals(signal(judgment, JudgmentItem.EMOTION_EXPRESSION));
+    public StrategySignals observeAnswer(StrategySignals s, TurnJudgment judgment) {
+        if (judgment == null) {
+            return s;
+        }
+        String depth = signal(judgment, JudgmentItem.EXPERIENCING_DEPTH);
+        Integer rank = depth == null ? null : DEPTH_RANK.get(depth);
         boolean deeper = rank != null && (s.deepestStage() == null || rank > s.deepestStage());
-        Integer deepest = deeper ? rank : s.deepestStage();
-        Integer asked = s.questionsAfterFeeling() == null && heardNow ? Integer.valueOf(0) : s.questionsAfterFeeling();
-        boolean mayAsk = asked == null || asked == 0 || (deeper && asked < followUpLimit);
-        return new FollowUp(s.withFollowUp(asked, deepest), mayAsk);
-    }
-
-    private String signalOrEmpty(TurnJudgment judgment, JudgmentItem item) {
-        String choice = signal(judgment, item);
-        return choice == null ? "" : choice;
+        boolean heardNow = "clear".equals(signal(judgment, JudgmentItem.EMOTION_EXPRESSION));
+        return s.withFollowUp(s.questionsAfterFeeling() == null && heardNow ? Integer.valueOf(0)
+                : s.questionsAfterFeeling(), deeper ? rank : s.deepestStage());
     }
 
     /** 방금 답이 질문에 답을 주지 못했는가 — 답하기 어려워했거나 질문과 맞지 않는 말을 했다. */

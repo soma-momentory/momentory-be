@@ -212,18 +212,29 @@ class RetrospectEngineStrategyTest {
     }
 
     @Test
-    void asksOnceMoreAfterTheFeelingThenLeavesTheStoryWhenTheAnswerIsNoDeeper() {
+    void keepsGoingOneStepDeeperAfterTheFeelingAsLongAsTheQuestionIsNew() {
         reply = wrote("오늘 발표를 하셨군요.", "발표했을 때 기분이 어땠어요?");
         say("오늘 발표했어.", plain());
-        // 마음을 들었다 — 한 걸음 더 안쪽 질문을 한 번은 한다.
         reply = wrote("좌절과 불안감이 남으셨군요.", "그때 스스로에게는 어떤 마음이 들었어요?");
-        ReplyDto deeper = say("좌절과 불안감이 남았어", heard());
-        assertThat(deeper.text()).isEqualTo("좌절과 불안감이 남으셨군요.\n그때 스스로에게는 어떤 마음이 들었어요?");
+        assertThat(say("좌절과 불안감이 남았어", heard()).text())
+                .isEqualTo("좌절과 불안감이 남으셨군요.\n그때 스스로에게는 어떤 마음이 들었어요?");
+        // 답이 깊어졌는지와 상관없이, 새로 묻는 질문이면 이어 묻는다 — 서버가 횟수로 끊지 않는다.
+        reply = wrote("스스로가 못나 보이셨군요.", "언제 그런 마음이 제일 커지나요?");
+        assertThat(say("내가 좀 못나 보였어", heard()).text())
+                .isEqualTo("스스로가 못나 보이셨군요.\n언제 그런 마음이 제일 커지나요?");
+    }
 
-        // 답이 더 깊어지지 않았다 — 모델이 질문을 또 써 와도 이 이야기는 더 묻지 않고 다른 기억으로 넘어간다.
-        reply = wrote("그런 마음이 드셨군요.", "언제 그런 마음이 제일 커지나요?");
-        ReplyDto moved = say("그냥 그런 마음이었어", heard());
-        assertThat(moved.text()).isEqualTo("그런 마음이 드셨군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+    @Test
+    void dropsAQuestionThatAsksTheSameThingAgain() {
+        reply = wrote("오늘 발표를 하셨군요.", "발표했을 때 기분이 어땠어요?");
+        say("오늘 발표했어.", plain());
+        // 모델이 스스로 「앞에서 한 질문과 같은 것을 묻는다」고 알린 질문은 내보내지 않고, 다른 기억으로 넘어간다.
+        reply = new StrategyReply("좌절과 불안감이 남으셨군요.", "그때 마음이 어떠셨나요?", false, false, "오늘의 일",
+                "none", List.of(), true, true);
+
+        ReplyDto said = say("좌절과 불안감이 남았어", heard());
+
+        assertThat(said.text()).isEqualTo("좌절과 불안감이 남으셨군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
         TurnJudgmentLog log = lastLog();
         assertThat(log.strategy().focus()).isEqualTo(QuestionFocus.OTHER_TOPIC);
         assertThat(log.askedFeeling()).isFalse();
@@ -239,19 +250,7 @@ class RetrospectEngineStrategyTest {
     }
 
     @Test
-    void keepsAskingWhileTheAnswersGetDeeper() {
-        say("오늘 발표했어.", plain());
-        say("좌절과 불안감이 남았어", heard());
-        reply = wrote("스스로가 못나 보이셨군요.", "언제 그런 마음이 제일 커지나요?");
-
-        ReplyDto said = say("내가 좀 못나 보였어", judged("continue", "none", "agree_or_elaborate", "clear", "stage_4"));
-
-        assertThat(said.text()).isEqualTo("스스로가 못나 보이셨군요.\n언제 그런 마음이 제일 커지나요?");
-        assertThat(state.strategySignals().questionsAfterFeeling()).isEqualTo(2);
-    }
-
-    @Test
-    void aNewStoryGetsItsOwnQuestionsAfterTheFirstOneIsSpent() {
+    void aNewStoryStartsWithoutTheFeelingHeard() {
         say("발표 망쳐서 허무해.", heard());
         reply = nothingMore("허무하셨군요.");
         say("그냥 다 허무했어", heard());
@@ -261,18 +260,6 @@ class RetrospectEngineStrategyTest {
 
         assertThat(second.text()).isEqualTo("엄마와 통화를 하셨군요.\n통화를 하고 나서 마음이 어땠어요?");
         assertThat(state.strategySignals().questionsAfterFeeling()).isNull();
-    }
-
-    @Test
-    void stillAsksForGroundsWhenTheUserWantedAnotherViewEvenAfterTheLimit() {
-        say("실망했어.", heard());
-        say("내가 한심했어.", heard());
-        reply = wrote("실망하셨군요.", "그렇게 생각하게 된 까닭이 있을까요?");
-
-        ReplyDto said = say("내가 잘못 생각하는 건가?", judged("continue", "other_view", "agree_or_elaborate", "clear"));
-
-        assertThat(said.text()).isEqualTo("실망하셨군요.\n그렇게 생각하게 된 까닭이 있을까요?");
-        assertThat(courses.getLast().type()).isEqualTo(StrategyType.REFRAME);
     }
 
     @Test

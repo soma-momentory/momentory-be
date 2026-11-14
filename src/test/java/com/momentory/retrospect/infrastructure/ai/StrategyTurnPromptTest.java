@@ -26,7 +26,7 @@ class StrategyTurnPromptTest {
     void leavesWhatToAskToTheWriterWithOnePrinciple() {
         String prompt = prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
 
-        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "더 안쪽으로 가지 않았으면 이어 묻지 않습니다", "발표 망쳐서 허무해.",
+        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "방금 짚은", "발표 망쳐서 허무해.",
                 "이미 말한 것을 다시 묻지 않습니다", "이유를 이미 말했는데 이유를 또 묻지 않습니다",
                 "언제 마무리할지는 서버가 정합니다");
         // 옛 고정 순서나 단계별로 정해 둔 질문은 없다.
@@ -91,6 +91,13 @@ class StrategyTurnPromptTest {
         assertThat(prompt(asks.withFeelingKnown(true)))
                 .contains("그때의 기분은 이미 들었습니다", "기분을 다시 묻지 않고", "방금 답변이 새 이야기가 아니라면");
         assertThat(prompt(asks)).doesNotContain("그때의 기분은 이미 들었습니다");
+    }
+
+    @Test
+    void asksTheWriterToFlagAQuestionThatRepeatsAnEarlierOne() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("repeatsEarlier", "말이 달라도 묻는 내용이 같으면", "서버가 내보내지 않습니다")
+                .doesNotContain("언제 멈출지는");
     }
 
     @Test
