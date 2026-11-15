@@ -479,8 +479,6 @@ class B0ReplayHarness {
                             Body.class, () -> (Optional<Body>) inv.callRealMethod())
                     : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY);
         }).when(writer).writeBody(any(), any(), anyList());
-        doAnswer(inv -> failLetter ? Optional.empty() : datasetLetter != null ? Optional.of(datasetBody())
-                : REAL ? inv.callRealMethod() : Optional.of(NEUTRAL_BODY)).when(writer).writeBodyOnOpen(any(), any());
         doAnswer(inv -> {
             Optional<RiskJudgment> j = switch (JUDGE) {
                 case "real" -> (Optional<RiskJudgment>) inv.callRealMethod();
@@ -506,8 +504,6 @@ class B0ReplayHarness {
         }).when(judge).judgeSingle(any(), anyList());
         doAnswer(inv -> recordVerdict("real".equals(VERIFIER) ? (LetterVerification) inv.callRealMethod()
                 : oracleVerification(inv.getArgument(2)))).when(verifier).verify(any(), any(), any(), any());
-        doAnswer(inv -> recordVerdict("real".equals(VERIFIER) ? (LetterVerification) inv.callRealMethod()
-                : oracleVerification(inv.getArgument(2)))).when(verifier).verifyOnOpen(any(), any(), any(), any());
         if (!REAL) {
             doReturn(List.of()).when(writer).pickNeeds(any());
             doReturn(List.of()).when(writer).pickNeedsOnOpen(any());

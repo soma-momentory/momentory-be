@@ -42,7 +42,7 @@ class GeminiRiskJudgeTest {
         GeminiApiClient client = new GeminiApiClient(RestClient.builder().baseUrl(properties.baseUrl()).build(),
                 mapper, e -> { }, properties);
         judge = new GeminiRiskJudge(client, new LetterGateProperties(LetterGateProperties.Mode.ON, false,
-                LetterPolicy.GENTLE, "judge-model-x", "verifier-model-y", 7, 400, Duration.ofSeconds(4)));
+                LetterPolicy.GENTLE, "judge-model-x", "verifier-model-y", 7, 400));
     }
 
     @AfterEach

@@ -48,7 +48,7 @@ import com.momentory.retrospect.domain.safety.SafetyPolicy;
  *   <li>뒤에서: 편지 본문(30초 + 1회 재시도) → 욕구(바람카드 것 또는 AI 추정) → 작은 일 번호. 본문이
  *       실패하면 FAILED 로 두고 열 때 다시 만든다.</li>
  *   <li>열 때: 본문과 「욕구 → 작은 일 번호」를 동시에, 호출마다 8초 한 번. 본문이 실패하면 기본 편지(FALLBACK)를
- *       저장한다.</li>
+ *       저장한다. 안전 게이트가 ON 이면 AI 를 부르지 않고 정책을 새긴 기본 편지를 바로 저장한다.</li>
  *   <li>회고 중 위기 안내가 나왔으면 두 길 모두 생성 모델을 부르지 않고 조용한 편지(QUIET)로 끝낸다.</li>
  * </ul>
  */
@@ -195,7 +195,7 @@ public class LetterGenerator {
             logGate("on", m, a, "FAILED", "-", 0);
             return Optional.empty();
         }
-        Closed closed = gate.ablation().verify() ? close(m, policy, draft.get(), true, assessor.pastForVerifier(letter))
+        Closed closed = gate.ablation().verify() ? close(m, policy, draft.get(), assessor.pastForVerifier(letter))
                 : new Closed(draft.get(), "SKIPPED", 0); // 비교 실험 P − 검증기
         logGate("on", m, a, closed.draft().status().name(), closed.verdict(), closed.regenerations());
         return Optional.of(closed.draft());
@@ -217,32 +217,19 @@ public class LetterGenerator {
         return current;
     }
 
-    /** 게이트 ON · 열 때 보충 — 판정자를 부르지 않는다(8초). 뒤에서 남긴 정책이 있으면 그것을 쓴다. */
+    /**
+     * 게이트 ON · 열 때 보충 — 판정자도 생성 모델도 부르지 않고 정책을 새긴 기본 편지를 바로 저장한다. 뒤에서 남긴
+     * 정책이 있으면 그것을, 없으면 판정 없는 줄(D4)을 쓴다. AI 본문을 쓰면 검증이 끝날 때까지 사용자가 기다려야
+     * 하는데, test2 에서 검증 호출은 중앙값 5.9초였고 4초 안에 끝난 것은 8~10%뿐이라 대부분 기본 편지로 닫혔다.
+     */
     private Draft guardedOpenDraft(Letter letter, LetterMaterials m) {
         LetterSafetyAssessor.Assessment a = openAssessment(letter, m);
-        LetterPolicy policy = a.policy();
-        if (policy == LetterPolicy.QUIET) {
+        if (a.policy() == LetterPolicy.QUIET) {
             logGate("on-open", m, a, "QUIET", "-", 0);
             return quiet(m, LetterPolicy.QUIET);
         }
-        CompletableFuture<OpenPick> pick = CompletableFuture
-                .supplyAsync(() -> openPick(m), OPEN_CALLS)
-                .completeOnTimeout(DEFAULT_PICK, OPEN_WAIT.toMillis(), TimeUnit.MILLISECONDS)
-                .exceptionally(e -> DEFAULT_PICK);
-        Optional<Draft> body = writer.writeBodyOnOpen(m, policy).flatMap(b -> checkedBody(b, m))
-                .map(b -> applyPolicy(b, policy));
-        OpenPick p = pick.join();
-        if (body.isEmpty()) { // 본문 실패 — AI 글이 없으니 검증할 것도 없다. 기본 편지로.
-            Draft fallback = withActions(applyPolicy(fallbackBody(m), policy), m, p.needs(), p.source(),
-                    p.source() != NeedsSource.DEFAULT, p.ids());
-            logGate("on-open", m, a, fallback.status().name(), "-", 0);
-            return fallback;
-        }
-        Draft draft = withActions(body.get(), m, p.needs(), p.source(), p.source() != NeedsSource.DEFAULT, p.ids());
-        Closed closed = gate.ablation().verify() ? close(m, policy, draft, false, assessor.pastForVerifier(letter))
-                : new Closed(draft, "SKIPPED", 0);
-        logGate("on-open", m, a, closed.draft().status().name(), closed.verdict(), closed.regenerations());
-        return closed.draft();
+        logGate("on-open", m, a, "DEFAULT", "-", 0); // AI 를 부르지 않은 기본 편지 — 본문 실패의 FALLBACK 과 구분한다
+        return defaultDraft(m, a.policy());
     }
 
     /** 게이트 ON · 다른 쪽이 만드는 중이라 이번에만 보여 주는 편지. */
@@ -251,9 +238,13 @@ public class LetterGenerator {
             return m.crisis() ? quiet(m) : fallback(m);
         }
         LetterPolicy policy = openPolicy(letter, m);
-        return policy == LetterPolicy.QUIET ? quiet(m, LetterPolicy.QUIET)
-                : withActions(applyPolicy(fallbackBody(m), policy), m, quickNeeds(m), quickSource(m), false,
-                        Optional.empty());
+        return policy == LetterPolicy.QUIET ? quiet(m, LetterPolicy.QUIET) : defaultDraft(m, policy);
+    }
+
+    /** 게이트 ON 의 기본 편지 — AI 호출 없이 정책을 새기고, 작은 일은 바람카드 욕구(없으면 「휴식」)의 대체 규칙으로. */
+    private Draft defaultDraft(LetterMaterials m, LetterPolicy policy) {
+        return withActions(applyPolicy(fallbackBody(m), policy), m, quickNeeds(m), quickSource(m), false,
+                Optional.empty());
     }
 
     private LetterPolicy openPolicy(Letter letter, LetterMaterials m) {
@@ -309,12 +300,11 @@ public class LetterGenerator {
      * 인용 없는 고정 기본 편지다. 설계서와 다른 점: 위반이 작은 일 맞춤 제목에만 있으면 본문을 다시 쓰지 않고
      * 정본 제목으로 바꿔 닫는다 — 정본 제목은 연결표에서 검토를 마친 문장이라 다시 쓰기보다 싸고 확실하다.
      */
-    private Closed close(LetterMaterials m, LetterPolicy policy, Draft draft, boolean background,
-            List<PastDiary> past) {
-        LetterVerification v = verify(m, policy, draft, background, past);
-        if (background && v.outcome() == LetterVerification.Outcome.UNUSABLE) {
+    private Closed close(LetterMaterials m, LetterPolicy policy, Draft draft, List<PastDiary> past) {
+        LetterVerification v = verify(m, policy, draft, past);
+        if (v.outcome() == LetterVerification.Outcome.UNUSABLE) {
             pause(); // V4 — 문제가 편지가 아니라 검증 호출에 있으니 검증만 한 번 더
-            v = verify(m, policy, draft, true, past);
+            v = verify(m, policy, draft, past);
         }
         String verdict = v.outcome().name() + "(" + v.rules() + ")";
         switch (v.outcome()) {
@@ -331,9 +321,6 @@ public class LetterGenerator {
         if (v.onlyActionTitles()) {
             return new Closed(canonicalTitles(draft), verdict, 0);
         }
-        if (!background) { // 열 때는 다시 쓸 시간이 없다
-            return new Closed(fixedFallback(m, policy, draft), verdict, 0);
-        }
         List<String> fixes = v.violations().stream()
                 .map(x -> x.rule() + ": " + (x.fix() == null || x.fix().isBlank() ? "그 부분을 빼고 다시 씁니다" : x.fix()))
                 .distinct().toList();
@@ -349,7 +336,7 @@ public class LetterGenerator {
         if (titlesFlagged) {
             second = canonicalTitles(second);
         }
-        LetterVerification again = verify(m, policy, second, true, past);
+        LetterVerification again = verify(m, policy, second, past);
         String both = verdict + ">" + again.outcome().name() + "(" + again.rules() + ")";
         if (again.outcome() == LetterVerification.Outcome.PASS) {
             return new Closed(second, both, 1);
@@ -360,10 +347,8 @@ public class LetterGenerator {
         return new Closed(fixedFallback(m, policy, second), both, 1);
     }
 
-    private LetterVerification verify(LetterMaterials m, LetterPolicy policy, Draft draft, boolean background,
-            List<PastDiary> past) {
-        GeminiLetterVerifier.Draft target = verifierDraft(draft);
-        return background ? verifier.verify(m, policy, target, past) : verifier.verifyOnOpen(m, policy, target, past);
+    private LetterVerification verify(LetterMaterials m, LetterPolicy policy, Draft draft, List<PastDiary> past) {
+        return verifier.verify(m, policy, verifierDraft(draft), past);
     }
 
     /** 검증기에 넘기는 글 — 작은 일은 모델이 다시 쓴 맞춤 제목만(정본 제목은 연결표에서 검토를 마쳤다). */

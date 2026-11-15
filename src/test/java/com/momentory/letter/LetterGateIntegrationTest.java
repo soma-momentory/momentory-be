@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,7 +71,7 @@ import com.momentory.user.infrastructure.UserRepository;
 
 /**
  * 편지 안전 게이트를 켠(ON) 흐름 — 결정표로 정책을 고르고, 그 정책으로 쓰고, 전달 전 검증해 닫는다(설계서 6.4 ·
- * 6.6절 VT1~VT7). 판정자 · 검증기 · 편지 쓰기 모델은 흉내 낸다. 게이트를 끈(OFF) 지금 경로는
+ * 6.6절 VT1~VT7). 게이트를 켜면 열 때 보충은 AI 를 부르지 않고 기본 편지를 저장한다. 판정자 · 검증기 · 편지 쓰기 모델은 흉내 낸다. 게이트를 끈(OFF) 지금 경로는
  * {@code LetterIntegrationTest} 가 그대로 지킨다.
  */
 @SpringBootTest(properties = {
@@ -116,6 +118,7 @@ class LetterGateIntegrationTest {
     @Autowired SafetyPolicy safetyPolicy;
     @Autowired AccessTokenIssuer accessTokenIssuer;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired MeterRegistry meters;
 
     private MockMvc mockMvc;
     private User user;
@@ -197,19 +200,63 @@ class LetterGateIntegrationTest {
     }
 
     @Test
-    void vt7_openPathVerifierUnavailableOnceGivesFixedFallback() throws Exception {
-        when(writer.writeBody(any(), any(), anyList())).thenReturn(Optional.empty()); // 뒤에서 실패 → 열 때 보충
-        when(writer.writeBodyOnOpen(any(), any())).thenReturn(Optional.of(BODY));
-        when(verifier.verifyOnOpen(any(), any(), any(), any())).thenReturn(LetterVerification.unusable());
+    void vt7_openPathSavesDefaultLetterWithoutCallingAi() throws Exception {
+        // 뒤에서 본문이 실패하면 정책(NORMAL)만 남는다. 열 때는 AI 본문 · 검증을 부르지 않고 기본 편지를 바로 저장한다.
+        when(writer.writeBody(any(), any(), anyList())).thenReturn(Optional.empty());
         Letter letter = generate();
         assertThat(letter.getStatus()).isEqualTo(LetterStatus.FAILED);
+        assertThat(letter.getSafetyPolicy()).isEqualTo(LetterPolicy.NORMAL);
+        double before = openGateCount("DEFAULT");
 
         mockMvc.perform(authed()).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("FALLBACK"))
-                .andExpect(jsonPath("$.quote").doesNotExist());
+                .andExpect(jsonPath("$.insight").value(LetterRules.defaultBody(yesterday())))
+                .andExpect(jsonPath("$.tonightQuestion").value(LetterRules.DEFAULT_TONIGHT_QUESTION));
 
-        verify(verifier, times(1)).verifyOnOpen(any(), any(), any(), any());
+        Letter opened = letterRepository.findById(letter.getId()).orElseThrow();
+        assertThat(opened.getStatus()).isEqualTo(LetterStatus.FALLBACK);
+        assertThat(opened.getSafetyPolicy()).isEqualTo(LetterPolicy.NORMAL);
+        assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId())).isNotEmpty();
+        assertThat(openGateCount("DEFAULT")).isEqualTo(before + 1);
+        verify(writer, never()).writeBodyOnOpen(any());
+        verify(writer, never()).pickNeedsOnOpen(any());
+        verify(writer, never()).pickActionIdsOnOpen(any(), anyList());
+        verify(verifier, never()).verify(any(), any(), any(), any());
         verify(judge, times(1)).judge(any(), any(), anyList(), anyList()); // 열 때는 판정자를 다시 부르지 않는다
+    }
+
+    @Test
+    void openPathWithoutStoredPolicyUsesNoJudgmentRowWithoutCallingAi() throws Exception {
+        // 뒤에서 만들기가 정책을 남기기 전에 멈춘 편지(PENDING) — 판정 없는 줄 D4b(GENTLE)의 기본 편지가 된다.
+        Letter letter = pending(List.of(USER_WORD));
+
+        mockMvc.perform(authed()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FALLBACK"))
+                .andExpect(jsonPath("$.quote").doesNotExist())
+                .andExpect(jsonPath("$.tonightQuestion").value(LetterRules.DEFAULT_TONIGHT_QUESTION))
+                .andExpect(jsonPath("$.helplines.length()").value(1));
+
+        Letter opened = letterRepository.findById(letter.getId()).orElseThrow();
+        assertThat(opened.getSafetyPolicy()).isEqualTo(LetterPolicy.GENTLE);
+        assertThat(letterActionRepository.findByLetterIdOrderByPositionAsc(letter.getId()))
+                .isNotEmpty().allMatch(a -> LetterRules.GENTLE_ACTION_IDS.contains(a.getActionId()));
+        verify(judge, never()).judge(any(), any(), anyList(), anyList());
+        verify(writer, never()).writeBodyOnOpen(any());
+        verify(verifier, never()).verify(any(), any(), any(), any());
+    }
+
+    @Test
+    void openPathWithCrisisGuidanceIsQuiet() throws Exception {
+        // 회고 중 위기 안내가 있었으면 저장된 정책이 없어도 열 때 조용한 편지다.
+        Letter letter = pending(List.of(USER_WORD), safetyPolicy.guidanceFor(SafetyLevel.RISK).render());
+        double before = openGateCount("QUIET");
+
+        mockMvc.perform(authed()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("QUIET"));
+
+        assertThat(letterRepository.findById(letter.getId()).orElseThrow().getStatus()).isEqualTo(LetterStatus.QUIET);
+        assertThat(openGateCount("QUIET")).isEqualTo(before + 1);
+        verify(writer, never()).writeBodyOnOpen(any());
     }
 
     @Test
@@ -247,27 +294,26 @@ class LetterGateIntegrationTest {
     }
 
     @Test
-    void pastOnlyRiskWritesGentleLetterAndKeepsPolicyForOpenPath() throws Exception {
-        // 오늘은 깨끗하고 지난 일기에만 위험(D9) → GENTLE. 본문이 뒤에서 실패해도 정책은 남아 열 때 다시 판정하지 않는다.
+    void pastOnlyRiskKeepsGentlePolicyForOpenPath() throws Exception {
+        // 오늘은 깨끗하고 지난 일기에만 위험(D9) → GENTLE. 본문이 뒤에서 실패해도 정책은 남아, 열 때 다시 판정하지 않고
+        // 그 정책을 새긴 기본 편지(인용 없음 · 기본 첫 질문 · 상담 안내 한 줄 · 낮은 부담 작은 일)를 저장한다.
         when(judge.judge(any(), any(), anyList(), anyList())).thenReturn(Optional.of(new RiskJudgment(
                 SafetyLevel.NONE, SafetyLevel.NONE, SafetyLevel.RISK, RiskJudgment.Trajectory.RECOVERY, false, List.of(
                         new RiskJudgment.Evidence("historyRisk", RiskJudgment.Source.PAST, "다 끝내고 싶다")))));
         pastDiary("다 끝내고 싶다는 생각만 들었다.");
         when(writer.writeBody(any(), any(), anyList())).thenReturn(Optional.empty());
-        when(writer.writeBodyOnOpen(any(), any())).thenReturn(Optional.of(BODY));
-        when(verifier.verifyOnOpen(any(), any(), any(), any())).thenReturn(PASS);
         Letter failed = generate();
         assertThat(failed.getStatus()).isEqualTo(LetterStatus.FAILED);
         assertThat(failed.getSafetyPolicy()).isEqualTo(LetterPolicy.GENTLE);
 
         mockMvc.perform(authed()).andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.status").value("FALLBACK"))
                 .andExpect(jsonPath("$.quote").doesNotExist())
                 .andExpect(jsonPath("$.tonightQuestion").value(LetterRules.DEFAULT_TONIGHT_QUESTION))
                 .andExpect(jsonPath("$.helplines.length()").value(1))
                 .andExpect(jsonPath("$.helplines[0]").value(safetyPolicy.resources().get(0)));
 
-        verify(writer).writeBodyOnOpen(any(), org.mockito.ArgumentMatchers.eq(LetterPolicy.GENTLE));
+        verify(writer, never()).writeBodyOnOpen(any());
         List<LetterAction> actions = letterActionRepository.findByLetterIdOrderByPositionAsc(failed.getId());
         assertThat(actions).isNotEmpty().allMatch(a -> LetterRules.GENTLE_ACTION_IDS.contains(a.getActionId()));
         verify(judge, times(1)).judge(any(), any(), anyList(), anyList());
@@ -305,15 +351,28 @@ class LetterGateIntegrationTest {
     }
 
     private Letter generate(List<String> userWords) {
+        Letter letter = pending(userWords);
+        generator.generateForDiary(letter.getDiaryId());
+        return letterRepository.findById(letter.getId()).orElseThrow();
+    }
+
+    /** 뒤에서 만들기를 부르지 않은 편지 — 저장된 정책이 없다. {@code assistantAfter} 는 마지막 사용자 말 뒤 바바의 말. */
+    private Letter pending(List<String> userWords, String... assistantAfter) {
         RetrospectState state = new RetrospectState(UUID.randomUUID().toString());
         state.addAssistantMessage("오늘 어떤 일이 있었어요?");
         userWords.forEach(state::addUserMessage);
+        for (String text : assistantAfter) {
+            state.addAssistantMessage(text);
+        }
         Retrospect retrospect = retrospectRepository.save(Retrospect.start(user.getId(), RetrospectStatus.COMPLETED,
                 null, codec.serialize(state)));
         Diary diary = diaryRepository.save(Diary.create(user.getId(), retrospect.getId(), DIARY, null, null));
-        Letter letter = letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
-        generator.generateForDiary(diary.getId());
-        return letterRepository.findById(letter.getId()).orElseThrow();
+        return letterRepository.save(Letter.pending(user.getId(), diary.getId(), yesterday()));
+    }
+
+    private double openGateCount(String result) {
+        Counter counter = meters.find("letter.gate").tag("mode", "on-open").tag("result", result).counter();
+        return counter == null ? 0 : counter.count();
     }
 
     private void pastDiary(String text) {

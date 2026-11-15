@@ -108,12 +108,6 @@ public class GeminiLetterWriter {
         return onOpen.attempt(request(m, LlmRole.LETTER, bodyPrompt(m)), Body.class, BODY_SCHEMA).value();
     }
 
-    /** 열 때 보충(안전 게이트) — 8초 한 번. */
-    public Optional<Body> writeBodyOnOpen(LetterMaterials m, LetterPolicy policy) {
-        return onOpen.attempt(request(m, LlmRole.LETTER, bodyPrompt(m) + guarded(policy, List.of())), Body.class,
-                BODY_SCHEMA).value();
-    }
-
     static String guarded(LetterPolicy policy, List<String> fixes) {
         StringBuilder extra = new StringBuilder();
         if (policy == LetterPolicy.GENTLE) {

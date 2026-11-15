@@ -149,7 +149,7 @@ class VerifierEvalHarness {
 
     private static LetterGateProperties gate(String verifierModel) {
         return new LetterGateProperties(LetterGateProperties.Mode.ON, true, LetterPolicy.GENTLE, null, verifierModel,
-                7, 400, Duration.ofSeconds(30));
+                7, 400);
     }
 
     /** 편지의 바탕 사례 — 마지막 날 일기와 그날 사용자 말. */
