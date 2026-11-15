@@ -113,7 +113,6 @@ momentory:
       verifier-model: ${LETTER_GATE_VERIFIER_MODEL:gemini-3.8-flash}
       past-diary-days: 7
       past-diary-chars: 400
-      open-verify-timeout: 4s
   judge:
     # 턴 판단을 켤 사용자 id 목록(쉼표 구분). 비어 있으면 아무에게도 켜지 않는다.
     # 대화 원문이 TypeSafe 로 나가므로, 처리위탁 고지 전에는 테스트 계정과 동의한 참여자만 넣는다.

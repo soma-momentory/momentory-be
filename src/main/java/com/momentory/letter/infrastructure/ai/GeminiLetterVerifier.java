@@ -110,23 +110,17 @@ public class GeminiLetterVerifier {
             "우울증|공황장애|불안장애|조울증|양극성|ADHD|PTSD|외상후\\s?스트레스|강박증|섭식장애|경계성");
 
     private final GeminiApiClient background;
-    private final GeminiApiClient onOpen;
 
     public GeminiLetterVerifier(GeminiApiClient client, LetterGateProperties properties) {
-        GeminiApiClient verifier = client.withModel(properties.verifierModel(), 0.0);
-        this.background = verifier.withReadTimeout(BACKGROUND_TIMEOUT);
-        this.onOpen = verifier.withReadTimeout(properties.openVerifyTimeout());
+        this.background = client.withModel(properties.verifierModel(), 0.0).withReadTimeout(BACKGROUND_TIMEOUT);
     }
 
-    /** 뒤에서 만드는 경로 — 30초 한 번. 검증 불가면 부르는 쪽이 한 번 더 부른다(V4). */
+    /**
+     * 뒤에서 만드는 경로 — 30초 한 번. 검증 불가면 부르는 쪽이 한 번 더 부른다(V4). 열 때 보충은 AI 본문을 쓰지 않으므로
+     * 검증도 부르지 않는다.
+     */
     public LetterVerification verify(LetterMaterials m, LetterPolicy policy, Draft draft, List<PastDiary> past) {
         return run(background, m, policy, draft, past);
-    }
-
-    /** 열 때 보충 — 남은 시간이 짧아 한도 안에 못 끝내면 검증 불가. */
-    public LetterVerification verifyOnOpen(LetterMaterials m, LetterPolicy policy, Draft draft,
-            List<PastDiary> past) {
-        return run(onOpen, m, policy, draft, past);
     }
 
     private LetterVerification run(GeminiApiClient client, LetterMaterials m, LetterPolicy policy, Draft draft,

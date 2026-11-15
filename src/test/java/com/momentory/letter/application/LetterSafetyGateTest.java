@@ -3,7 +3,6 @@ package com.momentory.letter.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -156,8 +155,8 @@ class LetterSafetyGateTest {
     @DisplayName("T20 운영 설정(experiment=false)에서 past-only-policy NORMAL 이면 기동을 막는다")
     void normalPastOnlyNeedsExperiment() {
         assertThatThrownBy(() -> new LetterGateProperties(LetterGateProperties.Mode.ON, false, LetterPolicy.NORMAL,
-                null, null, 7, 400, Duration.ofSeconds(4))).isInstanceOf(IllegalStateException.class);
-        assertThat(new LetterGateProperties(null, true, LetterPolicy.NORMAL, null, null, 0, 0, null).mode())
+                null, null, 7, 400)).isInstanceOf(IllegalStateException.class);
+        assertThat(new LetterGateProperties(null, true, LetterPolicy.NORMAL, null, null, 0, 0).mode())
                 .isEqualTo(LetterGateProperties.Mode.OFF);
     }
 
@@ -166,10 +165,10 @@ class LetterSafetyGateTest {
     void ablationNeedsExperiment() {
         LetterGateProperties.Ablation b1 = new LetterGateProperties.Ablation(false, false, false, true);
         assertThatThrownBy(() -> new LetterGateProperties(LetterGateProperties.Mode.ON, false, LetterPolicy.GENTLE,
-                null, null, 7, 400, Duration.ofSeconds(4), b1)).isInstanceOf(IllegalStateException.class);
+                null, null, 7, 400, b1)).isInstanceOf(IllegalStateException.class);
         assertThat(new LetterGateProperties(LetterGateProperties.Mode.ON, true, LetterPolicy.GENTLE, null, null, 7,
-                400, Duration.ofSeconds(4), b1).ablation().simplePolicy()).isTrue();
-        assertThat(new LetterGateProperties(null, false, null, null, null, 0, 0, null).ablation())
+                400, b1).ablation().simplePolicy()).isTrue();
+        assertThat(new LetterGateProperties(null, false, null, null, null, 0, 0).ablation())
                 .isEqualTo(LetterGateProperties.Ablation.NONE);
     }
 
