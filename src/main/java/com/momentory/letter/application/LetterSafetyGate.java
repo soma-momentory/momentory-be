@@ -10,7 +10,8 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * 표 한 줄이 시험 사례 하나와 맞는다({@code LetterSafetyGateTest}).
  *
  * <p>지키는 원칙은 넷이다. 지금 운영 동작(D1)과 안전 기록(D2)은 그대로 QUIET 이다. 규칙 층 신호는 판정자가
- * 낮출 수 없다(D3 · D4a · D7). 지난 기록은 정책을 올리기만 하고(D6 · D9) 오늘 신호를 낮추지 않는다. 판정 칸 하나를
+ * 낮출 수 없다(D3 · D4a · D7). 지난 기록(지난 일기 · 일기 없이 끝난 날의 안전 기록)은 정책을 올리기만 하고(D6 · D9) 오늘 신호를
+ * 낮추지 않는다. 판정 칸 하나를
  * 더 위험하게 말하거나 판정을 덜 믿게 되어도 정책은 내려가지 않는다({@code LetterSafetyGateMonotonicityTest}).
  */
 public final class LetterSafetyGate {
@@ -25,9 +26,20 @@ public final class LetterSafetyGate {
      * @param ruleHistory    지난 일기 규칙 검사 등급의 최댓값
      * @param judgment       판정자 결과(호출하지 않았거나 실패면 empty)
      * @param usable         그 결과를 믿고 쓸 수 있는가({@link RiskJudgment#usable})
+     * @param pastCrisis     일기 날 전 N일(past-crisis-days) 안에, 같은 사용자의 안전 기록은 있는데 그날 일기가 없는 날이
+     *                       있다. 위기 안내로 멈춘 회고는 일기를 남기지 않아 지난 일기로는 보이지 않으므로 따로 받는다
      */
     public record Input(boolean crisisGuidance, boolean riskEvent, SafetyLevel ruleToday, SafetyLevel ruleHistory,
-            Optional<RiskJudgment> judgment, boolean usable) {
+            Optional<RiskJudgment> judgment, boolean usable, boolean pastCrisis) {
+
+        public Input(boolean crisisGuidance, boolean riskEvent, SafetyLevel ruleToday, SafetyLevel ruleHistory,
+                Optional<RiskJudgment> judgment, boolean usable) {
+            this(crisisGuidance, riskEvent, ruleToday, ruleHistory, judgment, usable, false);
+        }
+
+        Input withoutPastCrisis() {
+            return new Input(crisisGuidance, riskEvent, ruleToday, ruleHistory, judgment, usable, false);
+        }
     }
 
     public record Decision(LetterPolicy policy, String row) {
@@ -44,7 +56,7 @@ public final class LetterSafetyGate {
             return quiet("D3");
         }
         if (in.judgment().isEmpty()) {
-            return noJudgment(in.ruleToday().atLeast(SafetyLevel.RISK));
+            return atLeastPast(noJudgment(in.ruleToday().atLeast(SafetyLevel.RISK)), in, pastOnlyPolicy);
         }
         RiskJudgment j = in.judgment().get();
         if (in.usable()) {
@@ -56,8 +68,8 @@ public final class LetterSafetyGate {
         if (j.uncertain() && allNone(in, j)) {
             return new Decision(LetterPolicy.NORMAL, "D4c");
         }
-        Decision floor = noJudgment(in.ruleToday().atLeast(SafetyLevel.RISK)
-                || j.todayCurrent().atLeast(SafetyLevel.RISK));
+        Decision floor = atLeastPast(noJudgment(in.ruleToday().atLeast(SafetyLevel.RISK)
+                || j.todayCurrent().atLeast(SafetyLevel.RISK)), in, pastOnlyPolicy);
         RiskJudgment raised = j.uncertain() ? j.withTrajectory(RiskJudgment.Trajectory.ESCALATION) : j;
         Decision t = table(in, raised, pastOnlyPolicy);
         return t.policy().ordinal() > floor.policy().ordinal() ? new Decision(t.policy(), "D4+" + t.row()) : floor;
@@ -67,8 +79,14 @@ public final class LetterSafetyGate {
         return risk ? quiet("D4a") : new Decision(LetterPolicy.GENTLE, "D4b");
     }
 
+    /** 판정 없는 줄도 일기 없이 끝난 날의 안전 기록이 있으면 D9(past-only-policy)보다 약하지 않다. */
+    private static Decision atLeastPast(Decision d, Input in, LetterPolicy pastOnlyPolicy) {
+        return in.pastCrisis() && pastOnlyPolicy.ordinal() > d.policy().ordinal() ? new Decision(pastOnlyPolicy, "D9")
+                : d;
+    }
+
     private static boolean allNone(Input in, RiskJudgment j) {
-        return in.ruleToday() == SafetyLevel.NONE && in.ruleHistory() == SafetyLevel.NONE
+        return !in.pastCrisis() && in.ruleToday() == SafetyLevel.NONE && in.ruleHistory() == SafetyLevel.NONE
                 && j.todayCurrent() == SafetyLevel.NONE && j.todayMentioned() == SafetyLevel.NONE
                 && j.historyRisk() == SafetyLevel.NONE;
     }
@@ -78,14 +96,15 @@ public final class LetterSafetyGate {
      *
      * <p>규칙 CAUTION 은 욕설 목록에서만 나오므로 판정이 있으면 「오늘 주의」로 세지 않는다(F2). 규칙 RISK 이상은
      * 그대로 판정이 낮출 수 없다(D3 · D7). 지난 기록만 위험인 날(D9)은 판정의 지난 기록 칸으로 본다 — 지난 일기의
-     * 「너무 힘들어서」 같은 키워드를 판정이 지난 일로 가릴 수 있게(F3). 악화(D6)는 규칙과 판정 중 높은 쪽을 그대로 본다.
+     * 「너무 힘들어서」 같은 키워드를 판정이 지난 일로 가릴 수 있게(F3). 일기 없이 끝난 날의 안전 기록은 판정이 볼 일기가 없으니
+     * 그대로 지난 위험으로 센다. 악화(D6)는 규칙과 판정 중 높은 쪽을 그대로 본다.
      */
     private static Decision table(Input in, RiskJudgment j, LetterPolicy pastOnlyPolicy) {
         SafetyLevel ruleToday = in.ruleToday().atLeast(SafetyLevel.RISK) ? in.ruleToday() : SafetyLevel.NONE;
         SafetyLevel today = SafetyLevel.max(ruleToday, j.todayCurrent());
         SafetyLevel mentioned = SafetyLevel.max(j.todayMentioned(), j.todayCurrent());
         SafetyLevel history = SafetyLevel.max(in.ruleHistory(), j.historyRisk());
-        boolean pastRisk = j.historyRisk().atLeast(SafetyLevel.RISK);
+        boolean pastRisk = j.historyRisk().atLeast(SafetyLevel.RISK) || in.pastCrisis();
         if (j.todayCurrent().atLeast(SafetyLevel.RISK)) {
             return quiet("D5");
         }

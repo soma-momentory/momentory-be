@@ -45,6 +45,8 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // 통합 테스트가 스프링 컨텍스트를 30개 넘게 캐시해 기본 힙(512MB) 바로 밑에서 돈다 — 작은 변경에도 OOM 이 났다.
+    maxHeapSize = "1g"
 }
 
 // >>> eval: 안전성 평가 하네스(src/test/.../eval, @Tag("eval"))는 기본 test 에서 빼고 evalB0 로만 돌린다.
