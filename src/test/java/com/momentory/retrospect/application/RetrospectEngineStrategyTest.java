@@ -134,8 +134,8 @@ class RetrospectEngineStrategyTest {
 
         ReplyDto said = say("그냥 들어줘. 발표 망쳐서 허무해.", judged("continue", "listen", "agree_or_elaborate"));
 
-        // 들어 달라고 한 턴에는 그러겠다는 답이 먼저 나가고, 함께 한 이야기는 그 뒤에 받는다.
-        assertThat(said.text()).isEqualTo("네, 묻지 않고 들을게요. 발표가 뜻대로 되지 않아 허무하셨군요.");
+        // 들어 달라고 한 턴에도 정해 둔 약속 문구를 앞에 붙이지 않는다 — 함께 한 이야기를 받고, 질문은 하지 않는다.
+        assertThat(said.text()).isEqualTo("발표가 뜻대로 되지 않아 허무하셨군요.");
         assertThat(courses.getLast().focus()).isEqualTo(QuestionFocus.NONE);
         assertThat(courses.getLast().askedToBeHeard()).isTrue();
     }
@@ -146,18 +146,19 @@ class RetrospectEngineStrategyTest {
         reply = wrote("", "");
 
         ReplyDto said = say("그냥 들어줘.", judged("continue", "listen", "agree_or_elaborate"));
-        assertThat(said.text()).isEqualTo("네, 묻지 않고 들을게요. 편하게 이야기해 주세요.");
+        assertThat(said.text()).isEqualTo("편하게 이야기해 주세요.");
 
-        // 다음 턴부터는 묻지 않고 받아주기만 한다 — 약속을 되풀이하지 않는다.
+        // 다음 턴부터는 묻지 않고 받아주기만 한다.
         reply = wrote("먼저 약속을 깼는데 예민하다는 말을 들으셨군요.", "어떤 기분이 드셨어요?");
         ReplyDto next = say("걔가 먼저 약속을 깼는데 내가 예민하대.", plain());
         assertThat(next.text()).isEqualTo("먼저 약속을 깼는데 예민하다는 말을 들으셨군요.");
         assertThat(courses.getLast().askedToBeHeard()).isFalse();
 
-        // 다시 요청하면 다시 답한다. 문장 생성이 실패해도 같은 답이 나간다.
+        // 문장 생성이 실패해도 묻지 않고 편하게 이야기하라고만 한다.
         reply = null;
         ReplyDto again = say("아니 조언하지 말고 그냥 듣기만 해", judged("continue", "none", "refuse_question"));
-        assertThat(again.text()).isEqualTo("네, 묻지 않고 들을게요. 편하게 이야기해 주세요.");
+        assertThat(again.text()).isEqualTo("편하게 이야기해 주세요.");
+        assertThat(again.text()).doesNotContain("묻지 않고 들을게요");
     }
 
     @Test
@@ -318,6 +319,64 @@ class RetrospectEngineStrategyTest {
 
         assertThat(said.text()).doesNotContain(RetrospectEngine.OTHER_MEMORY_QUESTION);
         assertThat(lastLog().strategy().focus()).isEqualTo(QuestionFocus.WRAP_UP);
+    }
+
+    @Test
+    void takesTheUsersSideWithoutAQuestionWhenTheyAskIfTheyAreTheStrangeOne() {
+        reply = wrote("친구와 다투셨군요.", "그때 기분이 어땠어요?");
+        say("친구랑 밥 먹고 내가 계산했는데 자꾸 100원씩 빼고 보내서 화냈어", plain());
+        // 모델이 「자기 편을 들어 달라는 물음」이라고 알렸다. 질문을 써 왔어도 서버가 빼고, 정리를 제안하지도 않는다.
+        reply = new StrategyReply("그런 일이 있었으면 화가 날 만해요. 이상한 게 아니에요.", "왜 그렇게 생각하셨어요?",
+                false, false, "친구와의 다툼", "none", List.of(), false, false, true);
+
+        ReplyDto said = say("아니 내가 이상한거야?", judged("continue", "other_view", "no_answer_or_topic_change"));
+
+        assertThat(said.text()).isEqualTo("그런 일이 있었으면 화가 날 만해요. 이상한 게 아니에요.");
+        assertThat(said.options()).isNullOrEmpty();
+        TurnJudgmentLog log = lastLog();
+        assertThat(log.strategy().focus()).isEqualTo(QuestionFocus.NONE);
+        assertThat(log.askedFeeling()).isFalse();
+
+        // 다음 턴부터는 평소대로 묻는다.
+        reply = wrote("100원 때문에 쫌생이 소리를 들으셨군요.", "그 말을 들었을 때 기분이 어땠어요?");
+        ReplyDto next = say("근데 걔가 나보고 쫌생이래", plain());
+        assertThat(next.text()).endsWith("그 말을 들었을 때 기분이 어땠어요?");
+    }
+
+    @Test
+    void goesBackToThePreviousStoryWhenTheUserKeepsTalkingAboutItAfterBeingAskedForAnother() {
+        say("친구한테 취업 준비 힘들다고 했는데 웃어넘기더라. 서운했어.", heard());
+        reply = nothingMore("가볍게 넘기는 것 같아 서운하셨군요.");
+        assertThat(say("내가 예민한 건가 싶기도 했어", plain()).text())
+                .endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION);
+
+        // 다른 기억을 물었는데 앞 이야기를 이어 말했다 — 질문을 피한 것으로 보아 정리를 제안하지 않고 그 이야기로 돌아간다.
+        reply = wrote("친구에게 이해받고 싶은 마음이 가장 크게 남으셨군요.", "이해받지 못했다고 느꼈을 때 스스로는 어떤 마음이었어요?");
+        ReplyDto said = say("오늘은 그게 제일 남아. 그냥 친구한테 이해받고 싶었던 것 같네.",
+                judged("continue", "none", "no_answer_or_topic_change"));
+
+        assertThat(said.text()).isEqualTo(
+                "친구에게 이해받고 싶은 마음이 가장 크게 남으셨군요.\n이해받지 못했다고 느꼈을 때 스스로는 어떤 마음이었어요?");
+        TurnStrategy course = courses.getLast();
+        assertThat(course.afterOtherMemory()).isTrue();
+        assertThat(course.type()).isEqualTo(StrategyType.EXPLORE);
+        assertThat(course.reaction()).isNull();
+        assertThat(lastLog().strategy().focus()).isEqualTo(QuestionFocus.OPEN);
+        assertThat(state.strategySignals().resistanceCount()).isZero();
+        assertThat(state.strategySignals().topicNumber()).isEqualTo(1);
+    }
+
+    @Test
+    void tellsTheWriterOnlyRightAfterAskingForAnotherMemory() {
+        say("오늘 발표했어.", plain());
+        assertThat(courses.getLast().afterOtherMemory()).isFalse();
+        reply = nothingMore("발표를 마치셨군요.");
+        say("그냥 끝났어", plain());
+        assertThat(courses.getLast().afterOtherMemory()).isFalse();
+
+        reply = wrote("친구와 저녁을 드셨군요.", "저녁을 먹으면서 기분이 어땠어요?");
+        say("저녁에 친구 만났어", plain());
+        assertThat(courses.getLast().afterOtherMemory()).isTrue();
     }
 
     @Test

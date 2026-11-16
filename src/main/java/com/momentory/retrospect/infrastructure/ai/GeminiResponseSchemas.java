@@ -123,11 +123,13 @@ final class GeminiResponseSchemas {
                 "question 이 그때의 기분이나 마음을 물으면 true. 사실·이유·생각을 묻거나 질문이 없으면 false."));
         props.put("repeatsEarlier", Map.of("type", "BOOLEAN", "description",
                 "question 이 [대화]에서 바바가 이미 한 질문과 같은 것을 물으면 true. 말이 달라도 묻는 내용이 같으면 true."));
+        props.put("askedForSide", Map.of("type", "BOOLEAN", "description",
+                "방금 답변이 「내가 이상해?」처럼 자기 생각이나 마음이 괜찮은지 묻거나 자기 편을 들어 주길 바라면 true."));
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
         return object(props,
                 List.of("newTopic", "nothingMoreToAsk", "ack", "question", "asksFeeling", "repeatsEarlier",
-                        "safetyLevel"));
+                        "askedForSide", "safetyLevel"));
     }
 
     private static Map<String, Object> diaryDraftSchema() {
