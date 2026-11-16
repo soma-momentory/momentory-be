@@ -35,14 +35,8 @@ public class JevTurnJudge implements TurnJudge {
 
     private static final Logger log = LoggerFactory.getLogger(JevTurnJudge.class);
 
-    /**
-     * 판단에 넘기는 앞선 대화의 최대 메시지 수 — 토큰과 응답 시간을 묶어 둔다.
-     *
-     * <p>20 (2026-11-17, 질문 v8 부터): 8 이었을 때 다섯 턴을 넘는 대화에서 첫 턴에 말한 사건이 잘려, 사건 정보를
-     * 「대화 전체」로 판단하라는 질문을 지킬 수 없었다. 20 이면 10턴 대화까지 처음부터 넘긴다. 질문 문장이 입력의
-     * 대부분이라(호출당 약 5천 토큰) 늘어나는 양은 적다.
-     */
-    static final int HISTORY_MESSAGES = 20;
+    /** 판단에 넘기는 앞선 대화의 최대 메시지 수 — 토큰과 응답 시간을 묶어 둔다. */
+    static final int HISTORY_MESSAGES = 8;
 
     private final RestClient restClient;
     private final JevApiProperties properties;
