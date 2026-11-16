@@ -112,6 +112,16 @@ class LetterMaterialsReader {
                 DayBoundary.startOfDay(letter.getLetterDate()));
     }
 
+    /**
+     * 일기 날 전 {@code days}일 안에 위기 안내 기록이 있는가. 위기 안내로 멈춘 회고는 일기를 남기지 않으므로 지난 일기로는
+     * 보이지 않는다. 일기 날 이후의 기록은 {@link #riskSinceDiaryDay} 가 본다.
+     */
+    boolean riskBeforeDiaryDay(Letter letter, int days) {
+        return safetyEvents.existsByUserIdAndOccurredAtGreaterThanEqualAndOccurredAtLessThan(letter.getUserId(),
+                DayBoundary.startOfDay(letter.getLetterDate().minusDays(days)),
+                DayBoundary.startOfDay(letter.getLetterDate()));
+    }
+
     private List<Schedule> schedules(Letter letter, int daysAfter) {
         return scheduleRepository.findByUserIdAndScheduleDateAndDeletedAtIsNullOrderByDisplayOrderAscIdAsc(
                 letter.getUserId(), letter.getLetterDate().plusDays(daysAfter)).stream()

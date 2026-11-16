@@ -405,9 +405,10 @@ public class LetterGenerator {
                 + j.historyRisk().key() + "/" + j.trajectory().name().toLowerCase(java.util.Locale.ROOT)
                 + (a.usable() ? "" : "/unusable")).orElse("none");
         log.info("letter gate mode={} letterId={} row={} policy={} ruleToday={} ruleHistory={} pastDiaries={} "
-                        + "judge={} judgeMs={} verdict={} regenerations={} result={}",
+                        + "pastCrisis={} judge={} judgeMs={} verdict={} regenerations={} result={}",
                 mode, m.letterId(), a.decision().row(), a.policy(), a.ruleToday().key(), a.ruleHistory().key(),
-                a.pastDiaries(), judge, a.judgeMillis(), verdict, regenerations, result);
+                a.pastDiaries(), a.pastCrisis().name().toLowerCase(java.util.Locale.ROOT), judge, a.judgeMillis(),
+                verdict, regenerations, result);
         meters.counter("letter.gate", "mode", mode, "row", a.decision().row(), "result", result).increment();
     }
 

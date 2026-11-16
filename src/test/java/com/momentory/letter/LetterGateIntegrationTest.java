@@ -22,8 +22,11 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -66,6 +69,7 @@ import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec;
+import com.momentory.retrospect.infrastructure.persistence.SafetyEventRepository;
 import com.momentory.user.domain.User;
 import com.momentory.user.infrastructure.UserRepository;
 
@@ -119,6 +123,7 @@ class LetterGateIntegrationTest {
     @Autowired AccessTokenIssuer accessTokenIssuer;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired MeterRegistry meters;
+    @Autowired SafetyEventRepository safetyEvents;
 
     private MockMvc mockMvc;
     private User user;
@@ -396,5 +401,99 @@ class LetterGateIntegrationTest {
 
     private static LocalDate yesterday() {
         return DayBoundary.today().minusDays(1);
+    }
+
+    // ── 지난 날의 위기 안내 기록 ────────────────────────────────────────────
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void pastDayCrisisWithoutDiaryKeepsLetterGentle(CapturedOutput output) {
+        // 첫째 날: 회고 중 위험한 말 → 위기 안내 → 안전 기록. 회고를 멈춰서 일기는 없다.
+        Long day1Retro = crisisRetrospectOn(yesterday().minusDays(2));
+        assertThat(diaryRepository.existsByRetrospectId(day1Retro)).isFalse();
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(PASS);
+        double before = gateRowCount("D9");
+
+        // 셋째 날: 평범한 회고를 마쳐 일기가 저장되고, 편지를 만든다(판정자는 「위험 없음」, 넘긴 지난 일기도 없음).
+        Letter letter = generate();
+
+        assertThat(letter.getSafetyPolicy()).isEqualTo(LetterPolicy.GENTLE);
+        assertThat(letter.getStatus()).isEqualTo(LetterStatus.READY);
+        assertThat(letter.getQuote()).isNull();
+        assertThat(gateRowCount("D9")).isEqualTo(before + 1);
+        assertThat(output).contains("row=D9 policy=GENTLE").contains("pastCrisis=raised");
+        verify(judge).judge(any(), any(), anyList(), org.mockito.ArgumentMatchers.argThat(List::isEmpty));
+    }
+
+    @Test
+    void crisisOutsidePastDaysIsNotCounted() {
+        // 지난 일기와 같은 범위(7일) 밖의 기록은 보지 않는다.
+        crisisRetrospectOn(yesterday().minusDays(8));
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(PASS);
+
+        Letter letter = generate();
+
+        assertThat(letter.getSafetyPolicy()).isEqualTo(LetterPolicy.NORMAL);
+    }
+
+    @Test
+    void sameDayCrisisIsSeenByGate() {
+        // 일기 날 이후의 기록은 지금처럼 D2(QUIET)가 맡는다.
+        crisisRetrospectOn(yesterday());
+        double before = gateRowCount("D2");
+
+        Letter letter = generate();
+
+        assertThat(letter.getStatus()).isEqualTo(LetterStatus.QUIET);
+        assertThat(gateRowCount("D2")).isEqualTo(before + 1);
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void pastCrisisIsAFloorWhenJudgeFails(CapturedOutput output) {
+        crisisRetrospectOn(yesterday().minusDays(2));
+        when(judge.judge(any(), any(), anyList(), anyList())).thenReturn(Optional.empty());
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(PASS);
+
+        Letter letter = generate();
+
+        assertThat(letter.getSafetyPolicy()).isEqualTo(LetterPolicy.GENTLE);
+        assertThat(output).contains("row=D4b policy=GENTLE").contains("pastCrisis=seen");
+    }
+
+    @Test
+    void pastCrisisIsAFloorOnOpenWithoutStoredPolicy() throws Exception {
+        // 뒤에서 만들기가 정책을 남기기 전에 멈춘 편지 — 열 때 판정 없이도 GENTLE 이다.
+        crisisRetrospectOn(yesterday().minusDays(2));
+        Letter letter = pending(List.of(USER_WORD));
+
+        mockMvc.perform(authed()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FALLBACK"))
+                .andExpect(jsonPath("$.quote").doesNotExist())
+                .andExpect(jsonPath("$.helplines.length()").value(1));
+
+        assertThat(letterRepository.findById(letter.getId()).orElseThrow().getSafetyPolicy())
+                .isEqualTo(LetterPolicy.GENTLE);
+        verify(judge, never()).judge(any(), any(), anyList(), anyList());
+    }
+
+    /** 위기 안내로 멈춘 회고(일기 없음)와 그 안전 기록 — 기록 시각은 그날 저녁이다. */
+    private Long crisisRetrospectOn(LocalDate day) {
+        RetrospectState state = new RetrospectState(UUID.randomUUID().toString());
+        state.addAssistantMessage("오늘 어떤 일이 있었어요?");
+        state.addUserMessage("솔직히 죽고 싶었어요");
+        state.addAssistantMessage(safetyPolicy.guidanceFor(SafetyLevel.IMMINENT).render());
+        Retrospect r = retrospectRepository.save(Retrospect.start(user.getId(), RetrospectStatus.IN_PROGRESS, null,
+                codec.serialize(state)));
+        // RetrospectService.recordCrisis 가 쓰는 SafetyEventRepository.record 와 같은 줄을 그날 저녁 시각으로 넣는다.
+        jdbc.update("insert into safety_events (user_id, retrospect_id, level, occurred_at) values (?, ?, 'IMMINENT', ?)",
+                user.getId(), r.getId(), java.sql.Timestamp.from(DayBoundary.startOfDay(day).plusSeconds(3600 * 18)));
+        assertThat(safetyEvents.count()).isPositive();
+        return r.getId();
+    }
+
+    private double gateRowCount(String row) {
+        Counter counter = meters.find("letter.gate").tag("mode", "on").tag("row", row).counter();
+        return counter == null ? 0 : counter.count();
     }
 }

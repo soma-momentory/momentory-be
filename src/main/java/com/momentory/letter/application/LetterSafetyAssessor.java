@@ -27,17 +27,22 @@ import com.momentory.retrospect.domain.safety.SafetyPolicy;
 @Component
 class LetterSafetyAssessor {
 
+    /**
+     * @param pastCrisis 지난 안전 기록 — NONE(없음) · SEEN(있지만 정책은 그대로) · RAISED(이 신호 때문에 정책이 올라감)
+     */
     record Assessment(LetterSafetyGate.Decision decision, Optional<RiskJudgment> judgment, boolean usable,
-            SafetyLevel ruleToday, SafetyLevel ruleHistory, int pastDiaries, long judgeMillis) {
+            SafetyLevel ruleToday, SafetyLevel ruleHistory, int pastDiaries, long judgeMillis, PastCrisis pastCrisis) {
 
         LetterPolicy policy() {
             return decision.policy();
         }
 
         Assessment withDecision(LetterSafetyGate.Decision d) {
-            return new Assessment(d, judgment, usable, ruleToday, ruleHistory, pastDiaries, judgeMillis);
+            return new Assessment(d, judgment, usable, ruleToday, ruleHistory, pastDiaries, judgeMillis, pastCrisis);
         }
     }
+
+    enum PastCrisis { NONE, SEEN, RAISED }
 
     private final LetterMaterialsReader materialsReader;
     private final DiaryRepository diaryRepository;
@@ -60,6 +65,8 @@ class LetterSafetyAssessor {
     Assessment assess(Letter letter, LetterMaterials m, boolean callJudge) {
         LetterGateProperties.Ablation ab = properties.ablation();
         boolean riskEvent = materialsReader.riskSinceDiaryDay(letter);
+        // 지난 일기를 보지 않는 비교 실험(P − 지난 일기)에서는 지난 안전 기록도 보지 않는다.
+        boolean pastCrisis = ab.history() && materialsReader.riskBeforeDiaryDay(letter, properties.pastDiaryDays());
         List<String> today = new ArrayList<>();
         today.add(m.diary());
         today.addAll(m.userWords());
@@ -89,15 +96,22 @@ class LetterSafetyAssessor {
         List<String> pastTexts = past.stream().map(PastDiary::text).toList();
         boolean usable = judgment.map(j -> j.usable(today, pastTexts)).orElse(false);
         LetterSafetyGate.Decision decision;
+        PastCrisis pastCrisisEffect = PastCrisis.NONE;
         if (ab.simplePolicy()) {
             decision = simple(m.crisis(), judgment.filter(j -> usable));
         } else {
             // m.crisis() 는 위기 안내와 안전 기록을 함께 담는다(P0) — 줄 이름만 나눠 남긴다.
             LetterSafetyGate.Input input = new LetterSafetyGate.Input(m.crisis() && !riskEvent, riskEvent, ruleToday,
-                    ruleHistory, judgment, usable);
+                    ruleHistory, judgment, usable, pastCrisis);
             decision = LetterSafetyGate.decide(input, properties.pastOnlyPolicy());
+            if (pastCrisis) { // 이 신호가 정책을 올렸는지 — 같은 입력에서 지난 안전 기록만 뺀 결정과 견준다
+                LetterPolicy without = LetterSafetyGate.decide(input.withoutPastCrisis(), properties.pastOnlyPolicy())
+                        .policy();
+                pastCrisisEffect = decision.policy().ordinal() > without.ordinal() ? PastCrisis.RAISED : PastCrisis.SEEN;
+            }
         }
-        return new Assessment(decision, judgment, usable, ruleToday, ruleHistory, past.size(), judgeMillis);
+        return new Assessment(decision, judgment, usable, ruleToday, ruleHistory, past.size(), judgeMillis,
+                pastCrisisEffect);
     }
 
     /**

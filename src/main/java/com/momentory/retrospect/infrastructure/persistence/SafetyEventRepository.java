@@ -24,4 +24,7 @@ public interface SafetyEventRepository extends JpaRepository<SafetyEvent, Long> 
 
     /** 이 순간 이후 위기 기록이 있는가 — 편지는 일기 날 04:00(KST)을 넘긴다. */
     boolean existsByUserIdAndOccurredAtGreaterThanEqual(Long userId, Instant since);
+
+    /** 이 기간 [from, to) 에 위기 기록이 있는가 — 편지 일기 날 전 며칠의 지난 위기 안내를 본다. */
+    boolean existsByUserIdAndOccurredAtGreaterThanEqualAndOccurredAtLessThan(Long userId, Instant from, Instant to);
 }

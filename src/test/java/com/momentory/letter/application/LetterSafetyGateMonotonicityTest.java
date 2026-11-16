@@ -14,8 +14,9 @@ import com.momentory.letter.domain.LetterPolicy;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
 
 /**
- * 결정표 전수 검사 — 입력 조합(위기 안내 · 안전 기록 · 규칙 두 칸 · 판정 세 칸 · 흐름 · 불확실 · 근거)을 모두 돌려
- * 안전 성질을 단언한다. 같은 검사의 파이썬 사본이 분석 폴더의 gate_monotonicity_check_v2.py 다.
+ * 결정표 전수 검사 — 입력 조합(위기 안내 · 안전 기록 · 지난 안전 기록 · 규칙 두 칸 · 판정 세 칸 · 흐름 · 불확실 · 근거)을 모두 돌려
+ * 안전 성질을 단언한다. 같은 검사의 파이썬 사본이 분석 폴더의 gate_monotonicity_check_v2.py 인데, 그 사본에는 지난 안전
+ * 기록 칸이 없다.
  */
 class LetterSafetyGateMonotonicityTest {
 
@@ -23,8 +24,9 @@ class LetterSafetyGateMonotonicityTest {
     private static final String TODAY = "오늘 쓴 글";
     private static final String PAST = "지난 일기";
 
-    record Case(boolean crisis, boolean event, SafetyLevel ruleToday, SafetyLevel ruleHistory, SafetyLevel current,
-            SafetyLevel mentioned, SafetyLevel history, Trajectory trajectory, boolean uncertain, boolean grounded) {
+    record Case(boolean crisis, boolean event, boolean pastCrisis, SafetyLevel ruleToday, SafetyLevel ruleHistory,
+            SafetyLevel current, SafetyLevel mentioned, SafetyLevel history, Trajectory trajectory, boolean uncertain,
+            boolean grounded) {
 
         /** 근거가 있으면 칸마다 원문 그대로인 근거를 붙이고, 쓸 수 있는지는 실제 {@link RiskJudgment#usable} 로 정한다. */
         RiskJudgment judgment() {
@@ -41,28 +43,34 @@ class LetterSafetyGateMonotonicityTest {
 
         LetterPolicy policy(LetterPolicy pastOnly) {
             return LetterSafetyGate.decide(new LetterSafetyGate.Input(crisis, event, ruleToday, ruleHistory,
-                    Optional.of(judgment()), usable()), pastOnly).policy();
+                    Optional.of(judgment()), usable(), pastCrisis), pastOnly).policy();
         }
 
         LetterPolicy withoutJudgment(LetterPolicy pastOnly) {
             return LetterSafetyGate.decide(new LetterSafetyGate.Input(crisis, event, ruleToday, ruleHistory,
-                    Optional.empty(), false), pastOnly).policy();
+                    Optional.empty(), false, pastCrisis), pastOnly).policy();
         }
 
         Case raise(int field) {
-            return new Case(crisis, event, ruleToday, ruleHistory, field == 0 ? up(current) : current,
+            return new Case(crisis, event, pastCrisis, ruleToday, ruleHistory, field == 0 ? up(current) : current,
                     field == 1 ? up(mentioned) : mentioned, field == 2 ? up(history) : history, trajectory, uncertain,
                     grounded);
         }
 
         /** F1 — 불확실해도 판정 세 칸 · 규칙 두 칸이 모두 NONE 이면 일반 편지라 판정 없음(GENTLE)보다 낮다(의도). */
         boolean signalFree() {
-            return uncertain && ruleToday == SafetyLevel.NONE && ruleHistory == SafetyLevel.NONE
+            return uncertain && !pastCrisis && ruleToday == SafetyLevel.NONE && ruleHistory == SafetyLevel.NONE
                     && current == SafetyLevel.NONE && mentioned == SafetyLevel.NONE && history == SafetyLevel.NONE;
         }
 
         Case trust(boolean u, boolean g) {
-            return new Case(crisis, event, ruleToday, ruleHistory, current, mentioned, history, trajectory, u, g);
+            return new Case(crisis, event, pastCrisis, ruleToday, ruleHistory, current, mentioned, history, trajectory,
+                    u, g);
+        }
+
+        Case withPastCrisis() {
+            return new Case(crisis, event, true, ruleToday, ruleHistory, current, mentioned, history, trajectory,
+                    uncertain, grounded);
         }
     }
 
@@ -74,7 +82,11 @@ class LetterSafetyGateMonotonicityTest {
         List<String> raisedButLowered = new ArrayList<>();
         List<String> lessTrustedButLowered = new ArrayList<>();
         List<String> loweredByUntrusted = new ArrayList<>();
-        for (Case c : cases()) {
+        List<String> loweredByPastCrisis = new ArrayList<>();
+        List<String> belowPastCrisisFloor = new ArrayList<>();
+        List<Case> all = cases();
+        assertThat(all).hasSize(163_840);
+        for (Case c : all) {
             LetterPolicy p = c.policy(pastOnly);
             LetterPolicy b0 = c.crisis() || c.event() ? LetterPolicy.QUIET : LetterPolicy.NORMAL;
             if (p.ordinal() < b0.ordinal()) {
@@ -98,27 +110,40 @@ class LetterSafetyGateMonotonicityTest {
             } else if (!c.signalFree() && p.ordinal() < c.withoutJudgment(pastOnly).ordinal()) {
                 loweredByUntrusted.add(c.toString());
             }
+            if (!c.pastCrisis()) { // 지난 안전 기록은 판정이 있든 없든 정책을 올리기만 한다
+                Case past = c.withPastCrisis();
+                if (past.policy(pastOnly).ordinal() < p.ordinal()
+                        || past.withoutJudgment(pastOnly).ordinal() < c.withoutJudgment(pastOnly).ordinal()) {
+                    loweredByPastCrisis.add(c.toString());
+                }
+            } else if (p.ordinal() < pastOnly.ordinal() || c.withoutJudgment(pastOnly).ordinal() < pastOnly.ordinal()) {
+                belowPastCrisisFloor.add(c.toString()); // 지난 안전 기록이 있으면 D9(past-only-policy)보다 약하지 않다
+            }
         }
         assertThat(weakerThanB0).as("B0 보다 약함").isEmpty();
         assertThat(belowRuleFloor).as("규칙 바닥보다 약함").isEmpty();
         assertThat(raisedButLowered).as("판정 칸을 올렸는데 정책이 내려감").isEmpty();
         assertThat(lessTrustedButLowered).as("판정을 덜 믿게 됐는데 정책이 내려감").isEmpty();
         assertThat(loweredByUntrusted).as("쓸 수 없는 판정이 판정 없음보다 정책을 낮춤").isEmpty();
+        assertThat(loweredByPastCrisis).as("지난 안전 기록이 붙었는데 정책이 내려감").isEmpty();
+        assertThat(belowPastCrisisFloor).as("지난 안전 기록이 있는데 past-only-policy 보다 약함").isEmpty();
     }
 
     private static List<Case> cases() {
         List<Case> all = new ArrayList<>();
         for (boolean crisis : new boolean[] {false, true}) {
             for (boolean event : new boolean[] {false, true}) {
-                for (SafetyLevel rt : L) {
-                    for (SafetyLevel rh : L) {
-                        for (SafetyLevel cur : L) {
-                            for (SafetyLevel men : L) {
-                                for (SafetyLevel his : L) {
-                                    for (Trajectory t : Trajectory.values()) {
-                                        for (boolean u : new boolean[] {false, true}) {
-                                            for (boolean g : new boolean[] {false, true}) {
-                                                all.add(new Case(crisis, event, rt, rh, cur, men, his, t, u, g));
+                for (boolean pastCrisis : new boolean[] {false, true}) {
+                    for (SafetyLevel rt : L) {
+                        for (SafetyLevel rh : L) {
+                            for (SafetyLevel cur : L) {
+                                for (SafetyLevel men : L) {
+                                    for (SafetyLevel his : L) {
+                                        for (Trajectory t : Trajectory.values()) {
+                                            for (boolean u : new boolean[] {false, true}) {
+                                                for (boolean g : new boolean[] {false, true}) {
+                                                    all.add(new Case(crisis, event, pastCrisis, rt, rh, cur, men, his, t, u, g));
+                                                }
                                             }
                                         }
                                     }
