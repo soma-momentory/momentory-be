@@ -100,16 +100,18 @@ class JevTurnJudgeTest {
     @Test
     void stripsChoiceLinesAndKeepsOnlyRecentTalk() {
         RetrospectState longTalk = new RetrospectState("s2");
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 12; i++) {
             longTalk.addAssistantMessage("질문 " + i + "\n  1. 이제 정리할래요\n  2. 조금 더 이야기할래요");
             longTalk.addUserMessage("답 " + i);
         }
+        // 방금 답을 뺀 23개 가운데 최근 20개 — 「질문 0」「답 0」「질문 1」은 잘린다.
         server.expect(requestTo("https://jev.test/v1/systemone"))
                 .andExpect(jsonPath("$.state.대화.length()").value(JevTurnJudge.HISTORY_MESSAGES))
-                .andExpect(jsonPath("$.state.대화[-1].말").value("질문 5"))
+                .andExpect(jsonPath("$.state.대화[0].말").value("답 1"))
+                .andExpect(jsonPath("$.state.대화[-1].말").value("질문 11"))
                 .andRespond(withSuccess(response(ANSWERS + DEPTH), MediaType.APPLICATION_JSON));
 
-        assertThat(judge("test-key").judge(longTalk, "답 5")).isPresent();
+        assertThat(judge("test-key").judge(longTalk, "답 11")).isPresent();
         server.verify();
     }
 
