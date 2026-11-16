@@ -185,7 +185,7 @@ class LetterSafetyGateTest {
     }
 
     @Test
-    @DisplayName("지난 7일 안전 기록 — 판정이 「위험 없음」이어도 D9(GENTLE), 오늘 신호가 있으면 D7 · D8 도 그보다 약하지 않다")
+    @DisplayName("일기 없이 끝난 날의 안전 기록 — 판정이 「위험 없음」이어도 D9(GENTLE), 오늘 신호가 있으면 D7 · D8 도 그보다 약하지 않다")
     void pastCrisisCountsAsPastRisk() {
         assertDecision(pastCrisis(N, judged(N, N, N), true), "GENTLE", "D9");
         assertDecision(pastCrisis(N, judged(C, C, N), true), "GENTLE", "D8");
@@ -195,7 +195,7 @@ class LetterSafetyGateTest {
     }
 
     @Test
-    @DisplayName("지난 7일 안전 기록 — 판정이 없거나 쓸 수 없어도 past-only-policy 가 바닥이고, 모두 NONE 이어도 D4c(NORMAL)가 아니다")
+    @DisplayName("일기 없이 끝난 날의 안전 기록 — 판정이 없거나 쓸 수 없어도 past-only-policy 가 바닥이고, 모두 NONE 이어도 D4c(NORMAL)가 아니다")
     void pastCrisisFloorsWithoutUsableJudgment() {
         // 판정자 실패 · 열 때 보충(판정 없음): past-only-policy 가 GENTLE 이면 D4b 가 이미 GENTLE 이고, QUIET 이면 올라간다.
         assertDecision(pastCrisis(N, Optional.empty(), false), "GENTLE", "D4b");

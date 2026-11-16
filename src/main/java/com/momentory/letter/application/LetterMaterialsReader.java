@@ -113,13 +113,19 @@ class LetterMaterialsReader {
     }
 
     /**
-     * 일기 날 전 {@code days}일 안에 위기 안내 기록이 있는가. 위기 안내로 멈춘 회고는 일기를 남기지 않으므로 지난 일기로는
-     * 보이지 않는다. 일기 날 이후의 기록은 {@link #riskSinceDiaryDay} 가 본다.
+     * 일기 날 전 {@code days}일 안에, 위기 안내 기록은 있는데 그날(04:00 경계) 일기가 없는 날이 있는가. 위기 안내로 멈춘
+     * 회고는 일기를 남기지 않아 지난 일기로는 보이지 않는다. 그날 일기가 남았으면 지난 일기로 이미 읽으므로 세지 않는다.
+     * 일기 날 이후의 기록은 {@link #riskSinceDiaryDay} 가 본다.
      */
-    boolean riskBeforeDiaryDay(Letter letter, int days) {
-        return safetyEvents.existsByUserIdAndOccurredAtGreaterThanEqualAndOccurredAtLessThan(letter.getUserId(),
-                DayBoundary.startOfDay(letter.getLetterDate().minusDays(days)),
-                DayBoundary.startOfDay(letter.getLetterDate()));
+    boolean crisisWithoutDiaryBefore(Letter letter, int days) {
+        Long userId = letter.getUserId();
+        return safetyEvents.findByUserIdAndOccurredAtGreaterThanEqualAndOccurredAtLessThan(userId,
+                        DayBoundary.startOfDay(letter.getLetterDate().minusDays(days)),
+                        DayBoundary.startOfDay(letter.getLetterDate())).stream()
+                .map(e -> DayBoundary.toLocalDate(e.getOccurredAt()))
+                .distinct()
+                .anyMatch(day -> !diaryRepository.existsByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(userId,
+                        DayBoundary.startOfDay(day), DayBoundary.startOfDay(day.plusDays(1))));
     }
 
     private List<Schedule> schedules(Letter letter, int daysAfter) {

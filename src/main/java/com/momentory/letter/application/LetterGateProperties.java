@@ -18,10 +18,11 @@ import com.momentory.letter.domain.LetterPolicy;
  * @param verifierModel    검증기 모델 — 생성기와 다른 모델
  * @param pastDiaryDays    판정자에만 넘기는 지난 일기의 날 수
  * @param pastDiaryChars   지난 일기 하루치를 이만큼만 넘긴다(데이터 최소화)
+ * @param pastCrisisDays   일기 날 전 이만큼의 날 안에서, 위기 안내 기록은 있는데 일기가 없는 날을 지난 위험으로 센다
  */
 @ConfigurationProperties(prefix = "momentory.safety.letter-gate")
 public record LetterGateProperties(Mode mode, boolean experiment, LetterPolicy pastOnlyPolicy, String judgeModel,
-        String verifierModel, int pastDiaryDays, int pastDiaryChars, Ablation ablation) {
+        String verifierModel, int pastDiaryDays, int pastDiaryChars, Ablation ablation, int pastCrisisDays) {
 
     public enum Mode { OFF, SHADOW, ON }
 
@@ -51,12 +52,18 @@ public record LetterGateProperties(Mode mode, boolean experiment, LetterPolicy p
         this(mode, experiment, pastOnlyPolicy, judgeModel, verifierModel, pastDiaryDays, pastDiaryChars, null);
     }
 
+    public LetterGateProperties(Mode mode, boolean experiment, LetterPolicy pastOnlyPolicy, String judgeModel,
+            String verifierModel, int pastDiaryDays, int pastDiaryChars, Ablation ablation) {
+        this(mode, experiment, pastOnlyPolicy, judgeModel, verifierModel, pastDiaryDays, pastDiaryChars, ablation, 0);
+    }
+
     @ConstructorBinding // 아래 편의 생성자가 있어 스프링이 바인딩에 쓸 생성자를 정해 줘야 한다
     public LetterGateProperties {
         mode = mode == null ? Mode.OFF : mode;
         pastOnlyPolicy = pastOnlyPolicy == null ? LetterPolicy.GENTLE : pastOnlyPolicy;
         pastDiaryDays = pastDiaryDays <= 0 ? 7 : pastDiaryDays;
         pastDiaryChars = pastDiaryChars <= 0 ? 400 : pastDiaryChars;
+        pastCrisisDays = pastCrisisDays <= 0 ? 3 : pastCrisisDays;
         ablation = ablation == null ? Ablation.NONE : ablation;
         if (!ablation.equals(Ablation.NONE) && !experiment) {
             throw new IllegalStateException("비교 실험 스위치(ablation)는 평가 실험(experiment=true)에서만 쓸 수 있습니다");

@@ -66,7 +66,7 @@ class LetterSafetyAssessor {
         LetterGateProperties.Ablation ab = properties.ablation();
         boolean riskEvent = materialsReader.riskSinceDiaryDay(letter);
         // 지난 일기를 보지 않는 비교 실험(P − 지난 일기)에서는 지난 안전 기록도 보지 않는다.
-        boolean pastCrisis = ab.history() && materialsReader.riskBeforeDiaryDay(letter, properties.pastDiaryDays());
+        boolean pastCrisis = ab.history() && materialsReader.crisisWithoutDiaryBefore(letter, properties.pastCrisisDays());
         List<String> today = new ArrayList<>();
         today.add(m.diary());
         today.addAll(m.userWords());

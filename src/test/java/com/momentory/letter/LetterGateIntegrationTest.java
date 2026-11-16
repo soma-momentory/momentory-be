@@ -426,14 +426,36 @@ class LetterGateIntegrationTest {
     }
 
     @Test
-    void crisisOutsidePastDaysIsNotCounted() {
-        // 지난 일기와 같은 범위(7일) 밖의 기록은 보지 않는다.
-        crisisRetrospectOn(yesterday().minusDays(8));
+    @ExtendWith(OutputCaptureExtension.class)
+    void crisisDayWithDiaryIsLeftToJudge(CapturedOutput output) {
+        // 위기 안내 뒤에도 회고를 마쳐 그날 일기가 남았으면 지난 일기로 판정기가 읽는다 — pastCrisis 로는 세지 않는다.
+        LocalDate day1 = yesterday().minusDays(2);
+        Long day1Retro = crisisRetrospectOn(day1);
+        diaryOn(day1Retro, day1, "회사에서 힘들었지만 저녁엔 친구와 이야기했다.");
         when(verifier.verify(any(), any(), any(), any())).thenReturn(PASS);
 
         Letter letter = generate();
 
-        assertThat(letter.getSafetyPolicy()).isEqualTo(LetterPolicy.NORMAL);
+        assertThat(letter.getSafetyPolicy()).isEqualTo(LetterPolicy.NORMAL); // 판정기가 「위험 없음」이라 했다
+        assertThat(output).contains("row=D10 policy=NORMAL").contains("pastDiaries=1 pastCrisis=none");
+    }
+
+    @Test
+    void crisisThreeDaysBeforeIsCounted() {
+        // 범위(past-crisis-days 3일)의 끝 — 사흘 전 기록은 센다.
+        crisisRetrospectOn(yesterday().minusDays(3));
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(PASS);
+
+        assertThat(generate().getSafetyPolicy()).isEqualTo(LetterPolicy.GENTLE);
+    }
+
+    @Test
+    void crisisOutsidePastCrisisDaysIsNotCounted() {
+        // 나흘 전 기록은 범위(3일) 밖이라 보지 않는다.
+        crisisRetrospectOn(yesterday().minusDays(4));
+        when(verifier.verify(any(), any(), any(), any())).thenReturn(PASS);
+
+        assertThat(generate().getSafetyPolicy()).isEqualTo(LetterPolicy.NORMAL);
     }
 
     @Test
@@ -490,6 +512,13 @@ class LetterGateIntegrationTest {
                 user.getId(), r.getId(), java.sql.Timestamp.from(DayBoundary.startOfDay(day).plusSeconds(3600 * 18)));
         assertThat(safetyEvents.count()).isPositive();
         return r.getId();
+    }
+
+    /** 그날 남은 일기 — 위기 안내 뒤 회고를 마친 경우. */
+    private void diaryOn(Long retrospectId, LocalDate day, String text) {
+        Diary d = diaryRepository.saveAndFlush(Diary.create(user.getId(), retrospectId, text, null, null));
+        jdbc.update("update diaries set created_at = ? where id = ?",
+                java.sql.Timestamp.from(DayBoundary.startOfDay(day).plusSeconds(3600 * 20)), d.getId());
     }
 
     private double gateRowCount(String row) {
