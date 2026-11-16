@@ -113,6 +113,9 @@ momentory:
       verifier-model: ${LETTER_GATE_VERIFIER_MODEL:gemini-3.8-flash}
       past-diary-days: 7
       past-diary-chars: 400
+      # 위기 안내 기록은 있는데 그날 일기가 없는 날(회고를 멈춘 날)을 이만큼 지난 위험으로 센다. 일기가 남은 날은 지난 일기로
+      # 이미 읽는다. 위기 안내는 오탐일 수 있어 지난 일기(7일)보다 짧게 둔다.
+      past-crisis-days: 3
   judge:
     # 턴 판단을 켤 사용자 id 목록(쉼표 구분). 비어 있으면 아무에게도 켜지 않는다.
     # 대화 원문이 TypeSafe 로 나가므로, 처리위탁 고지 전에는 테스트 계정과 동의한 참여자만 넣는다.
