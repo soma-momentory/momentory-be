@@ -12,6 +12,7 @@ import com.momentory.actioncard.domain.ActionCard;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.letter.domain.Letter;
 import com.momentory.letter.domain.LetterAction;
+import com.momentory.letter.domain.LetterPolicy;
 import com.momentory.letter.domain.LetterStatus;
 import com.momentory.letter.infrastructure.LetterActionRepository;
 import com.momentory.letter.infrastructure.LetterRepository;
@@ -96,10 +97,11 @@ public class LetterService {
         letter.markOpened(Instant.now());
         List<LetterAction> actions = letterActionRepository.findByLetterIdOrderByPositionAsc(id);
         Optional<ActionCard> card = wishCards.of(letter);
-        // 해 본 일이 기록됐으면(밤 회고 답 · 쉼터 「했어요」) 고르기 · 바꾸기 · 풀기를 모두 막는다(편지 PRD 14).
+        // 해 본 일이면 고르기 · 바꾸기 · 풀기를 모두 막는다(편지 PRD 14). 원본은 카드의 「했어요」라
+        // 쉼터에서 취소하면 다시 고를 수 있고, 카드가 없을 때만 밤 회고 답을 본다({@link LetterWishCards#tried}).
         // 카드가 이미 「했어요」면 처음 고르는 것도 막는다 — 해 보지 않은 일이 해 본 일로 남지 않게.
-        if (actions.stream().anyMatch(a -> a.isChosen() && a.isTried())
-                || card.map(ActionCard::isDone).orElse(false)) {
+        if (card.map(ActionCard::isDone)
+                .orElseGet(() -> actions.stream().anyMatch(a -> a.isChosen() && a.isTried()))) {
             throw new LetterActionLockedException();
         }
         if (position == null) {
@@ -138,7 +140,7 @@ public class LetterService {
             // 작은 일은 싣지 않는다. 다음에 열면 저장된 편지가 작은 일과 함께 나간다.
             LetterGenerator.Draft d = unsaved.get();
             return new LetterView(letter.getId(), letter.getLetterDate(), d.status(), d.quote(), d.insight(),
-                    d.tonightQuestion(), List.of(), helplines(d.status()), letter.isNewOn(today),
+                    d.tonightQuestion(), List.of(), helplines(d.status(), d.policy()), letter.isNewOn(today),
                     letter.getOpenedAt());
         }
         Letter fresh = letterRepository.findById(letter.getId()).orElseThrow(LetterNotFoundException::new);
@@ -153,10 +155,14 @@ public class LetterService {
                 letter.getInsight(), letter.getTonightQuestion(),
                 actions.stream().map(a -> new LetterView.Action(a.getPosition(), a.getTitle(), a.getSource(),
                         a.isChosen(), a.getWhenLabel(), a.getScheduleId(), a.getRemindAt())).toList(),
-                helplines(letter.getStatus()), letter.isNewOn(today), letter.getOpenedAt());
+                helplines(letter.getStatus(), letter.getSafetyPolicy()), letter.isNewOn(today), letter.getOpenedAt());
     }
 
-    private List<String> helplines(LetterStatus status) {
-        return status == LetterStatus.QUIET ? safetyPolicy.resources() : List.of();
+    /** 조용한 편지는 도움받을 곳 전부, 안전 게이트가 조심스럽게(GENTLE) 쓴 편지는 첫 줄(24시간 상담) 하나. */
+    private List<String> helplines(LetterStatus status, LetterPolicy policy) {
+        if (status == LetterStatus.QUIET) {
+            return safetyPolicy.resources();
+        }
+        return policy == LetterPolicy.GENTLE ? safetyPolicy.resources().subList(0, 1) : List.of();
     }
 }

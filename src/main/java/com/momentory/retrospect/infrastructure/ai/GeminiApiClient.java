@@ -141,6 +141,18 @@ public class GeminiApiClient {
         return new GeminiApiClient(client, objectMapper, events, properties);
     }
 
+    /**
+     * 모델 · 온도만 다른 같은 클라이언트 — 편지 판정자 · 검증기처럼 생성기와 다른 모델로, 같은 입력에 같은 답을
+     * 내도록 낮은 온도로 불러야 할 때 쓴다. 모델이 비어 있으면 지금 모델 그대로다. 안전 차단 · 유출 검사 ·
+     * 사용량 기록은 그대로 거친다.
+     */
+    public GeminiApiClient withModel(String model, double temperature) {
+        GeminiApiProperties p = properties;
+        String chosen = model == null || model.isBlank() ? p.model() : model;
+        return new GeminiApiClient(restClient, objectMapper, events, new GeminiApiProperties(p.baseUrl(), p.apiKey(),
+                chosen, temperature, p.connectTimeout(), p.readTimeout(), p.embeddingModel()));
+    }
+
     private static boolean isRetryable(Exception e) {
         if (e instanceof RestClientResponseException response) {
             int status = response.getStatusCode().value();

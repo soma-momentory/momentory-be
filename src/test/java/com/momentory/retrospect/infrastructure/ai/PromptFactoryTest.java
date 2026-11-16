@@ -127,7 +127,7 @@ class PromptFactoryTest {
         assertThat(prompt).contains("다른 사람의 감정");
         assertThat(prompt).contains("intensity");
         assertThat(prompt).contains("before(사건 전)");
-        assertThat(prompt).contains("anxious");        // 고정 10종 키
+        assertThat(prompt).contains("anxious");        // 고정 12종 키
         assertThat(prompt).contains("최대 2개");        // 사건 상한
     }
 
@@ -141,6 +141,29 @@ class PromptFactoryTest {
     }
 
     // ── 프롬프트 변형 (계획 §3.5) ────────────────────────────────────
+
+    @Test
+    @DisplayName("추출 프롬프트는 대표 감정 12종 키와 세부 감정 힌트를 모든 변형에 똑같이 싣는다")
+    void extractPromptListsTwelveEmotionsWithHints() {
+        for (EmotionPromptVariant v : List.of(EmotionPromptVariant.ZERO_SHOT,
+                EmotionPromptVariant.FEW_SHOT, EmotionPromptVariant.FEW_SHOT_BOUNDARY,
+                EmotionPromptVariant.FEW_SHOT_COMBINED)) {
+            String prompt = with(v).emotionExtractPrompt(stateWithConversation());
+
+            assertThat(prompt).contains("아래 12개 중").contains(
+                    "joy, calm, proud, affection, sad, anxious, angry, disappointed, ashamed, "
+                            + "confused, sorry, exhausted");
+            // 세부 감정은 대표 감정을 고르는 힌트로만 — 줄머리는 키, 괄호 안은 이름.
+            assertThat(prompt).contains("  - joy(기쁨): 행복함, 고마움, 신남, 설렘, 감동\n")
+                    .contains("  - disappointed(실망): 서운함, 아쉬움, 좌절감, 허탈함, 씁쓸함\n")
+                    .contains("  - sorry(미안함): 죄송함, 죄책감, 후회, 자책감, 면목없음\n")
+                    .contains("  - exhausted(지침): 피곤함, 무기력, 소진, 귀찮음, 지겨움\n- intensity:");
+            // 옛 10종 키는 어느 변형의 규칙·예시에도 남지 않는다.
+            assertThat(prompt).doesNotContain("happy").doesNotContain("depressed")
+                    .doesNotContain("frustrated").doesNotContain("stuck")
+                    .doesNotContain("lethargic").doesNotContain("tired");
+        }
+    }
 
     private static PromptFactory with(EmotionPromptVariant variant) {
         return new PromptFactory(2000, variant);
@@ -184,13 +207,15 @@ class PromptFactoryTest {
     }
 
     @Test
-    @DisplayName("경계 few-shot 은 화남·답답·막막과 부정 표현을 보여준다")
+    @DisplayName("경계 few-shot 은 헷갈리기 쉬운 감정 쌍과 부정 표현을 보여준다")
     void boundaryFewShotCoversConfusablePairs() {
         String prompt = with(EmotionPromptVariant.FEW_SHOT_BOUNDARY)
                 .emotionExtractPrompt(stateWithConversation());
 
-        assertThat(prompt).contains("angry").contains("frustrated").contains("stuck");
-        assertThat(prompt).contains("성질이 난 건 아니에요");   // 부정 표현
+        assertThat(prompt).contains("→ disappointed").contains("→ sad").contains("→ ashamed")
+                .contains("→ sorry").contains("→ angry").contains("→ confused").contains("→ anxious");
+        assertThat(prompt).contains("화난 건 아니에요");        // 부정 표현
+        assertThat(prompt).doesNotContain(", intensity");      // 강도 표기는 결합 변형 전용
         assertThat(prompt).doesNotContain("전날부터");        // 강도·시점 앵커는 섞지 않는다
     }
 
@@ -203,7 +228,7 @@ class PromptFactoryTest {
         assertThat(prompt).contains("전날부터");                  // 시점 앵커 (FEW_SHOT)
         assertThat(prompt).contains("\"intensity\":4");            // 강도 앵커 (FEW_SHOT)
         assertThat(prompt).contains("angry, intensity");         // 경계 + 강도 (결합 전용 블록)
-        assertThat(prompt).contains("stuck, intensity");
+        assertThat(prompt).contains("sorry, intensity 4");
     }
 
     @Test
@@ -247,7 +272,7 @@ class PromptFactoryTest {
         RetrospectState state = new RetrospectState("sess-x");
         state.event("다음엔 혼자 끌어안지 않겠다고 다짐한 것");
         state.events(List.of(new ExtractedEvent(1, "팀 발표", "팀 발표 자료를 혼자 만듦", List.of(1, 2))));
-        state.confirmEmotions(List.of(Emotion.FRUSTRATED));
+        state.confirmEmotions(List.of(Emotion.DISAPPOINTED));
         state.chooseNeeds(List.of(Needs.byWord("인정").orElseThrow()));
         return state;
     }
@@ -257,8 +282,8 @@ class PromptFactoryTest {
     void needsPromptUsesCardSituation() {
         String prompt = prompts.needsPrompt(stateForExploration());
 
-        assertThat(prompt).contains("사건: 팀 발표 자료를 혼자 만듦").contains("확인된 감정: 답답함");
-        assertThat(prompt).doesNotContain("다짐한 것").doesNotContain("frustrated");
+        assertThat(prompt).contains("사건: 팀 발표 자료를 혼자 만듦").contains("확인된 감정: 실망");
+        assertThat(prompt).doesNotContain("다짐한 것").doesNotContain("disappointed");
     }
 
     @Test
@@ -287,11 +312,13 @@ class PromptFactoryTest {
     void diaryPromptKeepsEveryUserStatementInAtLeastFiveSentencesWithoutInventingFacts() {
         assertThat(prompts.diaryPrompt(new RetrospectState("diary")))
                 .contains("최소 5문장", "길어도 8문장", "짧게 요약하지 말고", "사용자가 한 말은 하나도 빼지 말고",
-                        "바바의 말에 보인 반응", "한 문장 이상으로 풀어 씁니다", "한 문장마다 줄바꿈",
-                        "같은 맥락의 문장은 빈 줄 없이 다음 줄", "맥락이 달라지면 빈 줄 하나", "문단 사이는 \\n\\n",
+                        "바바의 말에 보인 반응", "한 문장 이상으로 풀어 씁니다", "문단은 사건(맥락) 단위",
+                        "한 가지 일만 이야기했다면 문단은 하나", "사건이 실제로 달라질 때만 새 문단",
+                        "때·장소·함께한 사람이 다른 일은 서로 다른 일",
+                        "처음부터 고친 말로", "바로잡았다는 사실도 일기에 쓰지 않습니다", "corrections: 먼저",
                         "대화에 없던 사건·인물·장소·행동은 지어내지", "말하지 않은 감정으로 바꾸지는")
                 .doesNotContain("전체 5~6문장", "재료가 부족하면 있는 내용만", "가볍게 언급한 잡일",
-                        "같은 맥락의 문장은 한 문단으로 이어 쓰고");
+                        "같은 맥락의 문장은 한 문단으로 이어 쓰고", "\\n", "reframedDiary");
     }
 
     @Test

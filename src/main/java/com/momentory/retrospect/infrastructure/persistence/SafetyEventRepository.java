@@ -1,6 +1,7 @@
 package com.momentory.retrospect.infrastructure.persistence;
 
 import java.time.Instant;
+import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -24,4 +25,8 @@ public interface SafetyEventRepository extends JpaRepository<SafetyEvent, Long> 
 
     /** 이 순간 이후 위기 기록이 있는가 — 편지는 일기 날 04:00(KST)을 넘긴다. */
     boolean existsByUserIdAndOccurredAtGreaterThanEqual(Long userId, Instant since);
+
+    /** 이 기간 [from, to) 의 위기 기록 — 편지 일기 날 전 며칠의 지난 위기 안내를 본다. */
+    List<SafetyEvent> findByUserIdAndOccurredAtGreaterThanEqualAndOccurredAtLessThan(Long userId, Instant from,
+            Instant to);
 }

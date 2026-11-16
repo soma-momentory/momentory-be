@@ -66,9 +66,9 @@ class GeminiWeeklyReportWriterRealIntegrationTest {
     @Test
     void hardWeek() {
         check("hard", List.of(
-                day(1, Emotion.FRUSTRATED, "회의", "회의가 길어져서 지쳤다.", "회의가 너무 길었어요"),
-                day(3, Emotion.TIRED, "마감", "마감 때문에 몸이 무거워서 일찍 잤다.", "몸이 무거워서 일찍 잤어요"),
-                day(5, Emotion.STUCK, "야근", "야근하고 돌아왔다. 아무 말도 하기 싫었다.", "아무 말도 하기 싫었어요")));
+                day(1, Emotion.DISAPPOINTED, "회의", "회의가 길어져서 지쳤다.", "회의가 너무 길었어요"),
+                day(3, Emotion.EXHAUSTED, "마감", "마감 때문에 몸이 무거워서 일찍 잤다.", "몸이 무거워서 일찍 잤어요"),
+                day(5, Emotion.CONFUSED, "야근", "야근하고 돌아왔다. 아무 말도 하기 싫었다.", "아무 말도 하기 싫었어요")));
     }
 
     @Test

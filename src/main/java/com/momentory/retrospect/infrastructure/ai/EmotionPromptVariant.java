@@ -15,7 +15,7 @@ public enum EmotionPromptVariant {
     ZERO_SHOT,
     /** 감정별 예시를 넣은 few-shot — 강도·시점 앵커를 포함한다. */
     FEW_SHOT,
-    /** 화남·답답·막막 경계 사례를 넣은 few-shot. */
+    /** 헷갈리기 쉬운 대표 감정 쌍(실망–슬픔, 부끄러움–미안함 등)의 경계 사례를 넣은 few-shot. */
     FEW_SHOT_BOUNDARY,
     /**
      * {@link #FEW_SHOT} 예시 + {@link #FEW_SHOT_BOUNDARY} 예시.

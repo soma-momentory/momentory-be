@@ -66,9 +66,9 @@ class RetrospectStateTest {
     @DisplayName("감정·바람은 중복을 지우고 최대 2개까지 담긴다(엔진이 자른 뒤 넣는다)")
     void confirmEmotionsDedupe() {
         RetrospectState s = new RetrospectState("s1");
-        s.confirmEmotions(List.of(Emotion.ANGRY, Emotion.ANGRY, Emotion.FRUSTRATED));
+        s.confirmEmotions(List.of(Emotion.ANGRY, Emotion.ANGRY, Emotion.DISAPPOINTED));
 
-        assertThat(s.confirmedEmotions()).containsExactly(Emotion.ANGRY, Emotion.FRUSTRATED);
+        assertThat(s.confirmedEmotions()).containsExactly(Emotion.ANGRY, Emotion.DISAPPOINTED);
     }
 
     @Test

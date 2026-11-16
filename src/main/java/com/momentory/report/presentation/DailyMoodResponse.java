@@ -20,7 +20,7 @@ public record DailyMoodResponse(
         @Schema(description = "그 날(KST)", example = "2026-08-17") LocalDate date,
         @Schema(description = "그날의 대표 감정 키 — 기록이 없으면 null", example = "calm")
         String emotion,
-        @Schema(description = "그날 감정 키 전체(대표 감정이 맨 앞)", example = "[\"depressed\", \"happy\"]")
+        @Schema(description = "그날 감정 키 전체(대표 감정이 맨 앞)", example = "[\"sad\", \"joy\"]")
         List<String> emotions) {
 
     static DailyMoodResponse from(DailyMood mood) {

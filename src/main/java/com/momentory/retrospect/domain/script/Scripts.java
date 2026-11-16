@@ -31,7 +31,7 @@ public final class Scripts {
      * <p>일정 감정과 현재 감정이 같으면 "지금은 불안하다고 했네요"가 어색해지므로
      * "지금도 여전히 ~" 문형으로 바꾼다.
      *
-     * <p>질문 줄은 일정 감정의 극성에 맞춰 분기한다 — 긍정(행복·뿌듯·평온)인데 "마음이
+     * <p>질문 줄은 일정 감정의 극성에 맞춰 분기한다 — 긍정(기쁨·평온·뿌듯함·애정)인데 "마음이
      * 무거워지기 시작했나요"로 물으면 맥락이 어긋나므로, 그때는 좋았던 순간을 짚는 문형으로 바꾼다.
      */
     public static String firstQuestion(String nickname, String schedule, Emotion scheduleEmotion,
@@ -345,10 +345,11 @@ public final class Scripts {
     public static String measureLabel(MeasureField field, String schedule,
             Emotion scheduleEmotion, Emotion currentEmotion, String thought, boolean beliefAfter) {
         return switch (field) {
-            case SCHEDULE_EMOTION -> fill("{일정}에서 느낀 {감정1}", schedule, scheduleEmotion,
-                    currentEmotion, null);
-            case CURRENT_EMOTION -> fill("지금 느끼는 {감정2}", schedule, scheduleEmotion,
-                    currentEmotion, null);
+            // 라벨은 감정 이름(명사)이라 어근이 아니라 라벨을 쓴다 — "지금 느끼는 슬픔".
+            case SCHEDULE_EMOTION -> fill("{일정}에서 느낀 ", schedule, null, null, null)
+                    + (scheduleEmotion == null ? "그 감정" : scheduleEmotion.label());
+            case CURRENT_EMOTION -> "지금 느끼는 "
+                    + (currentEmotion == null ? "지금 감정" : currentEmotion.label());
             case BELIEF -> beliefAfter || thought == null || thought.isBlank()
                     ? "처음 생각에 대한 믿음"
                     : "“" + thought + "”라는 생각에 대한 믿음";

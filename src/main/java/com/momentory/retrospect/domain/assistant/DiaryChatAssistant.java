@@ -13,4 +13,12 @@ import com.momentory.retrospect.domain.RetrospectState;
 public interface DiaryChatAssistant {
 
     Optional<DiaryTurn> turn(RetrospectState state, String userText);
+
+    /**
+     * 오늘의 작은 일을 해 보니 어땠는지에 대한 답을 바람카드에 남길 한 줄로 줄인다. 사용자가 한 말만 담는다.
+     * 실패하면 empty — 엔진이 사용자의 답을 그대로 남긴다.
+     */
+    default Optional<String> summarizeReflection(RetrospectState state, String actionTitle, String userText) {
+        return Optional.empty();
+    }
 }

@@ -13,7 +13,7 @@ public final class WeeklyReportRules {
 
     /** 이만큼 일기를 쓴 주만 안쪽 장이 열린다. 그보다 적은 주는 표지 한 장이다. */
     public static final int DETAILED_DIARY_COUNT = 3;
-    public static final Set<Emotion> GOOD_FEELS = Set.of(Emotion.CALM, Emotion.PROUD, Emotion.HAPPY);
+    public static final Set<Emotion> GOOD_FEELS = Emotion.POSITIVE;
 
     public static final int COVER_LINE_MAX_LENGTH = 40;
     public static final int REVIEW_MAX_LENGTH = 300;

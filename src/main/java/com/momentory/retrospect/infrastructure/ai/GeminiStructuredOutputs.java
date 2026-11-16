@@ -16,7 +16,7 @@ final class GeminiStructuredOutputs {
     }
 
     /**
-     * 감정 한 건 — normalized 는 고정 10종 키 문자열, phase 는 before|during|after|now
+     * 감정 한 건 — normalized 는 고정 12종 키 문자열, phase 는 before|during|after|now
      * (어댑터가 도메인 타입으로 매핑). evidence 는 근거 문장 원문, evidenceIds 는 그 발화 번호.
      */
     record GeminiEmotion(Integer eventId, String raw, String normalized, Integer intensity,

@@ -24,8 +24,8 @@ class WeeklyPagesTest {
     void toneIsCrisisFirstThenHardWithoutGoodFeel() {
         DayStory crisis = new DayStory(1L, SUNDAY, Emotion.CALM, null, null, null, false, true, null, "일기", List.of());
         assertThat(WeeklyPages.tone(List.of(crisis))).isEqualTo(WeekTone.CRISIS);
-        assertThat(WeeklyPages.tone(List.of(story(0, Emotion.TIRED, "야근", null)))).isEqualTo(WeekTone.HARD);
-        assertThat(WeeklyPages.tone(List.of(story(0, Emotion.TIRED, "야근", null), story(1, Emotion.CALM, "산책", null))))
+        assertThat(WeeklyPages.tone(List.of(story(0, Emotion.EXHAUSTED, "야근", null)))).isEqualTo(WeekTone.HARD);
+        assertThat(WeeklyPages.tone(List.of(story(0, Emotion.EXHAUSTED, "야근", null), story(1, Emotion.CALM, "산책", null))))
                 .isEqualTo(WeekTone.NORMAL);
     }
 
@@ -33,7 +33,7 @@ class WeeklyPagesTest {
     void wordsPreferLetterAnswersThenRecentAndSkipCrisisDays() {
         DayStory letter = new DayStory(1L, SUNDAY, Emotion.CALM, null, "편지에서 고른 일을 해 봤어요", "편지에서 고른 산책", true,
                 false, null, "일기", List.of());
-        DayStory crisis = new DayStory(2L, SUNDAY.plusDays(6), Emotion.TIRED, null, "위기 안내가 나온 날의 말", null, false,
+        DayStory crisis = new DayStory(2L, SUNDAY.plusDays(6), Emotion.EXHAUSTED, null, "위기 안내가 나온 날의 말", null, false,
                 true, null, "일기", List.of());
         List<WeeklyPages.Word> words = WeeklyPages.words(List.of(letter, story(1, Emotion.CALM, "ㄱ", "첫째 날 문장입니다"),
                 story(2, Emotion.CALM, "ㄴ", "둘째 날 문장입니다"), story(3, Emotion.CALM, "ㄷ", "셋째 날 문장입니다"), crisis));
@@ -64,7 +64,7 @@ class WeeklyPagesTest {
                 new WeeklyPages.Rest(RestContent.BODY_RELEASE, SUNDAY, RestMood.BETTER));
 
         List<WeeklyPages.OkMoment> moments = WeeklyPages.okMoments(
-                List.of(story(0, Emotion.CALM, "친구와 저녁", null), story(1, Emotion.TIRED, "야근", null)), tasks, rests);
+                List.of(story(0, Emotion.CALM, "친구와 저녁", null), story(1, Emotion.EXHAUSTED, "야근", null)), tasks, rests);
 
         assertThat(moments).hasSize(1);
         assertThat(moments.getFirst().tasks()).containsExactly("장보기");

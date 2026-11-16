@@ -45,4 +45,32 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // 통합 테스트가 스프링 컨텍스트를 30개 넘게 캐시해 기본 힙(512MB) 바로 밑에서 돈다 — 작은 변경에도 OOM 이 났다.
+    maxHeapSize = "1g"
 }
+
+// >>> eval: 안전성 평가 하네스(src/test/.../eval, @Tag("eval"))는 기본 test 에서 빼고 evalB0 로만 돌린다.
+tasks.test {
+    useJUnitPlatform { excludeTags("eval") }
+}
+
+tasks.register<Test>("evalB0") {
+    description = "B0 재생 하네스: ./gradlew evalB0 -Peval.data=<jsonl> -Peval.out=<jsonl> [-Peval.system=B0-pre] [-Peval.mode=mock|real]"
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("eval") }
+    // -Peval.harness=verifier 면 실험 A(검증기 단독), 아니면 실험 B(시스템 재생)
+    filter {
+        includeTestsMatching(
+            if (providers.gradleProperty("eval.harness").orNull == "verifier") "*VerifierEvalHarness"
+            else "*B0ReplayHarness")
+    }
+    outputs.upToDateWhen { false }
+    testLogging { showStandardStreams = true }
+    // eval.* · 게이트 모드 · 비교 실험 스위치(momentory.safety.letter-gate.*)를 하네스 JVM 으로 넘긴다
+    project.properties.filterKeys { it.startsWith("eval.") || it.startsWith("momentory.") || it == "LETTER_GATE_MODE" }
+        .forEach { (key, value) -> systemProperty(key, value.toString()) }
+    environment("GEMINI_API_KEY", System.getenv("GEMINI_API_KEY") ?: "")
+}
+// <<< eval

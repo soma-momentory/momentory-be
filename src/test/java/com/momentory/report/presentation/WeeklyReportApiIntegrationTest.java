@@ -109,11 +109,11 @@ class WeeklyReportApiIntegrationTest {
         User other = userRepository.saveAndFlush(User.create());
 
         // 마음 — 일(주 경계 04:00 KST)·월·화·목·토(주 경계 다음날 03:59:59 KST). 평온이 둘로 최다.
-        seedDiary(user, Emotion.DEPRESSED, Instant.parse("2026-08-15T19:00:00Z")); // 8/16 04:00 KST
-        seedDiary(user, Emotion.HAPPY, Instant.parse("2026-08-17T01:00:00Z"));
+        seedDiary(user, Emotion.SAD, Instant.parse("2026-08-15T19:00:00Z")); // 8/16 04:00 KST
+        seedDiary(user, Emotion.JOY, Instant.parse("2026-08-17T01:00:00Z"));
         seedDiary(user, Emotion.CALM, Instant.parse("2026-08-18T01:00:00Z"));
         seedDiary(user, Emotion.CALM, Instant.parse("2026-08-20T01:00:00Z"));
-        seedDiary(user, Emotion.TIRED, Instant.parse("2026-08-22T14:59:59Z"));
+        seedDiary(user, Emotion.EXHAUSTED, Instant.parse("2026-08-22T14:59:59Z"));
         // 주 밖 — 지난주(일 경계 03:59:59 KST), 다음주 일요일 04:00 KST. 섞이면 최다 감정이 바뀐다.
         seedDiary(user, Emotion.CALM, Instant.parse("2026-08-15T18:59:59Z")); // 8/16 03:59:59 KST → 아직 8/15
         seedDiary(user, Emotion.CALM, Instant.parse("2026-08-22T19:00:00Z")); // 8/23 04:00 KST → 다음 주
@@ -152,8 +152,8 @@ class WeeklyReportApiIntegrationTest {
                 .andExpect(jsonPath("$.endDate").value("2026-08-22"))
                 .andExpect(jsonPath("$.dailyMoods.length()").value(7))
                 .andExpect(jsonPath("$.dailyMoods[0].date").value("2026-08-16"))
-                .andExpect(jsonPath("$.dailyMoods[0].emotion").value("depressed"))
-                .andExpect(jsonPath("$.dailyMoods[1].emotion").value("happy"))
+                .andExpect(jsonPath("$.dailyMoods[0].emotion").value("sad"))
+                .andExpect(jsonPath("$.dailyMoods[1].emotion").value("joy"))
                 .andExpect(jsonPath("$.dailyMoods[2].emotion").value("calm"))
                 // 기록이 없는 날은 칸이 남되 감정만 비어 온다(필드는 사라지지 않는다).
                 .andExpect(jsonPath("$.dailyMoods[3].date").value("2026-08-19"))
@@ -161,7 +161,7 @@ class WeeklyReportApiIntegrationTest {
                 .andExpect(jsonPath("$.dailyMoods[4].emotion").value("calm"))
                 .andExpect(jsonPath("$.dailyMoods[5].emotion").isEmpty())
                 .andExpect(jsonPath("$.dailyMoods[6].date").value("2026-08-22"))
-                .andExpect(jsonPath("$.dailyMoods[6].emotion").value("tired"))
+                .andExpect(jsonPath("$.dailyMoods[6].emotion").value("exhausted"))
                 .andExpect(jsonPath("$.dominantEmotion").value("calm"))
                 .andExpect(jsonPath("$.moodMessage")
                         .value("이번 주에는 평온한 마음을 가장 많이 느꼈어요. "
@@ -251,7 +251,7 @@ class WeeklyReportApiIntegrationTest {
     void tiedEmotionsGiveMixedMessage() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         seedDiary(user, Emotion.ANXIOUS, Instant.parse("2026-08-17T01:00:00Z"));
-        seedDiary(user, Emotion.LETHARGIC, Instant.parse("2026-08-18T01:00:00Z"));
+        seedDiary(user, Emotion.SORRY, Instant.parse("2026-08-18T01:00:00Z"));
 
         mockMvc.perform(get("/api/v1/reports/weekly")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user))
@@ -268,17 +268,17 @@ class WeeklyReportApiIntegrationTest {
         // 「늦게 일어나서 기분 안좋았는데 라면 먹고 기분 좋아졌어」 — 우울함과 행복함이 함께 남는다.
         // 점 하나는 대표 감정 색만 맡으므로, 화면이 눌러서 나머지를 보려면 목록이 와야 한다.
         User user = userRepository.saveAndFlush(User.create());
-        seedDiary(user, Emotion.DEPRESSED, "depressed,happy",
+        seedDiary(user, Emotion.SAD, "depressed,happy",
                 Instant.parse("2026-08-17T01:00:00Z"));
 
         mockMvc.perform(get("/api/v1/reports/weekly")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user))
                         .param("date", "2026-08-19"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.dailyMoods[1].emotion").value("depressed"))
+                .andExpect(jsonPath("$.dailyMoods[1].emotion").value("sad"))
                 .andExpect(jsonPath("$.dailyMoods[1].emotions.length()").value(2))
-                .andExpect(jsonPath("$.dailyMoods[1].emotions[0]").value("depressed"))
-                .andExpect(jsonPath("$.dailyMoods[1].emotions[1]").value("happy"));
+                .andExpect(jsonPath("$.dailyMoods[1].emotions[0]").value("sad"))
+                .andExpect(jsonPath("$.dailyMoods[1].emotions[1]").value("joy"));
     }
 
     @Test

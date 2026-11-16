@@ -192,9 +192,9 @@ class WeeklyReportV2ApiIntegrationTest {
     @Test
     @DisplayName("위기 안내가 나온 주는 AI 를 부르지 않고, 그날의 말을 꺼내지 않으며, 도움받을 곳을 함께 준다")
     void crisisWeekStaysQuiet() throws Exception {
-        RetrospectState crisis = retrospect("아무것도 하기 싫고 사라지고 싶다", Emotion.DEPRESSED, "야근");
+        RetrospectState crisis = retrospect("아무것도 하기 싫고 사라지고 싶다", Emotion.SAD, "야근");
         crisis.addAssistantMessage(safetyPolicy.guidanceFor(SafetyLevel.IMMINENT).title() + " 안내");
-        seedDiary(crisis, Emotion.DEPRESSED, SUNDAY);
+        seedDiary(crisis, Emotion.SAD, SUNDAY);
 
         open("2026-08-19").andExpect(status().isOk())
                 .andExpect(jsonPath("$.tone").value("CRISIS"))

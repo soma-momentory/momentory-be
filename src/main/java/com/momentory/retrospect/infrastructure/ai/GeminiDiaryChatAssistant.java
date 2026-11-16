@@ -43,4 +43,16 @@ public class GeminiDiaryChatAssistant implements DiaryChatAssistant {
         }
         return llm.attempt(request, DiaryTurn.class, schema).value();
     }
+
+    /** 한 번만 부른다 — 실패하면 엔진이 사용자의 답을 그대로 남기므로 재시도로 기다리게 하지 않는다. */
+    @Override
+    public Optional<String> summarizeReflection(RetrospectState state, String actionTitle, String userText) {
+        LlmRequest request = LlmRequest.of(state, LlmRole.G2, prompts.reflectionSummarySystem(),
+                prompts.reflectionSummaryPrompt(actionTitle, userText));
+        return llm.attempt(request, ReflectionSummary.class,
+                GeminiResponseSchemas.forType(ReflectionSummary.class)).value()
+                .map(ReflectionSummary::summary)
+                .filter(summary -> summary != null && !summary.isBlank())
+                .map(String::strip);
+    }
 }

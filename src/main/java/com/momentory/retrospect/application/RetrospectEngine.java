@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import com.momentory.retrospect.application.event.CrisisDetected;
 import com.momentory.retrospect.application.event.TodayActionAnswered;
+import com.momentory.retrospect.application.event.TodayActionReflected;
 import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.AnswerGate;
 import com.momentory.retrospect.domain.Choice;
@@ -36,6 +37,8 @@ import com.momentory.retrospect.domain.assistant.DiaryWriter;
 import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
 import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
+import com.momentory.retrospect.domain.assistant.TurnJudge;
+import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.AbuseGate;
 import com.momentory.retrospect.domain.safety.Guidance;
 import com.momentory.retrospect.domain.safety.PromptGuard;
@@ -87,6 +90,8 @@ public class RetrospectEngine {
     private final EmotionExtractor emotionExtractor;
     private final ExplorationAssistant explorationAssistant;
     private final DiaryWriter diaryWriter;
+    private final TurnJudge turnJudge;
+    private final StrategyDiaryChat strategyChat;
     private final LlmUsageLogger usage;
     private final ApplicationEventPublisher events;
     private final int reaskCap;
@@ -94,7 +99,9 @@ public class RetrospectEngine {
 
     public RetrospectEngine(SafetyPolicy safetyPolicy, DiaryChatAssistant diaryChatAssistant,
             EmotionExtractor emotionExtractor, ExplorationAssistant explorationAssistant,
-            DiaryWriter diaryWriter, LlmUsageLogger usage, ApplicationEventPublisher events,
+            DiaryWriter diaryWriter, TurnJudge turnJudge, StrategyDiaryChat strategyChat,
+            LlmUsageLogger usage,
+            ApplicationEventPublisher events,
             @Value("${momentory.gate.reask-cap:1}") int reaskCap,
             @Value("${momentory.gate.abuse-cap:3}") int abuseCap) {
         this.safetyPolicy = safetyPolicy;
@@ -102,6 +109,8 @@ public class RetrospectEngine {
         this.emotionExtractor = emotionExtractor;
         this.explorationAssistant = explorationAssistant;
         this.diaryWriter = diaryWriter;
+        this.turnJudge = turnJudge;
+        this.strategyChat = strategyChat;
         this.usage = usage;
         this.events = events;
         this.reaskCap = reaskCap;
@@ -195,6 +204,10 @@ public class RetrospectEngine {
                 : NOT_TRIED.equals(label) ? TodayActionResult.NOT_DONE
                 : TodayActionResult.SKIPPED;
         events.publishEvent(new TodayActionAnswered(action.letterActionId(), result));
+        // 방금 해 봤다고 한 사람에게는 해 보니 어땠는지를 한 번 묻는다 — 그 답이 바람카드의 느낀 점이 된다.
+        if (TRIED.equals(label) && !action.alreadyDone()) {
+            return askTodayActionReflection(state);
+        }
         String text = TODAY_ACTION_ACKS.get(label) + " " + action.followUp();
         state.addAssistantMessage(text);
         usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
@@ -247,6 +260,47 @@ public class RetrospectEngine {
         return state.nickname() == null || state.nickname().isBlank();
     }
 
+    static final String HOW_WAS_IT = "해 보니 어땠어요?";
+    static final String REFLECTION_ACK = "들려줘서 고마워요.";
+
+    private ReplyDto askTodayActionReflection(RetrospectState state) {
+        String text = TODAY_ACTION_ACKS.get(TRIED) + " " + HOW_WAS_IT;
+        List<Choice> options = List.of(Choice.of(OTHER_TOPIC));
+        state.askTodayActionReflection();
+        state.lastOptions(options);
+        state.addAssistantMessage(text + "\n" + optionLines(options));
+        usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
+        return ReplyDto.choices(text, Phase.DIARY_CHAT, toOptionDtos(options), state.safety().level());
+    }
+
+    /** 「해 보니 어땠어요?」를 건너뛴다 — 느낀 점을 남기지 않고 원래 첫 질문으로 간다. */
+    private ReplyDto skipTodayActionReflection(RetrospectState state) {
+        String text = TODAY_ACTION_ACKS.get(OTHER_TOPIC) + " " + state.todayAction().followUp();
+        state.addUserMessage(OTHER_TOPIC);
+        state.addAssistantMessage(text);
+        usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.DIARY_CHAT.key());
+        return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
+    }
+
+    /**
+     * 「해 보니 어땠어요?」에 글로 답했다 — 한 줄로 줄여 바람카드의 느낀 점으로 넘기고(이벤트) 원래 첫 질문을 잇는다.
+     * 줄이는 데 실패하면 답을 그대로 남긴다. 이 답은 일기 턴을 쓰지 않는다.
+     */
+    private ReplyDto recordTodayActionReflection(RetrospectState state, String content) {
+        TodayAction action = state.todayAction();
+        String reflection = diaryChatAssistant.summarizeReflection(state, action.title(), content)
+                .filter(summary -> !summary.isBlank())
+                .orElse(content);
+        reflection = reflection.strip();
+        if (reflection.length() > CUSTOM_MAX_LENGTH) {
+            reflection = reflection.substring(0, CUSTOM_MAX_LENGTH);
+        }
+        events.publishEvent(new TodayActionReflected(action.letterActionId(), reflection));
+        String text = REFLECTION_ACK + " " + action.followUp();
+        state.addAssistantMessage(text);
+        return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
+    }
+
     // ── 턴 처리 진입점 ───────────────────────────────────────────────────
 
     public ReplyDto handle(RetrospectState state, TurnCommand command) {
@@ -268,6 +322,16 @@ public class RetrospectEngine {
     private ReplyDto handleDiaryTurn(RetrospectState state, TurnCommand command) {
         if (state.awaitingTodayAction()) {
             return resolveTodayAction(state, command);
+        }
+        // 「해 보니 어땠어요?」의 답 — 건너뛰면 바로 첫 질문으로, 글로 답하면 안전 · 악용 점검을 거친 뒤 느낀 점으로 남긴다.
+        boolean reflecting = state.awaitingTodayActionReflection();
+        if (reflecting) {
+            boolean skipped = picked(state, command, OTHER_TOPIC) || !command.hasContent();
+            state.lastOptions(List.of());
+            state.answerTodayAction();
+            if (skipped) {
+                return skipTodayActionReflection(state);
+            }
         }
         // 단답 체크인을 띄운 상태면, 이 턴은 그 선택('일기 보러 갈래요' vs '조금 더')에 대한 답이다.
         if (!state.lastOptions().isEmpty()) {
@@ -299,6 +363,17 @@ public class RetrospectEngine {
         }
         state.resetAbuse();
 
+        // 그만하려는 말은 느낀 점이 아니다 — 아래의 종료 처리로 넘긴다.
+        if (reflecting && !isStopRequest(command.content())) {
+            return recordTodayActionReflection(state, command.content());
+        }
+
+        // 전략 선택을 켠 계정은 여기서 전략 대화로 넘어가고, 아래의 옛 흐름을 거치지 않는다.
+        // 「다른 기억」 질문에 없다고 답한 경우만 두 경로가 같이 쓴다 — 지금까지의 이야기로 정리한다.
+        if (state.turnStrategyEnabled() && !declinesAnotherTopic(state, command.content())) {
+            return handleStrategyTurn(state, userMessage, command.content());
+        }
+
         if (declinesAnotherTopic(state, command.content())) {
             state.bumpDiaryTurn();
             generateDiary(state);
@@ -319,6 +394,8 @@ public class RetrospectEngine {
         boolean topicAnswered = false;
         boolean eventPending = false;
         boolean causeProvided = false;
+
+        judgeTurn(state, userMessage, command.content());
 
         String question = null;
         String empathy = null;
@@ -351,6 +428,8 @@ public class RetrospectEngine {
             question = t.question();
             empathy = t.empathy();
         } else {
+            // 고정 문구로 나간 턴은 기록에서 구분한다 — 전략을 골랐어도 그 문장은 모델이 쓴 것이 아니다.
+            state.logGenerationFailed();
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(),
                     Phase.DIARY_CHAT.key());
             // 장애 때도 이 명확한 정정 답변을 공감 한마디로 끝내지 않는다.
@@ -397,6 +476,74 @@ public class RetrospectEngine {
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
     }
 
+    /**
+     * 판단만 켠 계정이면 방금 답변의 상태를 판단해 기록으로 남긴다 — 대화 흐름에는 쓰지 않는다.
+     * (전략 선택까지 켠 계정은 이 메서드에 오지 않고 {@link StrategyDiaryChat} 으로 간다.)
+     */
+    private void judgeTurn(RetrospectState state, Message userMessage, String content) {
+        if (!state.turnJudgingEnabled()) {
+            return;
+        }
+        state.logJudgment(TurnJudgmentLog.of(userMessage.id(), state.diaryTurn() + 1,
+                turnJudge.judge(state, content).orElse(null)));
+    }
+
+    // ── 전략 대화 (설계 문서 기준) ────────────────────────────────────────
+
+    /**
+     * 전략 선택을 켠 계정의 일기 작성 턴 — 한 턴의 판단 · 전략 · 문장은 {@link StrategyDiaryChat} 이 만들고,
+     * 여기서는 그 결과에 따라 단계만 옮긴다. 옛 고정 순서 · 5턴 상한 · 단답 체크인은 거치지 않는다.
+     */
+    private ReplyDto handleStrategyTurn(RetrospectState state, Message userMessage, String content) {
+        // 첫 답변이거나, 무엇을 말할지 사용자에게 맡긴 뒤의 답변이면 「직전 응답에 대한 반응」을 보지 않는다 —
+        // 그때 다른 얘기를 꺼내는 것은 바바의 말을 받아들이지 않은 것이 아니다.
+        boolean noReaction = state.diaryTurn() == 0 || lastAssistantSaid(state, userMessage, KEEP_TALKING_INVITATION);
+        StrategyDiaryChat.Outcome outcome = strategyChat.turn(state, userMessage, content, noReaction,
+                isStopRequest(content));
+        mergeSafety(state, outcome.safetyLevel(), outcome.safetyFlags(), userMessage.id());
+        if (state.safety().level().stopsRetrospect()) {
+            return safetyReply(state);
+        }
+        return switch (outcome.kind()) {
+            case CLOSE -> {
+                state.markDiaryUserEnded();
+                generateDiary(state);
+                yield finishComplete(state); // 끝내려는 사람은 감정 탐색 없이 일기로 끝낸다
+            }
+            case FINISH -> finishDiaryChat(state, outcome.text());
+            case PROPOSE_WRAP_UP -> presentWrapUpProposal(state, outcome.text());
+            case REPLY -> {
+                state.addAssistantMessage(outcome.text());
+                yield ReplyDto.question(outcome.text(), Phase.DIARY_CHAT, state.safety().level());
+            }
+        };
+    }
+
+    static final String KEEP_TALKING_INVITATION = "좋아요, 편하게 이어가 봐요. 더 나누고 싶은 이야기를 들려주세요.";
+
+    /** 방금 사용자 발화 바로 앞의 바바의 말이 이 문구였는가. */
+    private static boolean lastAssistantSaid(RetrospectState state, Message userMessage, String text) {
+        List<Message> messages = state.messages();
+        for (int i = messages.indexOf(userMessage) - 1; i >= 0; i--) {
+            if (messages.get(i).isAssistant()) {
+                return text.equals(messages.get(i).content());
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 마무리 제안 — 받아주는 말 뒤에 여기까지 정리할지 묻는다. 끊지 않고 묻기만 한다: 「조금 더 이야기할래요」나 자유 입력이면
+     * 대화를 잇는다. 선택은 {@link #resolveDiaryCheckin} 이 받는다.
+     */
+    private ReplyDto presentWrapUpProposal(RetrospectState state, String reflection) {
+        List<Choice> options = List.of(Choice.of(WRAP_UP), Choice.of(KEEP_TALKING));
+        state.lastOptions(options);
+        String text = (reflection.isBlank() ? "" : reflection + "\n") + StrategyDiaryChat.WRAP_UP_QUESTION;
+        state.addAssistantMessage(text + "\n" + optionLines(options));
+        return ReplyDto.choices(text, Phase.DIARY_CHAT, toOptionDtos(options), state.safety().level());
+    }
+
     /** 질문은 빼되 상황을 짚는 공감 문장을 살린다. 장애 때도 맥락 없는 맞장구로 끝내지 않는다. */
     private static String diaryEmpathy(String empathy, String question, String userText) {
         String reflection = empathyStatements(empathy);
@@ -414,7 +561,7 @@ public class RetrospectEngine {
                 + "그 순간에 담긴 마음을 가볍게 넘기지 않고 함께할게요.";
     }
 
-    private static String empathyStatements(String candidate) {
+    static String empathyStatements(String candidate) {
         if (candidate == null || candidate.isBlank()) {
             return "";
         }
@@ -503,9 +650,9 @@ public class RetrospectEngine {
         return "그 순간에는 어떤 기분이 들었어요?";
     }
 
-    private static final String OTHER_MEMORY_QUESTION = "오늘 하루 중 다른 기억에 남는 일은 뭐였어요?";
+    static final String OTHER_MEMORY_QUESTION = "오늘 하루 중 다른 기억에 남는 일은 뭐였어요?";
 
-    private static final String OTHER_TOPIC_QUESTION = "지금까지 이야기한 것 중에, 다른 이야기를 나눠볼까요?";
+    static final String OTHER_TOPIC_QUESTION = "지금까지 이야기한 것 중에, 다른 이야기를 나눠볼까요?";
 
     /** 다른 이야기 제안 직후의 명확한 부정만 받는다. 다른 질문의 '없어요'나 새 이야기는 종료하지 않는다. */
     private static boolean declinesAnotherTopic(RetrospectState state, String content) {
@@ -624,7 +771,9 @@ public class RetrospectEngine {
             return handleDiaryTurn(state, command);
         }
         state.addUserMessage(KEEP_TALKING);
-        String text = "좋아요, 편하게 이어가 봐요. " + fallbackDiaryQuestion(state);
+        // 전략 대화에서는 무엇을 더 이야기할지 사용자에게 맡긴다 — 다음 답변부터 다시 전략이 고른다.
+        String text = state.turnStrategyEnabled() ? KEEP_TALKING_INVITATION
+                : "좋아요, 편하게 이어가 봐요. " + fallbackDiaryQuestion(state);
         state.addAssistantMessage(text);
         return ReplyDto.question(text, Phase.DIARY_CHAT, state.safety().level());
     }

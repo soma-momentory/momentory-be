@@ -62,6 +62,26 @@ class GeminiDiaryWriterRealIntegrationTest {
         assertThat(diary).as(diary).contains("보드게임", "아침", "절실");
     }
 
+    /** 한 가지 일만 이야기했고 중간에 말을 고쳤으면, 빈 줄 없이 고친 뒤의 내용만 담는다. */
+    @Test
+    void oneEventWithACorrectedWordHasNoBlankLineAndKeepsOnlyTheCorrection() {
+        var state = new RetrospectState("diary-correction-smoke");
+        state.addAssistantMessage("오늘 하루 중에서 가장 기억에 남는 일은 뭐였어요?");
+        state.addUserMessage("오늘 면접을 봤는데 떨어진 거 같아..");
+        state.addAssistantMessage("면접을 보셨는데 잘 안 된 것 같으셨군요. 그때 어떤 감정이 가장 크게 다가오셨나요?");
+        state.addUserMessage("허뭄이 거 같아.");
+        state.addAssistantMessage("허뭄이 같다는 건 어떤 느낌이었나요?");
+        state.addUserMessage("아 허무함이야. 잘못 썼네");
+        state.addAssistantMessage("면접이 잘 안 된 것 같아 허무하셨군요.");
+        state.addUserMessage("맞아. 준비 많이 했는데 너무 허무했어");
+
+        String diary = writer().write(state).orElseThrow().diary();
+        System.out.println("DIARY-CORRECTION\n" + diary + "\nDIARY-END");
+        assertThat(diary).as(diary).contains("면접", "허무")
+                .doesNotContain("허뭄", "오타", "정정", "잘못 썼", "잘못 말", "고쳐", "\n\n");
+        assertThat(diary.lines().count()).as(diary).isGreaterThanOrEqualTo(3);
+    }
+
     private static GeminiDiaryWriter writer() {
         var properties = new GeminiApiProperties("https://generativelanguage.googleapis.com",
                 System.getenv("GEMINI_API_KEY"), "gemini-flash-lite-latest", 0.7,

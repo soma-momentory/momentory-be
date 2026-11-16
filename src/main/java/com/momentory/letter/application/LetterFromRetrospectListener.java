@@ -16,6 +16,7 @@ import com.momentory.letter.infrastructure.LetterActionRepository;
 import com.momentory.letter.infrastructure.LetterRepository;
 import com.momentory.retrospect.application.RetrospectCompleted;
 import com.momentory.retrospect.application.event.TodayActionAnswered;
+import com.momentory.retrospect.application.event.TodayActionReflected;
 import com.momentory.retrospect.domain.TodayActionResult;
 
 /**
@@ -100,6 +101,25 @@ public class LetterFromRetrospectListener {
                 wishCards.of(letter).filter(card -> !card.isDone())
                         .ifPresent(card -> card.changeCompletion(true, card.getReflection(), now));
             }
+        });
+    }
+
+    /**
+     * 해 보니 어땠는지의 답 — 같은 트랜잭션에서 바람카드의 느낀 점으로 남긴다. 「했어요」 상태인 카드에만, 그리고
+     * 느낀 점이 비어 있을 때만 쓴다(쉼터에서 직접 적은 글은 덮어쓰지 않는다). 카드가 없으면 남길 곳이 없다.
+     */
+    @EventListener
+    public void recordTodayActionReflection(TodayActionReflected event) {
+        letterActionRepository.findLetterIdById(event.letterActionId()).ifPresent(letterId -> {
+            Letter letter = letterRepository.findForUpdate(letterId).orElse(null);
+            LetterAction action = letterActionRepository.findById(event.letterActionId()).orElse(null);
+            if (letter == null || action == null || !action.isChosen()) {
+                return;
+            }
+            wishCards.of(letter)
+                    .filter(card -> card.isDone()
+                            && (card.getReflection() == null || card.getReflection().isBlank()))
+                    .ifPresent(card -> card.changeCompletion(true, event.reflection(), Instant.now()));
         });
     }
 }
