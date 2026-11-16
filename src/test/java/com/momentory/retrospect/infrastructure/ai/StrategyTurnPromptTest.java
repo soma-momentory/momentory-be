@@ -103,10 +103,11 @@ class StrategyTurnPromptTest {
     @Test
     void tellsTheWriterNotToEchoARequestToBeHeard() {
         String heard = prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false, null, true));
-        assertThat(heard).contains("「묻지 않고 듣겠다」는 답은 서버가 따로 합니다", "그 요청을 해석하거나 되풀이하지 말고",
-                "요청뿐이면 ack 를 빈 문자열로 둡니다");
+        assertThat(heard).contains("공감해 달라고 했습니다", "그 요청을 해석하거나", "약속하는 말도 쓰지 않습니다",
+                "앞에서 한 이야기를 구체적으로 짚어 공감합니다", "그 상황에 맞는 감정을 짚어 줘도",
+                "공감이 모자랐다고 사과하지", "ack 를 빈 문자열로 둡니다");
         assertThat(prompt(new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false)))
-                .doesNotContain("서버가 따로 합니다");
+                .doesNotContain("약속하는 말도 쓰지 않습니다");
     }
 
     @Test
@@ -119,6 +120,25 @@ class StrategyTurnPromptTest {
     void reframingAsksForTheUsersOwnGrounds() {
         assertThat(prompt(new TurnStrategy(StrategyType.REFRAME, QuestionFocus.OPEN, false)))
                 .contains("재해석:", "근거를 함께 살펴보는 질문", "사용자가 말하게 합니다");
+    }
+
+    @Test
+    void asksTheWriterToTakeTheUsersSideWhenTheyAskIfTheyAreWrong() {
+        assertThat(prompt(new TurnStrategy(StrategyType.REFRAME, QuestionFocus.OPEN, false)))
+                .contains("[자기 편을 들어 달라는 물음]", "'내가 이상해?'", "사용자 편에서 분명하게",
+                        "상대를 나쁘게 말하거나 탓하지는 않습니다", "이 턴에는 질문하지 않습니다",
+                        "재해석이어도 이것이 먼저입니다", "askedForSide: 위 [자기 편을 들어 달라는 물음]대로",
+                        "단 하나의 예외", "물음을 되받기만 하는 것은 답이 아닙니다");
+    }
+
+    @Test
+    void tellsTheWriterToGoBackToThePreviousStoryOnlyRightAfterAskingForAnother() {
+        TurnStrategy asks = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+        assertThat(prompt(asks.withAfterOtherMemory(true)))
+                .contains("바바가 방금 다른 기억에 남는 일을 물었습니다", "다른 일을 말했으면 newTopic 을 true 로",
+                        "앞 이야기로 돌아가 방금 새로 말한 것을 받고",
+                        "nothingMoreToAsk 는 false 입니다");
+        assertThat(prompt(asks)).doesNotContain("바바가 방금 다른 기억에 남는 일을 물었습니다");
     }
 
     @Test

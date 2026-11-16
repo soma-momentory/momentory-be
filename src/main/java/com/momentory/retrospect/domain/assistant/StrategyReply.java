@@ -19,9 +19,12 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * @param asksFeeling      이번 질문이 그때의 기분이나 마음을 묻는가 — 감정 강도 성향을 재는 데만 쓴다. 모르면 null
  * @param repeatsEarlier   이번 질문이 이 대화에서 바바가 이미 한 질문과 같은 것을 묻는가(말이 달라도) — 그렇다면 서버가
  *                         질문을 버린다. 모르면 null
+ * @param askedForSide     방금 답변이 「내가 이상해?」처럼 자기 편을 들어 주길 바라는 물음인가 — 그렇다면 바바는 사용자 편에서
+ *                         답하고, 서버는 이 턴의 질문을 뺀다. 모르면 null
  */
 public record StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
-        String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier) {
+        String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier,
+        Boolean askedForSide) {
 
     public StrategyReply {
         safetyFlags = safetyFlags == null ? List.of() : List.copyOf(safetyFlags);
@@ -30,12 +33,22 @@ public record StrategyReply(String ack, String question, boolean newTopic, boole
     /** 질문이 기분을 묻는지 알리지 않은 응답. */
     public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
             String topic, String safetyLevel, List<String> safetyFlags) {
-        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, null, null);
+        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, null, null, null);
     }
 
     public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
             String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling) {
-        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, asksFeeling, null);
+        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, asksFeeling, null, null);
+    }
+
+    public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
+            String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier) {
+        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, asksFeeling, repeatsEarlier,
+                null);
+    }
+
+    public boolean userAskedForSide() {
+        return Boolean.TRUE.equals(askedForSide);
     }
 
     public boolean questionRepeatsEarlier() {
