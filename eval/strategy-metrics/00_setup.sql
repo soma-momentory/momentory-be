@@ -8,6 +8,7 @@
 --   그 반응     = 같은 회고의 바로 다음 일기 턴(diary_turn + 1) 판단의 reaction
 --   응답 곤란   = struggle_to_answer
 --   저항        = refuse_question · no_answer_or_topic_change · argue
+--                 단, 답변이 새 이야기의 시작이었다면(new_topic, V50) 「다른 얘기로 넘어감」은 저항이 아니다(NEW_TOPIC).
 --   확신이 기준(min_confidence) 미만인 반응은 어느 쪽에도 세지 않는다(문서 2장 「신호 제외」).
 
 DROP VIEW IF EXISTS sm_params CASCADE;
@@ -15,7 +16,7 @@ DROP VIEW IF EXISTS sm_params CASCADE;
 -- ── 1. 분석 조건 ── 실행 전에 고친다.
 CREATE TEMP VIEW sm_params AS
 SELECT
-    -- 이 시각 이후 시작한 회고만 본다. 재려는 서버에 V48(세션 연구 로그)이 배포된 시각으로 바꾼다.
+    -- 이 시각 이후 시작한 회고만 본다. 재려는 서버에 V50(새 이야기 칸)이 배포된 시각으로 바꾼다 — V48 · V50 기록이 다 있어야 한다.
     TIMESTAMPTZ '2026-11-17 00:00:00+09' AS since,
     -- 이 시각 이전에 시작한 회고만 본다(수집 마감). 열어 두려면 그대로 둔다.
     TIMESTAMPTZ '9999-12-31 00:00:00+09' AS until,
@@ -102,7 +103,8 @@ WITH turns AS (
            lead(j.diary_turn) OVER w AS next_diary_turn,
            lead(j.status) OVER w AS next_status,
            lead(j.reaction) OVER w AS next_reaction,
-           lead(j.reaction_confidence) OVER w AS next_reaction_confidence
+           lead(j.reaction_confidence) OVER w AS next_reaction_confidence,
+           lead(j.new_topic) OVER w AS next_new_topic
     FROM retrospect_turn_judgments j
     WHERE j.retrospect_id IN (SELECT retrospect_id FROM sm_sessions)
     WINDOW w AS (PARTITION BY j.retrospect_id ORDER BY j.diary_turn, j.id)
@@ -117,11 +119,14 @@ SELECT t.retrospect_id,
        row_number() OVER (PARTITION BY t.retrospect_id ORDER BY t.diary_turn, t.id) AS question_no,
        CASE WHEN t.next_diary_turn = t.diary_turn + 1 THEN t.next_reaction END AS reaction,
        CASE WHEN t.next_diary_turn = t.diary_turn + 1 THEN t.next_reaction_confidence END AS reaction_confidence,
+       CASE WHEN t.next_diary_turn = t.diary_turn + 1 THEN t.next_new_topic END AS answer_new_topic,
        CASE
            WHEN t.next_diary_turn IS DISTINCT FROM t.diary_turn + 1 THEN 'NO_FOLLOWUP'   -- 질문 뒤에 답이 없다(끊김 등)
            WHEN t.next_status = 'FAILED' OR t.next_reaction IS NULL THEN 'JUDGE_FAILED'
            WHEN t.next_reaction_confidence < p.min_confidence THEN 'LOW_CONFIDENCE'
            WHEN t.next_reaction = 'struggle_to_answer' THEN 'STRUGGLE'
+           -- 질문에 답하지 않고 새 이야기를 꺼냈다 — 전략도 이 턴을 저항으로 세지 않는다.
+           WHEN t.next_reaction = 'no_answer_or_topic_change' AND t.next_new_topic IS TRUE THEN 'NEW_TOPIC'
            WHEN t.next_reaction IN ('refuse_question', 'no_answer_or_topic_change', 'argue') THEN 'RESISTANCE'
            ELSE 'OTHER'
        END AS response_class
@@ -135,7 +140,7 @@ WITH q AS (
     SELECT retrospect_id,
            count(*) AS explore_questions,
            count(*) FILTER (WHERE question_as_choices) AS choice_questions,
-           count(*) FILTER (WHERE response_class IN ('STRUGGLE', 'RESISTANCE', 'OTHER')) AS judged_questions,
+           count(*) FILTER (WHERE response_class IN ('STRUGGLE', 'RESISTANCE', 'NEW_TOPIC', 'OTHER')) AS judged_questions,
            count(*) FILTER (WHERE response_class = 'STRUGGLE') AS struggle_questions,
            count(*) FILTER (WHERE response_class = 'RESISTANCE') AS resistance_questions,
            count(*) FILTER (WHERE response_class = 'NO_FOLLOWUP') AS unanswered_questions,

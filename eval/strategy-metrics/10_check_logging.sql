@@ -23,6 +23,15 @@ UNION ALL
 SELECT '일기 턴 번호가 비어 있음(되돌려진 턴 등)', count(*), '적을수록 좋음'
 FROM sm_sessions WHERE logged_turns <> max_diary_turn
 UNION ALL
+SELECT '문장을 만든 전략 턴인데 새 이야기 칸이 비어 있음(V50 이후)', count(*), '0'
+FROM retrospect_turn_judgments j
+WHERE j.retrospect_id IN (SELECT retrospect_id FROM sm_sessions)
+  AND j.policy_version IS NOT NULL AND j.strategy_type <> 'CLOSE' AND NOT j.generation_failed
+  AND j.new_topic IS NULL
+UNION ALL
+SELECT '탐색 질문 뒤 새 이야기인데 응답 곤란으로 판단됨', count(*), '적을수록 좋음 (응답 곤란으로 셈)'
+FROM sm_questions WHERE answer_new_topic IS TRUE AND response_class = 'STRUGGLE'
+UNION ALL
 SELECT '탐색 질문이 나갔는데 방침이 탐색 · 재해석이 아님', count(*), '0'
 FROM sm_questions WHERE strategy_type NOT IN ('EXPLORE', 'REFRAME')
 UNION ALL
