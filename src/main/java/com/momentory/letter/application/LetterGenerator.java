@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -83,12 +84,15 @@ public class LetterGenerator {
     private final LetterGateProperties gate;
     private final LetterSafetyAssessor assessor;
     private final GeminiLetterVerifier verifier;
+    /** 꺼져 있으면 작은 일을 만들지 않는다 — 욕구 · 번호 고르기 AI 도 부르지 않고 칸 없이 저장한다(2026-11-17). */
+    private final boolean actionsEnabled;
 
     public LetterGenerator(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, LetterMaterialsReader materialsReader,
             GeminiLetterWriter writer, NeedActionCatalog catalog, TransactionTemplate transaction,
             MeterRegistry meters, SafetyPolicy safetyPolicy, LetterGateProperties gate,
-            LetterSafetyAssessor assessor, GeminiLetterVerifier verifier) {
+            LetterSafetyAssessor assessor, GeminiLetterVerifier verifier,
+            @Value("${momentory.letter.actions-enabled:true}") boolean actionsEnabled) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.materialsReader = materialsReader;
@@ -100,6 +104,7 @@ public class LetterGenerator {
         this.gate = gate;
         this.assessor = assessor;
         this.verifier = verifier;
+        this.actionsEnabled = actionsEnabled;
     }
 
     /** 다 만든 편지 내용 — 저장 전 한 벌. */
@@ -158,6 +163,9 @@ public class LetterGenerator {
         Optional<Draft> body = writer.writeBody(m).flatMap(b -> checkedBody(b, m));
         if (body.isEmpty()) {
             return Optional.empty();
+        }
+        if (!actionsEnabled) {
+            return body;
         }
         List<Need> needs;
         NeedsSource source;
@@ -266,6 +274,9 @@ public class LetterGenerator {
                 .map(b -> applyPolicy(b, policy));
         if (body.isEmpty()) {
             return Optional.empty();
+        }
+        if (!actionsEnabled) {
+            return body;
         }
         List<Need> needs;
         NeedsSource source;
@@ -482,6 +493,9 @@ public class LetterGenerator {
      * 고르지 않는다. 본문이 실패하면 기본 편지가 같은 작은 일을 쓴다.
      */
     private Draft openDraft(LetterMaterials m) {
+        if (!actionsEnabled) {
+            return writer.writeBodyOnOpen(m).flatMap(b -> checkedBody(b, m)).orElseGet(() -> fallbackBody(m));
+        }
         CompletableFuture<OpenPick> pick = CompletableFuture
                 .supplyAsync(() -> openPick(m), OPEN_CALLS)
                 // 「욕구 → 번호」는 차례로 돌아 각 8초면 16초까지 갈 수 있다. 본문과 같은 8초에서 끊고 「휴식」으로 채운다.
@@ -568,6 +582,9 @@ public class LetterGenerator {
      */
     private Draft withActions(Draft body, LetterMaterials m, List<Need> needs, NeedsSource source,
             boolean aiAsked, Optional<GeminiLetterWriter.ActionPick> aiPick) {
+        if (!actionsEnabled) {
+            return body; // 기본 편지 · 다시 쓴 편지도 칸 없이
+        }
         List<ActionDraft> slots = new ArrayList<>();
         boolean gentle = body.policy() == LetterPolicy.GENTLE;
         String fallbackReason = "no_ai"; // 욕구를 모를 때 · 기다리다 보여 주는 기본 편지는 처음부터 대체 규칙이다.
