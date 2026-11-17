@@ -119,7 +119,6 @@ public class PromptFactory {
                   생각·의미·교훈을 캐묻거나 계기를 반복해서 질문하지 마세요.
                   감정이 계속 없으면 같은 소재에서 2턴이 지난 뒤 전환할 수 있습니다.
                 - 구체적인 공감과 위 기준에 맞는 질문을 같은 응답으로 보내세요. 감정과 이유를 들었으면 공감과 감정 확인 질문을 보냅니다.
-                  사건은 최대 2개입니다. 이미 두 사건이 있으면 다른 기존 사건으로 전환하세요.
                   가볍게 언급한 잡일을 억지로 깊이 탐색하지 마세요. 종료는 서버가 결정합니다.
                 [공감의 기준]
                 - 방금 답변의 구체적인 장면·행동이나 직접 표현한 감정을 짚어 따뜻하게 받아 주세요.
@@ -357,7 +356,7 @@ public class PromptFactory {
         return """
                 아래 대화에서 사용자가 경험한 사건과 그때의 감정을 뽑아주세요.
 
-                [사건] events — 최대 %d개
+                [사건] events — 사용자가 이야기한 사건을 개수 제한 없이 모두 담습니다.
                 - id: 1부터 매깁니다.
                 - label: 그 사건을 부르는 <b>짧은 이름</b>("면접 스터디", "친구와 다툼"). 문장이 아니라
                   이름입니다. 아래 [오늘의 일정]에 해당하는 일이면 그 일정 이름을 그대로 씁니다 —
@@ -401,7 +400,7 @@ public class PromptFactory {
                 [오늘의 일정] %s
                 [대화]
                 %s
-                """.formatted(RetrospectState.MAX_EVENTS, String.join(", ", Emotion.keys()),
+                """.formatted(String.join(", ", Emotion.keys()),
                 EMOTION_GUIDE, examples, orNone(state.schedule()), numberedHistory(state));
     }
 

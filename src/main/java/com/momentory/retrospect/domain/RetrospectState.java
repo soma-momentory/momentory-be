@@ -24,10 +24,14 @@ import com.momentory.retrospect.domain.strategy.TurnStrategy;
  */
 public class RetrospectState {
 
+    /**
+     * 일기에 담는 사건 수 (모델 비교 계획 §3.1). 대화에서 다루는 이야기 수와는 별개다 — 대화는 이야기 수에 제한이
+     * 없고, 끝에 뽑은 사건 가운데 감정이 붙은 것을 먼저 이만큼 고른다({@code GeminiEmotionExtractor}).
+     */
+    public static final int MAX_EVENTS = 2;
+
     /** 일기 작성 최대 턴 (채팅흐름_v2). */
     public static final int DIARY_MAX_TURNS = 5;
-    /** 한 세션에서 뽑는 사건 개수 상한 (모델 비교 계획 §3.1). */
-    public static final int MAX_EVENTS = 2;
     /**
      * 일기 작성 권장 최소 턴 — 엔진은 5턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
      * 이 값을 하한으로 알려 "최소 이만큼은 소재를 넓혀가라"는 진행 안내에 쓴다({@code PromptFactory}).
@@ -414,7 +418,7 @@ public class RetrospectState {
         return List.copyOf(events);
     }
 
-    /** 대화 끝에 추출한 사건으로 채운다 — 요약이 있는 것만, 최대 2개. */
+    /** 대화 끝에 추출한 사건으로 채운다 — 요약이 있는 것만, 최대 {@link #MAX_EVENTS}개. */
     public void events(List<ExtractedEvent> extracted) {
         events.clear();
         if (extracted == null) {

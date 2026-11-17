@@ -133,8 +133,9 @@ class RetrospectEngineTest {
         fake.turnEvent = "발표";
         fake.events.add(new ExtractedEvent(1, "친구 만남", "친구와 밥을 먹은 일", List.of(1)));
         fake.events.add(new ExtractedEvent(2, "발표", "발표 도중 말이 막힌 일", List.of(2, 3)));
+        // 사건이 이미 둘이어도 다른 기억을 묻는다 — 사건 수에 상한이 없다.
         assertThat(engine.handle(state, TurnCommand.text("발표를 준비할 시간이 없었어요.")).text())
-                .endsWith("지금까지 이야기한 것 중에, 다른 이야기를 나눠볼까요?");
+                .endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION);
 
         ReplyDto reply = engine.handle(state, TurnCommand.text(answer));
 
@@ -463,7 +464,7 @@ class RetrospectEngineTest {
 
     @Test
     @DisplayName("이미 두 사건을 이야기했으면 감정 확인 뒤 다른 기존 사건으로 전환한다")
-    void emotionAtEventLimitDoesNotOpenThirdEvent() {
+    void emotionWithTwoEventsStillAsksForAnotherMemory() {
         start();
         state.event("발표를 했다");
         state.addSecondaryEvents(List.of("친구와 저녁을 먹었다"));
@@ -478,7 +479,7 @@ class RetrospectEngineTest {
         assertThat(reply.text()).endsWith("어떤 일 때문에 그런 마음이 드셨나요?");
         reply = engine.handle(state, TurnCommand.text("사람들 앞에서 발표하는 자리였거든요."));
         assertThat(reply.text()).doesNotContain("그랬군요.")
-                .endsWith("\n지금까지 이야기한 것 중에, 다른 이야기를 나눠볼까요?");
+                .endsWith("\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
         assertThat(state.knownEventCount()).isEqualTo(2);
     }
 
@@ -1048,17 +1049,17 @@ class RetrospectEngineTest {
     }
 
     @Test
-    @DisplayName("사건이 상한만큼 나왔으면 체크인 재개 질문이 새 소재를 열지 않는다")
-    void checkinResumeDoesNotOpenNewTopic() {
+    @DisplayName("사건이 둘 이상 나왔어도 체크인 재개 질문은 다른 기억을 묻는다 — 사건 수에 상한이 없다")
+    void checkinResumeStillAsksForAnotherMemoryAfterTwoEvents() {
         RetrospectState state = new RetrospectState("s-3");
         engine.start(state, StartCommand.single("팀 발표", null, "정민"));
-        // 슬롯을 다 채우고 사건을 상한까지 만든다(핵심 + 곁가지).
+        // 슬롯을 다 채우고 사건을 둘 만든다(핵심 + 곁가지).
         fake.turnEvent = "발표에서 말이 막혔다";
         fake.turnMeaning = "계속 곱씹게 된다";
         fake.turnEmotionPresent = true;
         engine.handle(state, new TurnCommand("발표가 있었어요", null));
         state.addSecondaryEvents(java.util.List.of("친구와 다툼"));
-        assertThat(state.knownEventCount()).isEqualTo(RetrospectState.MAX_EVENTS);
+        assertThat(state.knownEventCount()).isEqualTo(2);
 
         // 단답으로 체크인을 띄운 뒤 「조금 더」를 고른다.
         fake.turnOffTopic = true;
@@ -1068,8 +1069,8 @@ class RetrospectEngineTest {
         assertThat(state.lastOptions()).as("체크인이 떠야 한다").isNotEmpty();
         ReplyDto resumed = engine.handle(state, new TurnCommand(null, java.util.List.of("2")));
 
-        assertThat(resumed.text()).contains("지금까지 이야기한 것 중에");
-        assertThat(resumed.text()).doesNotContain("조금 더 이야기해 주고 싶은 게 있을까요");
+        assertThat(resumed.text()).contains("다른 기억에 남는 일");
+        assertThat(resumed.text()).doesNotContain("지금까지 이야기한 것 중에");
     }
 
     @Test
