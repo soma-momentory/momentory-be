@@ -17,7 +17,7 @@ public record LetterResponse(
         @Schema(description = "AI 편지면 어제 사용자가 한 말 그대로(원문 대조를 통과하지 못하면 null), 기본 편지면 일기 첫 문장. 조용한 편지면 null", example = "발표 전에 손이 계속 떨렸어요", nullable = true) String quote,
         @Schema(description = "바바가 알아챈 관점(조용한 편지면 고정 문구)", example = "떨렸던 건 그만큼 잘하고 싶었기 때문이었을지도 몰라요.") String insight,
         @Schema(description = "오늘 밤 첫 질문 예고. 조용한 편지면 null", example = "오늘 밤엔 발표 뒤 마음부터 물어볼게요.", nullable = true) String tonightQuestion,
-        @Schema(description = "오늘 해 볼 작은 일(최대 3개). 조용한 편지면 빈 목록") List<Action> actions,
+        @Schema(description = "오늘 해 볼 작은 일(최대 3개). 조용한 편지이거나 서버가 작은 일을 끈 동안(LETTER_ACTIONS_ENABLED=false)은 빈 목록") List<Action> actions,
         @Schema(description = "도움받을 곳. 조용한 편지에만 있고 나머지는 빈 목록") List<String> helplines,
         @Schema(description = "받은 날 · 그다음 날이면 true. 홈 아이콘 점은 isNew 이고 openedAt 이 없을 때 단다", example = "true") boolean isNew,
         @Schema(description = "처음 연 시각. 아직 안 열었으면 null", nullable = true) Instant openedAt

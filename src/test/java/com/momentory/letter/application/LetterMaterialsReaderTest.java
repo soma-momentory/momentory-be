@@ -44,7 +44,7 @@ class LetterMaterialsReaderTest {
         var reader = new LetterMaterialsReader(mock(LetterRepository.class), mock(LetterActionRepository.class),
                 diaries, retrospects, mock(RetrospectStateCodec.class), cards,
                 mock(ScheduleRepository.class), mock(UserProfileRepository.class), mock(SafetyPolicy.class),
-                mock(LetterWishCards.class), eventCodec, mock(SafetyEventRepository.class));
+                mock(LetterWishCards.class), eventCodec, mock(SafetyEventRepository.class), true);
 
         var materials = reader.read(letter).orElseThrow();
         assertThat(materials.events()).containsExactly("친구와 산책: 친구와 걸으며 편안해졌다");
