@@ -208,6 +208,7 @@ class RetrospectEngineStrategyTest {
         TurnJudgmentLog asked = lastLog();
         assertThat(asked.askedFeeling()).isTrue();
         assertThat(asked.questionSent()).isTrue();
+        assertThat(asked.newTopic()).isFalse();
 
         // 모델이 기분 질문이라고 했어도 서버가 다른 기억을 물은 턴은 기분을 물은 것이 아니다. 고정 문구인 다른 기억 질문은
         // 탐색 질문으로 세지 않는다.
@@ -299,8 +300,9 @@ class RetrospectEngineStrategyTest {
         assertThat(said.text()).isEqualTo("친구와 저녁을 드셨군요.\n저녁을 먹으면서 기분이 어땠어요?");
         TurnJudgmentLog log = lastLog();
         assertThat(log.strategy().focus()).isEqualTo(QuestionFocus.OPEN);
-        // 새 이야기를 꺼낸 것은 저항으로 세지 않는다.
+        // 새 이야기를 꺼낸 것은 저항으로 세지 않는다 — 기록에도 새 이야기로 남겨 지표에서 저항과 가른다.
         assertThat(log.strategy().reaction()).isNull();
+        assertThat(log.newTopic()).isTrue();
         assertThat(state.strategySignals().resistanceCount()).isZero();
         assertThat(state.strategySignals().topicNumber()).isEqualTo(2);
     }
@@ -490,6 +492,8 @@ class RetrospectEngineStrategyTest {
         TurnJudgmentLog log = lastLog();
         assertThat(log.strategy().type()).isEqualTo(StrategyType.CLOSE);
         assertThat(log.strategyApplied()).isTrue();
+        // 문장을 만들지 않았으니 새 이야기였는지도 모른다.
+        assertThat(log.newTopic()).isNull();
         assertThat(log.questionSent()).isFalse();
         assertThat(state.endReason()).isEqualTo(RetrospectEndReason.USER_REQUEST);
     }
@@ -546,6 +550,7 @@ class RetrospectEngineStrategyTest {
         assertThat(log.generationFailed()).isTrue();
         // 고정 열린 질문도 사용자가 받은 탐색 질문이다 — 생성 실패 표시로 가려낸다.
         assertThat(log.questionSent()).isTrue();
+        assertThat(log.newTopic()).isNull();
     }
 
     @Test

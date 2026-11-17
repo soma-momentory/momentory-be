@@ -706,6 +706,13 @@ public class RetrospectState {
         }
     }
 
+    /** 방금 남긴 판단 기록에 이 답변이 새 이야기의 시작이었는지를 덧붙인다. */
+    public void logNewTopic(boolean started) {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withNewTopic(started));
+        }
+    }
+
     /** 방금 남긴 판단 기록에 이 턴의 문장 생성이 실패했음을 표시한다. */
     public void logGenerationFailed() {
         if (!judgmentLogs.isEmpty()) {
