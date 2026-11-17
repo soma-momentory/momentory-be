@@ -186,6 +186,10 @@ public class StrategyDiaryChat {
         boolean questionSent = !capped && done.focus() == QuestionFocus.OPEN && question != null;
         state.logQuestionSent(questionSent);
         state.logAskedFeeling(questionSent && asksFeeling);
+        // 새 이야기였는지는 문장 생성 모델이 판단한다 — 생성이 실패한 턴은 알 수 없으므로 비워 둔다.
+        if (written.isPresent()) {
+            state.logNewTopic(newTopic);
+        }
         if (capped) {
             return new Outcome(Kind.FINISH, ack, safetyLevel, safetyFlags);
         }

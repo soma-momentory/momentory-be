@@ -125,6 +125,10 @@ public class TurnJudgmentRecord {
     @Column(name = "question_sent")
     private Boolean questionSent;
 
+    /** 이 답변이 새 이야기의 시작이었는가(첫 이야기는 false). 문장 생성이 없었거나 전략 대화가 아니면 null. */
+    @Column(name = "new_topic")
+    private Boolean newTopic;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -145,6 +149,7 @@ public class TurnJudgmentRecord {
         record.generationFailed = log.generationFailed();
         record.askedFeeling = log.askedFeeling();
         record.questionSent = log.questionSent();
+        record.newTopic = log.newTopic();
         if (log.strategy() != null) {
             record.strategyType = log.strategy().type().name();
             record.questionFocus = log.strategy().focus().name();
@@ -211,4 +216,5 @@ public class TurnJudgmentRecord {
     public boolean isGenerationFailed() { return generationFailed; }
     public Boolean getAskedFeeling() { return askedFeeling; }
     public Boolean getQuestionSent() { return questionSent; }
+    public Boolean getNewTopic() { return newTopic; }
 }
