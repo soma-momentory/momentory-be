@@ -37,7 +37,7 @@ import com.momentory.retrospect.infrastructure.ai.LlmRole;
  * 이 흐름이 정하고, 끝없이 이어지지 않게 하는 안전 상한({@code maxTurns})만 둔다. 옛 엔진의 고정 순서 · 5턴 상한 ·
  * 단답 체크인은 여기에 없다.
  *
- * <p>여기서는 한 턴의 결과({@link Outcome})까지만 만든다. 단계 전환(일기 생성 · 감정 탐색으로 넘어가기 · 안전 안내)은
+ * <p>여기서는 한 턴의 결과({@link Outcome})까지만 만든다. 단계 전환(일기 생성 · 마무리 · 안전 안내)은
  * {@link RetrospectEngine} 이 맡는다. 판단 모델이 실패한 턴은 지금까지의 신호로 방침을 고르고, 문장 생성 모델이 실패한
  * 턴은 짧은 고정 문구로 간다.
  */

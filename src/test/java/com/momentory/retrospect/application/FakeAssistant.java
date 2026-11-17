@@ -7,7 +7,6 @@ import java.util.Optional;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
-import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
@@ -15,16 +14,15 @@ import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.domain.assistant.DiaryWriter;
 import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
-import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
 
 /**
- * v2 AI 포트 4종의 페이크 — 네트워크 없이 엔진 흐름을 결정적으로 검증한다.
+ * v2 AI 포트 3종의 페이크 — 네트워크 없이 엔진 흐름을 결정적으로 검증한다.
  *
- * <p>일기 작성 턴은 설정된 슬롯(사건·의미·감정 표현 여부)과 질문을 돌려주고, 감정 추출·욕구·행동
- * 후보도 설정값으로 준다. {@code fail*} 플래그를 켜면 empty/빈 목록을 돌려 폴백 경로를 검증한다.
+ * <p>일기 작성 턴은 설정된 슬롯(사건·의미·감정 표현 여부)과 질문을 돌려주고, 감정 추출 결과와 일기
+ * 도 설정값으로 준다. {@code fail*} 플래그를 켜면 empty/빈 목록을 돌려 폴백 경로를 검증한다.
  */
 class FakeAssistant
-        implements DiaryChatAssistant, EmotionExtractor, ExplorationAssistant, DiaryWriter {
+        implements DiaryChatAssistant, EmotionExtractor, DiaryWriter {
 
     // 일기 작성 턴이 돌려줄 슬롯·질문
     boolean failDiaryChat;
@@ -45,7 +43,6 @@ class FakeAssistant
     final List<ExtractedEmotion> emotions = new ArrayList<>();
     Emotion inferredEmotion;
     // 감정 탐색 후보
-    final List<Need> needs = new ArrayList<>();
 
     // 일기 생성
     boolean failDiary;
@@ -82,11 +79,6 @@ class FakeAssistant
     public EmotionExtraction extract(RetrospectState state) {
         extractCalls++;
         return new EmotionExtraction(List.copyOf(events), List.copyOf(emotions), inferredEmotion);
-    }
-
-    @Override
-    public List<Need> suggestNeeds(RetrospectState state) {
-        return List.copyOf(needs);
     }
 
     @Override

@@ -68,7 +68,7 @@ class StrategyScenarioRealIntegrationTest {
         var usage = new LlmUsageLogger(0.10, 0.40);
         RetrospectEngine engine = new RetrospectEngine(new SafetyPolicy(),
                 new GeminiDiaryChatAssistant(geminiClient, prompts),
-                s -> new EmotionExtraction(List.of(), List.of(), null), s -> List.of(), s -> Optional.empty(), judge,
+                s -> new EmotionExtraction(List.of(), List.of(), null), s -> Optional.empty(), judge,
                 new StrategyDiaryChat(judge, new StrategyPolicy(0.5, 0.8, 2, 8),
                         new GeminiStrategyReplyWriter(geminiClient, prompts), usage, 12),
                 usage, e -> { }, 1, 3);

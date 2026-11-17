@@ -44,7 +44,7 @@ class RetrospectEngineTurnJudgeTest {
             return answer;
         };
         LlmUsageLogger usage = new LlmUsageLogger(0.10, 0.40);
-        return new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, judge,
+        return new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, judge,
                 new StrategyDiaryChat(judge, new StrategyPolicy(0.5, 0.8, 2, 8),
                 (state, text, strategy) -> java.util.Optional.empty(), usage, 12), usage,
                 e -> { }, 1, 3);
