@@ -34,6 +34,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -49,6 +51,7 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
+import com.momentory.retrospect.domain.RetrospectEndReason;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
@@ -95,6 +98,7 @@ class RetrospectApiIntegrationTest {
     @Autowired ActionCardRepository actionCardRepository;
     @Autowired AccessTokenIssuer accessTokenIssuer;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @MockitoBean DiaryChatAssistant diaryChatAssistant;
     @MockitoBean EmotionExtractor emotionExtractor;
@@ -426,6 +430,10 @@ class RetrospectApiIntegrationTest {
         Retrospect done = retrospectRepository.findById(sessionId).orElseThrow();
         assertThat(done.getStatus().name()).isEqualTo("COMPLETED");
         assertThat(done.getCompletedAt()).isNotNull();
+        // 연구 지표용 — 어떻게 끝났는지와 사용자의 마지막 턴 시각이 세션 행에 남는다.
+        assertThat(done.getEndReason()).isEqualTo(RetrospectEndReason.USER_REQUEST);
+        assertThat(done.getLastUserTurnAt()).isNotNull().isBeforeOrEqualTo(done.getCompletedAt());
+        assertThat(done.getResumeCount()).isZero();
 
         // 일기는 별도 테이블에 남고, 대표 감정·생성 시기도 함께 저장된다.
         Diary diary = diaryRepository.findByRetrospectId(sessionId).orElseThrow();
@@ -476,6 +484,11 @@ class RetrospectApiIntegrationTest {
         long sessionId = startSession(user);
         mockMvc.perform(message(user, sessionId, "{\"content\":\"팀원이 말을 끊어서 속상했어요.\"}"))
                 .andExpect(status().isOk());
+        Retrospect beforeResume = retrospectRepository.findById(sessionId).orElseThrow();
+        assertThat(beforeResume.getResumeCount()).isZero();
+        assertThat(beforeResume.getLastResumedAt()).isNull();
+        assertThat(beforeResume.getLastUserTurnAt()).isNotNull();
+        assertThat(beforeResume.getEndReason()).isNull();
 
         mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(status().isOk())
@@ -489,10 +502,46 @@ class RetrospectApiIntegrationTest {
                 .andExpect(jsonPath("$.reply.done").value(false))
                 .andExpect(jsonPath("$.reply.options").doesNotExist());
 
-        // 조회는 상태를 바꾸지 않는다 — 같은 세션으로 다음 턴을 그대로 보낼 수 있다.
+        // 조회는 대화 상태를 바꾸지 않고 다시 열렸다는 기록만 남긴다 — 같은 세션으로 다음 턴을 그대로 보낼 수 있다.
+        Retrospect resumed = retrospectRepository.findById(sessionId).orElseThrow();
+        assertThat(resumed.getStateJson()).isEqualTo(beforeResume.getStateJson());
+        assertThat(resumed.getResumeCount()).isEqualTo(1);
+        assertThat(resumed.getLastResumedAt()).isNotNull();
+        mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk());
+        assertThat(retrospectRepository.findById(sessionId).orElseThrow().getResumeCount()).isEqualTo(2);
+
         mockMvc.perform(message(user, sessionId, "{\"content\":\"그래도 끝까지 말했어요.\"}"))
                 .andExpect(status().isOk());
         assertThat(retrospectRepository.count()).isEqualTo(1);
+        Retrospect continued = retrospectRepository.findById(sessionId).orElseThrow();
+        assertThat(continued.getLastUserTurnAt()).isAfterOrEqualTo(continued.getLastResumedAt());
+    }
+
+    @Test
+    @DisplayName("이어서 하기 기록 — 턴 처리가 먼저 읽어 둔 낡은 행을 저장해도 재개 횟수를 덮지 않고, 끝난 세션에는 남기지 않는다")
+    void resumeRecordSurvivesAStaleSaveAndSkipsFinishedSessions() {
+        User user = userRepository.saveAndFlush(User.create());
+        Retrospect saved = retrospectRepository.saveAndFlush(
+                Retrospect.start(user.getId(), RetrospectStatus.IN_PROGRESS, null, "{}"));
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        // 턴 처리가 행을 읽어 둔 사이에 「이어서 하기」 조회가 재개를 남긴다.
+        Retrospect stale = retrospectRepository.findById(saved.getId()).orElseThrow();
+        Integer resumed = tx.execute(status -> retrospectRepository.recordResume(saved.getId(), Instant.now()));
+        assertThat(resumed).isEqualTo(1);
+
+        // 턴 처리가 읽어 둔 값으로 행을 저장해도 재개 열은 그대로다.
+        stale.sync(RetrospectStatus.COMPLETED, "{}", Instant.now(), RetrospectEndReason.WRAP_UP_ACCEPTED);
+        retrospectRepository.saveAndFlush(stale);
+        Retrospect reloaded = retrospectRepository.findById(saved.getId()).orElseThrow();
+        assertThat(reloaded.getResumeCount()).isEqualTo(1);
+        assertThat(reloaded.getLastResumedAt()).isNotNull();
+        assertThat(reloaded.getEndReason()).isEqualTo(RetrospectEndReason.WRAP_UP_ACCEPTED);
+
+        // 이미 끝난 세션은 다시 열린 것으로 세지 않는다.
+        Integer afterEnd = tx.execute(status -> retrospectRepository.recordResume(saved.getId(), Instant.now()));
+        assertThat(afterEnd).isZero();
+        assertThat(retrospectRepository.findById(saved.getId()).orElseThrow().getResumeCount()).isEqualTo(1);
     }
 
     @Test

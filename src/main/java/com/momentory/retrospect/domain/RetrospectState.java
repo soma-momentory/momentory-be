@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
@@ -130,6 +131,8 @@ public class RetrospectState {
     private StrategySignals strategySignals;
     /** 이번 요청에서 생긴 판단 기록 — 저장하지 않는다. 애플리케이션 서비스가 꺼내 따로 기록한다. */
     private final transient List<TurnJudgmentLog> judgmentLogs = new ArrayList<>();
+    /** 이번 요청에서 회고가 끝났다면 어떻게 끝났는가 — 저장하지 않는다. 애플리케이션 서비스가 세션 행에 옮긴다. */
+    private transient RetrospectEndReason endReason;
 
     public RetrospectState(String id) {
         this.id = id;
@@ -208,8 +211,29 @@ public class RetrospectState {
 
     // ── 진행 ─────────────────────────────────────────────────────────────
 
+    /** 진행 중인 단계로 옮긴다 — 끝내는 것은 종료 사유를 함께 남기는 {@link #complete} · {@link #stop} 으로만 한다. */
     public void changePhase(Phase phase) {
+        if (phase.isTerminal()) {
+            throw new IllegalArgumentException("terminal phase needs an end reason: " + phase);
+        }
         this.phase = phase;
+    }
+
+    /** 일기까지 마치고 회고를 끝낸다 — 어떻게 끝났는지 함께 남긴다. */
+    public void complete(RetrospectEndReason reason) {
+        this.endReason = Objects.requireNonNull(reason, "reason must not be null");
+        this.phase = Phase.COMPLETE;
+    }
+
+    /** 일기 없이 회고를 멈춘다(악용 반복) — 어떻게 끝났는지 함께 남긴다. */
+    public void stop(RetrospectEndReason reason) {
+        this.endReason = Objects.requireNonNull(reason, "reason must not be null");
+        this.phase = Phase.ENDED;
+    }
+
+    /** 이번 요청에서 회고가 끝났다면 그 사유. 끝나지 않았으면 null. */
+    public RetrospectEndReason endReason() {
+        return endReason;
     }
 
     /** 위기 안내로 멈춘다 — 지금 phase 를 기억해 두고 {@link Phase#SAFETY_HOLD} 로 넘어간다. */
@@ -672,6 +696,13 @@ public class RetrospectState {
     public void logAskedFeeling(boolean asked) {
         if (!judgmentLogs.isEmpty()) {
             judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withAskedFeeling(asked));
+        }
+    }
+
+    /** 방금 남긴 판단 기록에 이 턴에 열린 탐색 질문이 실제로 나갔는지를 덧붙인다. */
+    public void logQuestionSent(boolean sent) {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withQuestionSent(sent));
         }
     }
 

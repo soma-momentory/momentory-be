@@ -209,6 +209,8 @@ class TurnJudgmentPersistenceIntegrationTest {
         List<TurnJudgmentRecord> rows = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId);
         assertThat(rows).extracting(TurnJudgmentRecord::getStrategyType).containsExactly("EXPLORE", "EXPLORE");
         assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("OPEN", "OTHER_TOPIC");
+        // 모델이 쓴 질문이 나간 턴만 탐색 질문으로 남는다 — 다른 기억을 묻는 고정 질문은 아니다.
+        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionSent).containsExactly(true, false);
         assertThat(rows).allSatisfy(row -> {
             assertThat(row.getPolicyVersion()).isEqualTo(StrategyPolicy.VERSION);
             assertThat(row.getStrategyApplied()).isTrue();
@@ -372,7 +374,10 @@ class TurnJudgmentPersistenceIntegrationTest {
         say(user, sessionId, "팀원이 말을 끊어서 속상했어요.");
 
         assertThat(judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId)).hasSize(1)
-                .allSatisfy(row -> assertThat(row.getAskedFeeling()).isNull());
+                .allSatisfy(row -> {
+                    assertThat(row.getAskedFeeling()).isNull();
+                    assertThat(row.getQuestionSent()).isNull();
+                });
         assertThat(dispositionObservations.findByRetrospectId(sessionId)).isEmpty();
     }
 

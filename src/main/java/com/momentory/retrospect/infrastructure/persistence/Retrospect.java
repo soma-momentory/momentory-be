@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Objects;
 
 import com.momentory.common.persistence.BaseTimeEntity;
+import com.momentory.retrospect.domain.RetrospectEndReason;
 import com.momentory.retrospect.domain.RetrospectStatus;
 
 import jakarta.persistence.Column;
@@ -53,6 +54,25 @@ public class Retrospect extends BaseTimeEntity {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    /** 어떻게 끝났는가 — 끝나지 않았으면 null. 연구 지표(미완료 이탈률)에서 종료 사유를 가른다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "end_reason", length = 30)
+    private RetrospectEndReason endReason;
+
+    /** 끝나기 전 사용자의 마지막 턴(글 · 선택지) 시각. */
+    @Column(name = "last_user_turn_at")
+    private Instant lastUserTurnAt;
+
+    /**
+     * 진행 중인 회고가 「이어서 하기」로 다시 열린 횟수. 조회와 턴 처리가 동시에 일어날 수 있어 엔티티로는 쓰지 않는다 —
+     * {@link RetrospectRepository#recordResume} 가 이 두 열만 원자적으로 갱신하고, 턴 처리의 행 갱신은 이 값을 덮지 않는다.
+     */
+    @Column(name = "resume_count", nullable = false, insertable = false, updatable = false)
+    private int resumeCount;
+
+    @Column(name = "last_resumed_at", insertable = false, updatable = false)
+    private Instant lastResumedAt;
+
     protected Retrospect() {
     }
 
@@ -68,13 +88,26 @@ public class Retrospect extends BaseTimeEntity {
         return new Retrospect(userId, status, scheduleId, stateJson);
     }
 
-    /** 한 턴 처리 후 진행 상태를 반영한다. 완료 시에만 완료시각이 채워진다(일기는 별도 테이블). */
-    public void sync(RetrospectStatus status, String stateJson, Instant completedAt) {
+    /**
+     * 한 턴 처리 후 진행 상태를 반영한다. 완료 시각과 종료 사유는 처음 끝난 때 한 번만 채운다 — 끝난 세션에 턴이 다시
+     * 들어와도 덮어쓰지 않는다(일기는 별도 테이블).
+     *
+     * @param endReason 이번 턴에 끝났다면 그 사유, 아니면 null
+     */
+    public void sync(RetrospectStatus status, String stateJson, Instant completedAt, RetrospectEndReason endReason) {
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.stateJson = Objects.requireNonNull(stateJson, "stateJson must not be null");
-        if (completedAt != null) {
+        if (completedAt != null && this.completedAt == null) {
             this.completedAt = completedAt;
         }
+        if (endReason != null && this.endReason == null) {
+            this.endReason = endReason;
+        }
+    }
+
+    /** 사용자가 턴을 보냈다 — 끝나지 않은 세션에서만 부른다. */
+    public void recordUserTurn(Instant at) {
+        this.lastUserTurnAt = Objects.requireNonNull(at, "at must not be null");
     }
 
     public boolean belongsTo(Long userId) {
@@ -103,5 +136,21 @@ public class Retrospect extends BaseTimeEntity {
 
     public Instant getCompletedAt() {
         return completedAt;
+    }
+
+    public RetrospectEndReason getEndReason() {
+        return endReason;
+    }
+
+    public Instant getLastUserTurnAt() {
+        return lastUserTurnAt;
+    }
+
+    public int getResumeCount() {
+        return resumeCount;
+    }
+
+    public Instant getLastResumedAt() {
+        return lastResumedAt;
     }
 }

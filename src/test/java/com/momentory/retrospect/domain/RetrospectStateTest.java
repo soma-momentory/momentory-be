@@ -1,6 +1,7 @@
 package com.momentory.retrospect.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 
@@ -192,4 +193,21 @@ class RetrospectStateTest {
         assertThat(state.knownEventCount()).isEqualTo(2);
     }
 
+
+    @Test
+    @DisplayName("회고를 끝내는 단계로는 종료 사유 없이 옮길 수 없다 — complete · stop 이 사유와 함께 끝낸다")
+    void endingNeedsAReason() {
+        RetrospectState state = new RetrospectState("s");
+
+        assertThatThrownBy(() -> state.changePhase(Phase.COMPLETE)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> state.changePhase(Phase.ENDED)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(state.endReason()).isNull();
+
+        state.complete(RetrospectEndReason.WRAP_UP_ACCEPTED);
+
+        assertThat(state.phase()).isEqualTo(Phase.COMPLETE);
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.WRAP_UP_ACCEPTED);
+        // 종료 사유는 이번 요청에서만 쓰고 저장하지 않는다 — 세션 행으로 옮겨 간다.
+        assertThat(RetrospectState.fromSnapshot(state.toSnapshot()).endReason()).isNull();
+    }
 }
