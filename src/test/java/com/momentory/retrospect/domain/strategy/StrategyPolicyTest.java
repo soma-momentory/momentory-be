@@ -218,29 +218,27 @@ class StrategyPolicyTest {
     }
 
     @Test
-    void doesNotAskForAnotherMemoryTwice() {
+    void doesNotAskForAnotherMemoryTwiceInARow() {
         StrategyPolicy.Decision d = policy.decide(new J().build(), first(new J()).signals(), false);
 
-        // 다른 기억을 이미 물었는데 새 이야기가 나오지 않았다 — 같은 질문 대신 마무리를 제안한다.
+        // 바로 앞에서 다른 기억을 물었는데 새 이야기가 나오지 않았다 — 같은 질문 대신 마무리를 제안한다.
         assertThat(policy.whenNothingMoreToAsk(d.strategy(), d.signals(), true).focus())
                 .isEqualTo(QuestionFocus.WRAP_UP);
     }
 
     @Test
-    void proposesWrapUpWhenTheSecondStoryIsDoneAndOnlyOnce() {
-        StrategySignals second = policy.movedToNewTopic(first(new J()).signals());
-        assertThat(second.topicNumber()).isEqualTo(2);
-        StrategyPolicy.Decision d = policy.decide(new J().build(), second, false);
+    void keepsAskingForAnotherMemoryInLaterStories() {
+        StrategySignals s = first(new J()).signals();
+        for (int story = 2; story <= 4; story++) {
+            s = policy.movedToNewTopic(s);
+            assertThat(s.topicNumber()).isEqualTo(story);
+            StrategyPolicy.Decision d = policy.decide(new J().build(), s, false);
 
-        TurnStrategy proposal = policy.whenNothingMoreToAsk(d.strategy(), d.signals(), false);
-        assertThat(proposal.focus()).isEqualTo(QuestionFocus.WRAP_UP);
+            TurnStrategy done = policy.whenNothingMoreToAsk(d.strategy(), d.signals(), false);
 
-        // 더 이야기하겠다고 한 뒤에 또 물을 것이 없으면 다시 제안하지 않고 받아주기만 한다.
-        StrategySignals after = policy.settle(d.signals(), proposal);
-        assertThat(after.wrapUpProposed()).isTrue();
-        StrategyPolicy.Decision again = policy.decide(new J().build(), after, false);
-        assertThat(policy.whenNothingMoreToAsk(again.strategy(), again.signals(), false).focus())
-                .isEqualTo(QuestionFocus.NONE);
+            assertThat(done.focus()).isEqualTo(QuestionFocus.OTHER_TOPIC);
+            s = policy.settle(d.signals(), done);
+        }
     }
 
     @Test
@@ -255,7 +253,7 @@ class StrategyPolicyTest {
     }
 
     @Test
-    void aNewStoryStartsFreshAndStoriesStopAtTwo() {
+    void aNewStoryStartsFreshWhateverItsNumber() {
         StrategySignals proposed = policy.settle(first(new J()).signals(),
                 new TurnStrategy(StrategyType.REFLECT, QuestionFocus.WRAP_UP, false));
         // 제안한 뒤 한 턴이 지나고 새 이야기가 나왔다 — 새 이야기에서는 아직 제안한 적이 없는 것으로 둔다.
@@ -323,31 +321,63 @@ class StrategyPolicyTest {
     }
 
     @Test
-    void proposesWrapUpOnlyOncePerStory() {
-        StrategySignals second = policy.movedToNewTopic(first(new J()).signals());
-        StrategyPolicy.Decision d = policy.decide(new J().build(), second, false);
-        TurnStrategy proposal = policy.whenNothingMoreToAsk(d.strategy(), d.signals(), true);
+    void proposesWrapUpAgainAfterTwoTurnsWithoutAQuestion() {
+        StrategyPolicy.Decision d = policy.decide(
+                new J().set(JudgmentItem.REACTION, "struggle_to_answer", 0.9).build(), first(new J()).signals(), false);
+        TurnStrategy proposal = policy.whenNoAnswer(d.strategy(), d.signals());
         assertThat(proposal.focus()).isEqualTo(QuestionFocus.WRAP_UP);
         StrategySignals s = policy.settle(d.signals(), proposal);
 
-        for (int quiet = 0; quiet < 4; quiet++) {
-            StrategyPolicy.Decision next = policy.decide(new J().build(), s, false);
-            TurnStrategy done = policy.whenNothingMoreToAsk(next.strategy(), next.signals(), true);
+        // 바로 다음 턴과 그다음 턴은 받아주기만 한다 — 같은 제안을 연달아 하지 않는다.
+        for (int quiet = 0; quiet < StrategyPolicy.REPROPOSE_AFTER_QUIET_TURNS; quiet++) {
+            StrategyPolicy.Decision next = policy.decide(
+                    new J().set(JudgmentItem.REACTION, "struggle_to_answer", 0.9).build(), s, false);
+            TurnStrategy done = policy.whenNoAnswer(next.strategy(), next.signals());
             assertThat(done.focus()).isEqualTo(QuestionFocus.NONE);
             s = policy.settle(next.signals(), done);
         }
+        // 질문 없는 턴이 두 번 이어졌다 — 끝낼 길을 다시 보여 준다.
+        StrategyPolicy.Decision again = policy.decide(
+                new J().set(JudgmentItem.REACTION, "struggle_to_answer", 0.9).build(), s, false);
+        assertThat(policy.whenNoAnswer(again.strategy(), again.signals()).focus()).isEqualTo(QuestionFocus.WRAP_UP);
     }
 
     @Test
-    void doesNotProposeWrapUpAgainRightAfterProposingEvenForANewStory() {
+    void aNewStoryAfterDecliningTheWrapUpCanBeWrappedUpAgain() {
         StrategySignals proposed = policy.settle(first(new J()).signals(),
-                new TurnStrategy(StrategyType.REFLECT, QuestionFocus.WRAP_UP, false));
+                new TurnStrategy(StrategyType.YIELD, QuestionFocus.WRAP_UP, false));
 
+        // 「조금 더 이야기할래요」 뒤에 새 이야기를 꺼냈다 — 그 이야기에서는 아직 제안한 적이 없는 것으로 둔다.
         StrategySignals second = policy.movedToNewTopic(proposed);
 
         assertThat(second.topicNumber()).isEqualTo(2);
-        StrategyPolicy.Decision d = policy.decide(new J().build(), second, true);
-        assertThat(policy.whenNothingMoreToAsk(d.strategy(), second, true).focus()).isEqualTo(QuestionFocus.NONE);
+        assertThat(second.wrapUpProposed()).isFalse();
+        StrategyPolicy.Decision d = policy.decide(
+                new J().set(JudgmentItem.REACTION, "struggle_to_answer", 0.9).build(), second, false);
+        assertThat(policy.whenNoAnswer(d.strategy(), d.signals()).focus()).isEqualTo(QuestionFocus.WRAP_UP);
+    }
+
+    /**
+     * 실제 대화에서 막혔던 경로(규칙 v11): 첫 이야기에서 마무리를 제안했고 사용자가 더 이야기하겠다며 둘째 이야기를 꺼냈다.
+     * 둘째 이야기에서 더 물을 것이 없어지자 다른 기억도 마무리 제안도 막혀, 바바가 턴 상한까지 받아주기만 했다.
+     */
+    @Test
+    void neverGetsStuckAcknowledgingAfterTheWrapUpWasDeclined() {
+        StrategyPolicy.Decision d = policy.decide(
+                new J().set(JudgmentItem.REACTION, "struggle_to_answer", 0.9).build(), first(new J()).signals(), false);
+        StrategySignals s = policy.settle(d.signals(), policy.whenNoAnswer(d.strategy(), d.signals()));
+        s = policy.movedToNewTopic(s);
+
+        // 둘째 이야기에서 더 물을 것이 없다 — 다른 기억을 묻는다.
+        StrategyPolicy.Decision second = policy.decide(new J().build(), s, false);
+        TurnStrategy asked = policy.whenNothingMoreToAsk(second.strategy(), second.signals(), false);
+        assertThat(asked.focus()).isEqualTo(QuestionFocus.OTHER_TOPIC);
+        s = policy.settle(second.signals(), asked);
+
+        // 사용자가 앞 이야기를 이어 말했고 그마저 더 물을 것이 없다 — 마무리를 제안한다.
+        StrategyPolicy.Decision continued = policy.decide(new J().build(), s, true);
+        assertThat(policy.whenNothingMoreToAsk(continued.strategy(), continued.signals(), true).focus())
+                .isEqualTo(QuestionFocus.WRAP_UP);
     }
 
     @Test
