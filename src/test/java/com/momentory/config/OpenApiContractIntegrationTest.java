@@ -429,6 +429,17 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "되돌린 상태에서는 느낀 점을 남길 수 없습니다.");
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "404", "ApiErrorResponse", "ACTION_CARD_NOT_FOUND", "ACTION_CARD_NOT_FOUND", "행동 카드를 찾을 수 없습니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe", "get", "200", "WardrobeView");
+        assertOperationTag(apiDocs, "/api/v1/wardrobe", "get", "Wardrobe");
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe/check-in", "post", "200", "TangerineCheckIn");
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe/welcome", "post", "200", "TangerineCheckIn");
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe/outfit", "put", "200", "WardrobeOutfit");
+        assertErrorExample(apiDocs, "/api/v1/wardrobe/outfit", "put", "403", "ApiErrorResponse", "WARDROBE_ITEM_NOT_OWNED", "WARDROBE_ITEM_NOT_OWNED", "가지지 않은 아이템입니다.");
+        assertErrorExample(apiDocs, "/api/v1/wardrobe/outfit", "put", "404", "ApiErrorResponse", "WARDROBE_ITEM_NOT_FOUND", "WARDROBE_ITEM_NOT_FOUND", "아이템을 찾을 수 없습니다.");
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe/items/{itemId}/purchase", "post", "200", "PurchaseResult");
+        assertErrorExample(apiDocs, "/api/v1/wardrobe/items/{itemId}/purchase", "post", "409", "ApiErrorResponse", "TANGERINE_NOT_ENOUGH", "TANGERINE_NOT_ENOUGH", "귤이 모자랍니다.");
+        assertErrorExample(apiDocs, "/api/v1/wardrobe/items/{itemId}/purchase", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
     }
 
     @Test
