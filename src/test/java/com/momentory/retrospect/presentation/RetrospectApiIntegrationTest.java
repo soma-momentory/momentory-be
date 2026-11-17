@@ -264,7 +264,7 @@ class RetrospectApiIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(message(user, sessionId, "{\"content\":\"준비를 많이 못 했어요\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.text").value(Matchers.endsWith("다른 이야기를 나눠볼까요?")));
+                .andExpect(jsonPath("$.text").value(Matchers.endsWith("다른 기억에 남는 일은 뭐였어요?")));
 
         mockMvc.perform(message(user, sessionId, "{\"content\":\"싫어\"}"))
                 .andExpect(status().isOk())

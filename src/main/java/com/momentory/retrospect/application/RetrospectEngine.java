@@ -625,12 +625,10 @@ public class RetrospectEngine {
         return "제가 이해한 그 마음이 맞을까요?";
     }
 
-    /** AI 실패와 체크인 재개 시에도 현재 소재의 진행 상태와 사건 상한을 따른다. */
+    /** AI 실패와 체크인 재개 시에도 현재 소재의 진행 상태를 따른다 — 사건 수에 상한이 없어 언제든 다른 기억을 묻는다. */
     private static String fallbackDiaryQuestion(RetrospectState state) {
         if (state.shouldSwitchTopic()) {
-            return state.knownEventCount() >= RetrospectState.MAX_EVENTS
-                    ? OTHER_TOPIC_QUESTION
-                    : OTHER_MEMORY_QUESTION;
+            return OTHER_MEMORY_QUESTION;
         }
         if (state.event() == null) {
             return "그때 무슨 일이 있었는지 조금만 더 들려줄래요?";

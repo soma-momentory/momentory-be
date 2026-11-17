@@ -174,7 +174,7 @@ public class StrategyDiaryChat {
             // 답하기 어려워했거나 질문과 맞지 않는 말을 했다 — 더 묻지 않고 여기서 정리할지를 묻는다.
             done = policy.whenNoAnswer(strategy, signals);
         } else if (strategy.focus() == QuestionFocus.OPEN && question == null) {
-            done = policy.whenNothingMoreToAsk(done, signals, otherMemoryAsked(state));
+            done = policy.whenNothingMoreToAsk(done, signals, afterOtherMemory);
         }
         // 안전 상한 — 방침이 무엇이든 여기서 정리한다. 이 턴의 방침은 '적용 안 됨'으로 남는다.
         boolean capped = state.diaryTurn() >= maxTurns;
@@ -223,13 +223,6 @@ public class StrategyDiaryChat {
             }
         }
         return false;
-    }
-
-    /** 이 대화에서 바바가 다른 기억을 이미 물었는가 — 그 문장은 고정이라 대화 기록에서 알아본다. */
-    private static boolean otherMemoryAsked(RetrospectState state) {
-        return state.messages().stream().anyMatch(
-                m -> m.isAssistant() && m.content() != null
-                        && m.content().endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION));
     }
 
     /**

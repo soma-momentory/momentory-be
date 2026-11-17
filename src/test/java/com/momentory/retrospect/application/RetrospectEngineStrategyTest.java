@@ -387,10 +387,15 @@ class RetrospectEngineStrategyTest {
         say("오늘 엄마랑 통화했어", plain());
         assertThat(state.strategySignals().topicNumber()).isEqualTo(2);
 
-        // 둘째 이야기에서 더 물을 것이 없으면 여기까지 정리할지 묻는다.
+        // 둘째 이야기에서도 더 물을 것이 없으면 다른 기억을 묻는다 — 이야기 수에 제한이 없다(규칙 v12).
         reply = nothingMore("이야기하고 마음이 안정되셨군요.");
-        ReplyDto proposal = say("엄마랑 얘기하고 마음이 안정됐어.", plain());
-        assertThat(proposal.text()).isEqualTo("이야기하고 마음이 안정되셨군요.\n여기까지 일기로 정리해볼까요?");
+        assertThat(say("엄마랑 얘기하고 마음이 안정됐어.", plain()).text())
+                .endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION);
+
+        // 다른 기억 대신 앞 이야기를 이어 말했고 더 물을 것이 없으면, 같은 질문을 연달아 하지 않고 정리할지 묻는다.
+        reply = nothingMore("엄마 목소리에 마음이 놓이셨군요.");
+        ReplyDto proposal = say("그냥 엄마 목소리 들으니까 좋더라.", plain());
+        assertThat(proposal.text()).isEqualTo("엄마 목소리에 마음이 놓이셨군요.\n여기까지 일기로 정리해볼까요?");
         assertThat(proposal.options()).extracting(ReplyDto.OptionDto::label)
                 .containsExactly("이제 정리할래요", "조금 더 이야기할래요");
 
@@ -414,6 +419,8 @@ class RetrospectEngineStrategyTest {
         say("오늘 엄마랑 통화했어", plain());
         reply = nothingMore("이야기하고 마음이 안정되셨군요.");
         say("엄마랑 얘기하고 마음이 안정됐어.", plain());
+        reply = nothingMore("엄마 목소리에 마음이 놓이셨군요.");
+        say("그냥 엄마 목소리 들으니까 좋더라.", plain());
 
         ReplyDto done = engine.handle(state, TurnCommand.option("1"));
 
