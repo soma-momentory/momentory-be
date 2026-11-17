@@ -8,9 +8,7 @@ import org.springframework.stereotype.Component;
 
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.Message;
-import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.NeedActionCatalog;
-import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.strategy.TurnStrategy;
 
@@ -558,20 +556,6 @@ public class PromptFactory {
               강도는 계속 1~4 로 매깁니다.
             """;
 
-    /** 바람 확인(G2) — 고정 욕구 목록에서 맥락에 맞는 3~4개를 단어로만 고른다. */
-    public String needsPrompt(RetrospectState state) {
-        return """
-                사용자의 상황·감정을 볼 때 그 밑에 있을 법한 '바람(욕구)'을 아래 고정 목록에서 2~3개 골라
-                단어만 주세요(목록 밖 단어는 쓰지 마세요):
-                %s
-
-                [맥락]
-                사건: %s
-                확인된 감정: %s
-                """.formatted(Needs.ALL.stream().map(Need::word).collect(Collectors.joining(", ")),
-                state.cardSituation(), emotionLabels(state));
-    }
-
     /** 작은 행동 고르기 규칙 — 바바의 편지가 쓴다(회고는 행동을 고르지 않는다). */
     public static final String ACTION_RULES = """
             [규칙]
@@ -709,12 +693,6 @@ public class PromptFactory {
     }
 
     // ── 도우미 ───────────────────────────────────────────────────────────
-
-    /** 확인 감정의 한국어 이름 — 영어 키("disappointed")보다 모델이 사용자 맥락으로 읽는다. */
-    private static String emotionLabels(RetrospectState state) {
-        return orNone(state.confirmedEmotions().stream().map(Emotion::label)
-                .collect(Collectors.joining(", ")));
-    }
 
     private static String orNone(String value) {
         return value == null || value.isBlank() ? "없음" : value;

@@ -62,7 +62,7 @@ class RetrospectEngineStrategyTest {
                     courses.add(course);
                     return Optional.ofNullable(reply);
                 }, usage, maxTurns);
-        return new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, fake, judge, chat, usage, e -> { }, 1, 3);
+        return new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, judge, chat, usage, e -> { }, 1, 3);
     }
 
     private static StrategyReply wrote(String ack, String question) {
@@ -417,10 +417,11 @@ class RetrospectEngineStrategyTest {
 
         ReplyDto done = engine.handle(state, TurnCommand.option("1"));
 
-        // 일기를 만들고 감정 탐색으로 넘어간다 — 그 뒤는 이 대화의 범위가 아니다.
+        // 일기를 만들고 그대로 마친다 — 감정 · 바람을 다시 묻는 탐색 단계는 없다.
         assertThat(fake.diaryWriteCalls).isEqualTo(1);
-        assertThat(state.phase()).isEqualTo(Phase.EMOTION_EXPLORATION);
-        assertThat(done.text()).contains(RetrospectEngine.EXPLORATION_TRANSITION);
+        assertThat(state.phase()).isEqualTo(Phase.COMPLETE);
+        assertThat(done.text()).isEqualTo(RetrospectEngine.COMPLETE_TEXT);
+        assertThat(done.wishCard()).isNull();
     }
 
     @Test
@@ -446,9 +447,12 @@ class RetrospectEngineStrategyTest {
         say("이야기 2", plain());
         state.drainJudgmentLogs();
 
-        say("이야기 3", plain());
+        ReplyDto finished = say("이야기 3", plain());
 
-        assertThat(state.phase()).isNotEqualTo(Phase.DIARY_CHAT);
+        // 상한에 닿으면 일기로 바로 마친다 — 감정 탐색으로 넘어가지 않는다.
+        assertThat(state.phase()).isEqualTo(Phase.COMPLETE);
+        assertThat(finished.text()).endsWith(RetrospectEngine.COMPLETE_TEXT);
+        assertThat(finished.wishCard()).isNull();
         assertThat(fake.diaryWriteCalls).isEqualTo(1);
         TurnJudgmentLog log = lastLog();
         assertThat(log.strategy()).isNotNull();
@@ -475,12 +479,14 @@ class RetrospectEngineStrategyTest {
         say("발표 망쳐서 허무해. 준비를 덜 해서 그런 것 같아.", plain());
         int written = courses.size();
 
-        engine.handle(state, TurnCommand.text("없어요"));
+        ReplyDto done = engine.handle(state, TurnCommand.text("없어요"));
 
         // 「다른 기억」 질문에 없다고 하면 지금까지의 이야기로 정리한다 — 판단도 문장 생성도 부르지 않는다.
         assertThat(courses).hasSize(written);
         assertThat(fake.diaryWriteCalls).isEqualTo(1);
-        assertThat(state.phase()).isEqualTo(Phase.EMOTION_EXPLORATION);
+        assertThat(state.phase()).isEqualTo(Phase.COMPLETE);
+        assertThat(done.text()).isEqualTo("좋아요. 들려줘서 고마워요.\n" + RetrospectEngine.COMPLETE_TEXT);
+        assertThat(done.wishCard()).isNull();
     }
 
     @Test
