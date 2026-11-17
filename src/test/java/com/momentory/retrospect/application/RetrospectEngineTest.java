@@ -16,6 +16,7 @@ import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.Phase;
+import com.momentory.retrospect.domain.RetrospectEndReason;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.safety.SafetyLevel;
 import com.momentory.retrospect.domain.assistant.TurnJudge;
@@ -117,6 +118,7 @@ class RetrospectEngineTest {
         assertThat(state.diaryTurn()).isEqualTo(3);
         assertThat(fake.diaryTurnCalls).isEqualTo(2);
         assertThat(fake.diaryWriteCalls).isEqualTo(1);
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.NO_OTHER_MEMORY);
     }
 
     @ParameterizedTest
@@ -801,6 +803,7 @@ class RetrospectEngineTest {
         assertThat(fifth.phase()).isEqualTo("complete");
         assertThat(fifth.wishCard()).isNull();
         assertThat(state.diaryTurn()).isEqualTo(5);
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.TURN_CAP);
     }
 
     @ParameterizedTest
@@ -815,6 +818,7 @@ class RetrospectEngineTest {
         assertThat(reply.wishCard()).isNull();
         assertThat(state.explorationEntered()).isFalse();
         assertThat(fake.diaryWriteCalls).isEqualTo(1);
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.USER_REQUEST);
     }
 
     // ── 사건 고르기 · 옛 분기점 ─────────────────────────────────────────
@@ -847,6 +851,7 @@ class RetrospectEngineTest {
 
         assertThat(reply.phase()).isEqualTo("complete");
         assertThat(reply.wishCard()).isNull();
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.LEGACY_EXPLORATION);
     }
 
     @Test
@@ -1002,6 +1007,25 @@ class RetrospectEngineTest {
         assertThat(reply.wishCard()).isNull();
         assertThat(state.explorationEntered()).isFalse();
         assertThat(fake.diaryWriteCalls).isEqualTo(1);
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.WRAP_UP_ACCEPTED);
+    }
+
+    @Test
+    @DisplayName("욕만 하는 답이 상한만큼 이어지면 대화를 멈추고 악용 중단으로 남긴다 — 일기는 만들지 않는다")
+    void repeatedAbuseStopsAndRecordsTheReason() {
+        start();
+
+        engine.handle(state, TurnCommand.text("씨발"));
+        engine.handle(state, TurnCommand.text("씨발"));
+        assertThat(state.phase()).isEqualTo(Phase.DIARY_CHAT);
+        assertThat(state.endReason()).isNull();
+
+        ReplyDto reply = engine.handle(state, TurnCommand.text("씨발"));
+
+        assertThat(reply.phase()).isEqualTo("ended");
+        assertThat(state.phase()).isEqualTo(Phase.ENDED);
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.ABUSE_STOPPED);
+        assertThat(fake.diaryWriteCalls).isZero();
     }
 
     @Test

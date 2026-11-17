@@ -13,28 +13,36 @@ import com.momentory.retrospect.domain.strategy.TurnStrategy;
  * @param strategyApplied 바바의 응답이 실제로 그 전략대로 나갔는가 — 턴 상한·단답 체크인 등이 앞서면 false
  * @param generationFailed 이 턴의 문장 생성 모델 호출이 실패해 고정 문구로 응답했는가
  * @param askedFeeling    이 턴에 바바가 그때의 기분을 물었는가 — 다음 답변이 그 물음에 대한 반응이다. 전략 대화가 아니면 null
+ * @param questionSent    이 턴에 열린 탐색 질문이 실제로 나갔는가 — 문장 생성이 실패해 고정 열린 질문으로 대신한 턴도 true
+ *                        ({@code generationFailed} 로 가른다). 다른 기억 고정 질문 · 마무리 제안 · 턴 상한 · 위기 안내로 끝난
+ *                        턴은 false. 전략 대화가 아니면 null
  */
 public record TurnJudgmentLog(String messageId, int diaryTurn, TurnJudgment judgment,
         TurnStrategy strategy, String policyVersion, boolean strategyApplied, boolean generationFailed,
-        Boolean askedFeeling) {
+        Boolean askedFeeling, Boolean questionSent) {
 
     public static TurnJudgmentLog of(String messageId, int diaryTurn, TurnJudgment judgment) {
-        return new TurnJudgmentLog(messageId, diaryTurn, judgment, null, null, false, false, null);
+        return new TurnJudgmentLog(messageId, diaryTurn, judgment, null, null, false, false, null, null);
     }
 
     public TurnJudgmentLog withStrategy(TurnStrategy strategy, String policyVersion, boolean applied) {
         return new TurnJudgmentLog(messageId, diaryTurn, judgment, strategy, policyVersion, applied,
-                generationFailed, askedFeeling);
+                generationFailed, askedFeeling, questionSent);
     }
 
     public TurnJudgmentLog withGenerationFailed() {
         return new TurnJudgmentLog(messageId, diaryTurn, judgment, strategy, policyVersion, strategyApplied, true,
-                askedFeeling);
+                askedFeeling, questionSent);
     }
 
     public TurnJudgmentLog withAskedFeeling(boolean asked) {
         return new TurnJudgmentLog(messageId, diaryTurn, judgment, strategy, policyVersion, strategyApplied,
-                generationFailed, asked);
+                generationFailed, asked, questionSent);
+    }
+
+    public TurnJudgmentLog withQuestionSent(boolean sent) {
+        return new TurnJudgmentLog(messageId, diaryTurn, judgment, strategy, policyVersion, strategyApplied,
+                generationFailed, askedFeeling, sent);
     }
 
     public boolean failed() {

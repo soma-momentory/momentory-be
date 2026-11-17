@@ -154,8 +154,10 @@ public class RetrospectService {
     /**
      * 오늘(KST · 04:00 경계) 시작해 아직 끝나지 않은 가장 최근 회고. 앱을 다시 켜도 새 세션을 만들지 않고
      * 이어서 하게 한다. 오늘 일기가 이미 있으면(다른 경로로 저장) 이어서 할 회고가 없다.
+     *
+     * <p>돌려준 회고에는 다시 열렸다고 남긴다(횟수 · 시각) — 연구 지표에서 재개를 본다.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public Optional<CurrentRetrospectDto> current(Long userId) {
         LocalDate today = DayBoundary.today();
         if (diaryQueryService.hasDiaryOn(userId, today)) {
@@ -165,6 +167,7 @@ public class RetrospectService {
                 .findFirstByUserIdAndStatusAndCreatedAtGreaterThanEqualOrderByCreatedAtDescIdDesc(userId,
                         RetrospectStatus.IN_PROGRESS, DayBoundary.startOfDay(today))
                 .map(entity -> {
+                    retrospectRepository.recordResume(entity.getId(), Instant.now());
                     RetrospectState state = codec.deserialize(entity.getStateJson());
                     return new CurrentRetrospectDto(entity.getId(), engine.transcript(state), engine.current(state));
                 });
@@ -174,6 +177,10 @@ public class RetrospectService {
     @Transactional
     public ReplyDto handle(Long userId, Long id, TurnCommand command) {
         Retrospect entity = requireSession(userId, id);
+        // 끝난 세션에 들어온 턴은 대화가 아니다(엔진이 「이미 끝났다」고만 답한다).
+        if (entity.getStatus() == RetrospectStatus.IN_PROGRESS) {
+            entity.recordUserTurn(Instant.now());
+        }
 
         RetrospectState state = codec.deserialize(entity.getStateJson());
         // 행동 추천 스텝에서만(지연) 부른다 — actioncard 컨텍스트가 비슷한 상황 이전 카드를 찾는다.
@@ -231,7 +238,7 @@ public class RetrospectService {
     private void sync(Retrospect entity, RetrospectState state, ReplyDto reply) {
         Phase phase = state.phase();
         Instant completedAt = phase.isTerminal() ? Instant.now() : null;
-        entity.sync(RetrospectStatus.from(phase), codec.serialize(state), completedAt);
+        entity.sync(RetrospectStatus.from(phase), codec.serialize(state), completedAt, state.endReason());
         announceCompletion(entity, state, reply);
     }
 

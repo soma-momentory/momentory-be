@@ -112,6 +112,7 @@ public class StrategyDiaryChat {
             state.strategySignals(policy.settle(decision.signals(), strategy));
             state.logStrategy(strategy, StrategyPolicy.VERSION, true);
             state.logAskedFeeling(false);
+            state.logQuestionSent(false);
             return new Outcome(Kind.CLOSE, null, SafetyLevel.NONE, List.of());
         }
 
@@ -180,8 +181,11 @@ public class StrategyDiaryChat {
         boolean capped = state.diaryTurn() >= maxTurns;
         state.strategySignals(policy.settle(signals, done));
         state.logStrategy(done, StrategyPolicy.VERSION, !capped);
-        // 모델이 쓴 질문이 실제로 나간 턴만 센다 — 다른 기억 질문 · 마무리 제안 · 상한으로 끝난 턴은 기분을 물은 것이 아니다.
-        state.logAskedFeeling(!capped && done.focus() == QuestionFocus.OPEN && question != null && asksFeeling);
+        // 열린 질문이 실제로 나간 턴만 센다 — 다른 기억 질문 · 마무리 제안 · 상한으로 끝난 턴은 탐색 질문도, 기분을 물은 것도
+        // 아니다. 문장 생성이 실패해 고정 열린 질문으로 대신한 턴도 질문은 나갔다(생성 실패 표시로 가른다).
+        boolean questionSent = !capped && done.focus() == QuestionFocus.OPEN && question != null;
+        state.logQuestionSent(questionSent);
+        state.logAskedFeeling(questionSent && asksFeeling);
         if (capped) {
             return new Outcome(Kind.FINISH, ack, safetyLevel, safetyFlags);
         }

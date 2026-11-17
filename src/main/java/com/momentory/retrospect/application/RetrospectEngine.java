@@ -23,6 +23,7 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.Message;
 import com.momentory.retrospect.domain.Phase;
+import com.momentory.retrospect.domain.RetrospectEndReason;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.ScheduleItem;
 import com.momentory.retrospect.domain.TodayAction;
@@ -299,7 +300,7 @@ public class RetrospectEngine {
         return switch (phase) {
             case DIARY_CHAT -> handleDiaryTurn(state, command);
             // 감정 탐색은 없앴다 — 배포 전에 사건 고르기 · 감정 · 바람 답을 기다리던 세션은 일기로 마무리한다.
-            case AWAIT_BRANCH, EMOTION_EXPLORATION -> finishComplete(state);
+            case AWAIT_BRANCH, EMOTION_EXPLORATION -> finishComplete(state, RetrospectEndReason.LEGACY_EXPLORATION);
             case SAFETY_HOLD -> handleSafetyResume(state, command);
             default -> ReplyDto.alreadyFinished(phase);
         };
@@ -365,14 +366,14 @@ public class RetrospectEngine {
         if (declinesAnotherTopic(state, command.content())) {
             state.bumpDiaryTurn();
             generateDiary(state);
-            return finishComplete(state, "좋아요. " + REFLECTION_ACK + "\n");
+            return finishComplete(state, "좋아요. " + REFLECTION_ACK + "\n", RetrospectEndReason.NO_OTHER_MEMORY);
         }
 
         // 사용자가 그만하려 함 → 확인된 것만으로 일기 정리(즉시 종료).
         if (isStopRequest(command.content())) {
             state.markDiaryUserEnded();
             generateDiary(state);
-            return finishComplete(state);
+            return finishComplete(state, RetrospectEndReason.USER_REQUEST);
         }
 
         // 단답 여부는 규칙 게이트로 감지만 한다 — 고정 문구로 되묻지 않는다(같은 문구 반복이 어색했다).
@@ -490,13 +491,16 @@ public class RetrospectEngine {
                 isStopRequest(content));
         mergeSafety(state, outcome.safetyLevel(), outcome.safetyFlags(), userMessage.id());
         if (state.safety().level().stopsRetrospect()) {
+            // 위기 안내가 바바의 말을 대신하므로 이 턴의 질문(기분 질문 포함)은 나가지 않았다.
+            state.logQuestionSent(false);
+            state.logAskedFeeling(false);
             return safetyReply(state);
         }
         return switch (outcome.kind()) {
             case CLOSE -> {
                 state.markDiaryUserEnded();
                 generateDiary(state);
-                yield finishComplete(state);
+                yield finishComplete(state, RetrospectEndReason.USER_REQUEST);
             }
             case FINISH -> finishDiaryChat(state, outcome.text());
             case PROPOSE_WRAP_UP -> presentWrapUpProposal(state, outcome.text());
@@ -667,7 +671,7 @@ public class RetrospectEngine {
     private ReplyDto finishDiaryChat(RetrospectState state, String empathy) {
         generateDiary(state);
         String reflection = empathyStatements(empathy);
-        return finishComplete(state, reflection.isBlank() ? "" : reflection + "\n");
+        return finishComplete(state, reflection.isBlank() ? "" : reflection + "\n", RetrospectEndReason.TURN_CAP);
     }
 
     /** 대화 전체에서 감정을 뽑고 일기 초안을 만들어 state 에 담는다 — 종료 직전 한 번. */
@@ -708,7 +712,7 @@ public class RetrospectEngine {
             state.lastOptions(List.of());
             state.markDiaryUserEnded();
             generateDiary(state);
-            return finishComplete(state);
+            return finishComplete(state, RetrospectEndReason.WRAP_UP_ACCEPTED);
         }
         state.lastOptions(List.of());
         // 자유 입력이면 그 답으로 대화를 이어간다(정상 일기 턴 처리로 넘긴다).
@@ -746,16 +750,16 @@ public class RetrospectEngine {
 
     static final String COMPLETE_TEXT = "오늘 이야기를 정리해뒀어요. 일기에서 천천히 확인해봐요.";
 
-    private ReplyDto finishComplete(RetrospectState state) {
-        return finishComplete(state, "");
+    private ReplyDto finishComplete(RetrospectState state, RetrospectEndReason reason) {
+        return finishComplete(state, "", reason);
     }
 
     /**
      * 최종 종료 — 일기를 응답에 싣는다. 감정 · 바람을 확인하는 탐색 단계를 없애면서 바람 카드는 더 만들지 않는다
      * (응답의 {@code wishCard} 는 늘 null). 편지는 바람 카드가 없으면 일기를 보고 바람을 고른다.
      */
-    private ReplyDto finishComplete(RetrospectState state, String lead) {
-        state.changePhase(Phase.COMPLETE);
+    private ReplyDto finishComplete(RetrospectState state, String lead, RetrospectEndReason reason) {
+        state.complete(reason);
         ReplyDto.DiaryDto diary = new ReplyDto.DiaryDto(null, state.diaryDraft(),
                 diaryEmotionKeys(state));
         String text = lead + COMPLETE_TEXT;
@@ -805,7 +809,7 @@ public class RetrospectEngine {
         if (abuseCap > 0 && state.abuseStreak() >= abuseCap) {
             String text = AbuseGate.endMessage(category);
             state.addAssistantMessage(text);
-            state.changePhase(Phase.ENDED);
+            state.stop(RetrospectEndReason.ABUSE_STOPPED);
             usage.recordPoolSubstitution(state.id(), LlmRole.G2_FALLBACK.key(), Phase.ENDED.key());
             return ReplyDto.ended(text, state.safety().level());
         }
@@ -848,7 +852,7 @@ public class RetrospectEngine {
             return ReplyDto.question(question, resumed, state.safety().level());
         }
         return switch (resumed) {
-            case AWAIT_BRANCH, EMOTION_EXPLORATION -> finishComplete(state);
+            case AWAIT_BRANCH, EMOTION_EXPLORATION -> finishComplete(state, RetrospectEndReason.LEGACY_EXPLORATION);
             default -> handleDiaryTurn(state, command);
         };
     }

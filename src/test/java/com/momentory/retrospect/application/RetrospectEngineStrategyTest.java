@@ -17,6 +17,7 @@ import com.momentory.retrospect.application.metering.LlmUsageLogger;
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
 import com.momentory.retrospect.domain.Phase;
+import com.momentory.retrospect.domain.RetrospectEndReason;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.assistant.StrategyReply;
 import com.momentory.retrospect.domain.assistant.TurnJudge;
@@ -204,12 +205,17 @@ class RetrospectEngineStrategyTest {
         reply = new StrategyReply("팀장님께 또 지적을 받으셨군요.", "그 말을 들었을 때 기분이 어땠어요?", false, false,
                 "오늘의 일", "none", List.of(), true);
         say("오늘 팀장한테 또 한 소리 들었어.", plain());
-        assertThat(lastLog().askedFeeling()).isTrue();
+        TurnJudgmentLog asked = lastLog();
+        assertThat(asked.askedFeeling()).isTrue();
+        assertThat(asked.questionSent()).isTrue();
 
-        // 모델이 기분 질문이라고 했어도 서버가 다른 기억을 물은 턴은 기분을 물은 것이 아니다.
+        // 모델이 기분 질문이라고 했어도 서버가 다른 기억을 물은 턴은 기분을 물은 것이 아니다. 고정 문구인 다른 기억 질문은
+        // 탐색 질문으로 세지 않는다.
         reply = new StrategyReply("속상하셨군요.", "", false, true, "오늘의 일", "none", List.of(), true);
         say("속상했어.", plain());
-        assertThat(lastLog().askedFeeling()).isFalse();
+        TurnJudgmentLog movedOn = lastLog();
+        assertThat(movedOn.askedFeeling()).isFalse();
+        assertThat(movedOn.questionSent()).isFalse();
     }
 
     @Test
@@ -275,7 +281,10 @@ class RetrospectEngineStrategyTest {
         assertThat(said.text()).isEqualTo("말로 꺼내기 어려울 수 있어요.\n여기까지 일기로 정리해볼까요?");
         assertThat(said.options()).extracting(ReplyDto.OptionDto::label)
                 .containsExactly("이제 정리할래요", "조금 더 이야기할래요");
-        assertThat(lastLog().strategy().focus()).isEqualTo(QuestionFocus.WRAP_UP);
+        TurnJudgmentLog log = lastLog();
+        assertThat(log.strategy().focus()).isEqualTo(QuestionFocus.WRAP_UP);
+        // 모델이 바꿔 묻는 질문을 썼어도 마무리 제안 턴에는 탐색 질문이 나가지 않는다.
+        assertThat(log.questionSent()).isFalse();
     }
 
     @Test
@@ -422,6 +431,7 @@ class RetrospectEngineStrategyTest {
         assertThat(state.phase()).isEqualTo(Phase.COMPLETE);
         assertThat(done.text()).isEqualTo(RetrospectEngine.COMPLETE_TEXT);
         assertThat(done.wishCard()).isNull();
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.WRAP_UP_ACCEPTED);
     }
 
     @Test
@@ -457,6 +467,9 @@ class RetrospectEngineStrategyTest {
         TurnJudgmentLog log = lastLog();
         assertThat(log.strategy()).isNotNull();
         assertThat(log.strategyApplied()).isFalse();
+        // 모델이 질문을 썼어도 상한으로 끝난 턴에는 나가지 않는다.
+        assertThat(log.questionSent()).isFalse();
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.TURN_CAP);
     }
 
     @Test
@@ -470,6 +483,8 @@ class RetrospectEngineStrategyTest {
         TurnJudgmentLog log = lastLog();
         assertThat(log.strategy().type()).isEqualTo(StrategyType.CLOSE);
         assertThat(log.strategyApplied()).isTrue();
+        assertThat(log.questionSent()).isFalse();
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.USER_REQUEST);
     }
 
     @Test
@@ -487,6 +502,7 @@ class RetrospectEngineStrategyTest {
         assertThat(state.phase()).isEqualTo(Phase.COMPLETE);
         assertThat(done.text()).isEqualTo("좋아요. 들려줘서 고마워요.\n" + RetrospectEngine.COMPLETE_TEXT);
         assertThat(done.wishCard()).isNull();
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.NO_OTHER_MEMORY);
     }
 
     @Test
@@ -507,6 +523,7 @@ class RetrospectEngineStrategyTest {
 
         assertThat(state.phase()).isEqualTo(Phase.COMPLETE);
         assertThat(courses).isEmpty();
+        assertThat(state.endReason()).isEqualTo(RetrospectEndReason.USER_REQUEST);
     }
 
     @Test
@@ -520,6 +537,8 @@ class RetrospectEngineStrategyTest {
         TurnJudgmentLog log = lastLog();
         assertThat(log.strategyApplied()).isTrue();
         assertThat(log.generationFailed()).isTrue();
+        // 고정 열린 질문도 사용자가 받은 탐색 질문이다 — 생성 실패 표시로 가려낸다.
+        assertThat(log.questionSent()).isTrue();
     }
 
     @Test
@@ -530,6 +549,26 @@ class RetrospectEngineStrategyTest {
 
         assertThat(state.phase()).isEqualTo(Phase.SAFETY_HOLD);
         assertThat(said.safetyLevel()).isEqualTo("risk");
+        // 위기 안내가 바바의 말을 대신했다 — 질문은 나가지 않았고, 회고는 끝난 것이 아니다.
+        TurnJudgmentLog log = lastLog();
+        assertThat(log.questionSent()).isFalse();
+        assertThat(log.askedFeeling()).isFalse();
+        assertThat(state.endReason()).isNull();
+    }
+
+    @Test
+    void doesNotLogTheWritersQuestionAsSentWhenACrisisReplyReplacesIt() {
+        // 모델이 기분 질문을 쓰면서 위기 등급도 매겼다 — 바바의 말 대신 위기 안내가 나간다.
+        reply = new StrategyReply("많이 지치셨군요.", "그때 기분이 어땠어요?", false, false, "요즘", "risk",
+                List.of("hopeless"), true);
+
+        ReplyDto said = say("요즘 다 내려놓고 싶다는 생각이 들어", plain());
+
+        assertThat(state.phase()).isEqualTo(Phase.SAFETY_HOLD);
+        assertThat(said.text()).doesNotContain("그때 기분이 어땠어요?");
+        TurnJudgmentLog log = lastLog();
+        assertThat(log.questionSent()).isFalse();
+        assertThat(log.askedFeeling()).isFalse();
     }
 
     @Test
