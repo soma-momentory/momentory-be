@@ -211,6 +211,8 @@ class TurnJudgmentPersistenceIntegrationTest {
         assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("OPEN", "OTHER_TOPIC");
         // 모델이 쓴 질문이 나간 턴만 탐색 질문으로 남는다 — 다른 기억을 묻는 고정 질문은 아니다.
         assertThat(rows).extracting(TurnJudgmentRecord::getQuestionSent).containsExactly(true, false);
+        // 첫 이야기와 그 이야기를 이어 간 답변은 새 이야기가 아니다.
+        assertThat(rows).extracting(TurnJudgmentRecord::getNewTopic).containsExactly(false, false);
         assertThat(rows).allSatisfy(row -> {
             assertThat(row.getPolicyVersion()).isEqualTo(StrategyPolicy.VERSION);
             assertThat(row.getStrategyApplied()).isTrue();
@@ -223,8 +225,10 @@ class TurnJudgmentPersistenceIntegrationTest {
         // 문장 생성 모델이 실패한 턴은 기록에서 가려낼 수 있다.
         when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.empty());
         say(user, sessionId, "그 생각이 자꾸 나요.");
-        assertThat(judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast().isGenerationFailed())
-                .isTrue();
+        TurnJudgmentRecord failedTurn = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast();
+        assertThat(failedTurn.isGenerationFailed()).isTrue();
+        // 새 이야기였는지는 문장 생성 모델이 판단하므로, 생성이 실패한 턴은 알 수 없음(null)으로 남는다.
+        assertThat(failedTurn.getNewTopic()).isNull();
 
         // 판단 모델이 실패한 턴에도 방침은 남는다 — 옛 고정 순서로 돌아가지 않는다.
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.empty());
@@ -364,6 +368,35 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
+    @DisplayName("탐색 질문 뒤에 새 이야기를 꺼낸 답변은 새 이야기로 남고, 판단 모델의 반응은 그대로 남는다")
+    void recordsThatAnAnswerStartedANewStory() throws Exception {
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(asking("none", "none")));
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
+                "발표를 하셨군요.", "발표했을 때 기분이 어땠어요?", false, false, "발표", "none", List.of())));
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        long sessionId = startSession(user);
+        say(user, sessionId, "오늘 발표했어요.");
+
+        // 기분 질문에 답하지 않고 다른 일을 꺼냈다 — 판단 모델은 「다른 얘기로 넘어감」, 문장 생성 모델은 새 이야기로 본다.
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(reacting("no_answer_or_topic_change")));
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
+                "친구와 저녁을 드셨군요.", "저녁을 먹으면서 기분이 어땠어요?", true, false, "친구와의 저녁", "none",
+                List.of())));
+        say(user, sessionId, "아 맞다 오늘 친구랑 저녁 먹었어요.");
+
+        List<TurnJudgmentRecord> rows = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId);
+        assertThat(rows).extracting(TurnJudgmentRecord::getNewTopic).containsExactly(false, true);
+        // 반응 칸은 판단 모델의 답 그대로다 — 저항인지는 새 이야기 칸과 함께 읽는다.
+        assertThat(rows).extracting(TurnJudgmentRecord::getReaction)
+                .containsExactly("agree_or_elaborate", "no_answer_or_topic_change");
+        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionSent).containsExactly(true, true);
+        assertThat(jdbc.queryForList("""
+                select new_topic from retrospect_turn_judgments where retrospect_id = ? order by diary_turn""",
+                Boolean.class, sessionId)).containsExactly(false, true);
+    }
+
+    @Test
     @DisplayName("판단만 기록하는 계정은 성향 관찰을 남기지 않는다")
     void doesNotObserveDispositionWithoutStrategy() throws Exception {
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
@@ -377,6 +410,7 @@ class TurnJudgmentPersistenceIntegrationTest {
                 .allSatisfy(row -> {
                     assertThat(row.getAskedFeeling()).isNull();
                     assertThat(row.getQuestionSent()).isNull();
+                    assertThat(row.getNewTopic()).isNull();
                 });
         assertThat(dispositionObservations.findByRetrospectId(sessionId)).isEmpty();
     }
@@ -486,6 +520,17 @@ class TurnJudgmentPersistenceIntegrationTest {
                 JudgmentItem.END_INTENT, "continue", JudgmentItem.REQUESTED_MODE, requested,
                 JudgmentItem.EMOTION_EXPRESSION, emotion, JudgmentItem.EVENT_INFO, "specific",
                 JudgmentItem.REACTION, "agree_or_elaborate", JudgmentItem.EXPERIENCING_DEPTH, "stage_3");
+        choices.forEach((item, choice) -> items.put(item, new ItemJudgment(choice, 0.9, Map.of(choice, 0.9))));
+        return new TurnJudgment("jev-1.14.0", "v3", items, 1400, 350);
+    }
+
+    /** 바바의 직전 말에 주어진 반응을 보인 답변의 판단. */
+    private static TurnJudgment reacting(String reaction) {
+        Map<JudgmentItem, ItemJudgment> items = new EnumMap<>(JudgmentItem.class);
+        Map<JudgmentItem, String> choices = Map.of(
+                JudgmentItem.END_INTENT, "continue", JudgmentItem.REQUESTED_MODE, "none",
+                JudgmentItem.EMOTION_EXPRESSION, "none", JudgmentItem.EVENT_INFO, "specific",
+                JudgmentItem.REACTION, reaction, JudgmentItem.EXPERIENCING_DEPTH, "stage_1_2");
         choices.forEach((item, choice) -> items.put(item, new ItemJudgment(choice, 0.9, Map.of(choice, 0.9))));
         return new TurnJudgment("jev-1.14.0", "v3", items, 1400, 350);
     }
