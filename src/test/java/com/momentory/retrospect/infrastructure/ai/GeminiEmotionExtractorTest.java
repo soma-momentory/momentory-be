@@ -74,7 +74,43 @@ class GeminiEmotionExtractorTest {
     }
 
     @Test
-    @DisplayName("사건은 상한 2개까지만 남기고, 요약 없는 사건은 버린다")
+    @DisplayName("일기에는 감정이 붙은 사건을 먼저 담고, 고른 사건은 대화 순서를 지킨다")
+    void picksEventsWithEmotionsFirst() {
+        respond(new GeminiExtraction(
+                List.of(new GeminiEvent(1, "산책", "아침 산책", List.of(1)),
+                        new GeminiEvent(2, "발표", "발표에서 말이 막힘", List.of(2)),
+                        new GeminiEvent(3, "점심", "점심을 먹음", List.of(3)),
+                        new GeminiEvent(4, "다툼", "친구와 다툼", List.of(4))),
+                List.of(new GeminiEmotion(4, "서운했어", "sad", 2, "after", "서운했어", List.of(4)),
+                        new GeminiEmotion(2, "떨렸어", "anxious", 2, "during", "떨렸어", List.of(2))),
+                null));
+
+        EmotionExtraction result = extractor.extract(state());
+
+        assertThat(result.events()).extracting("summary").containsExactly("발표에서 말이 막힘", "친구와 다툼");
+        assertThat(result.emotions()).extracting("eventId").containsExactly(4, 2);
+    }
+
+    @Test
+    @DisplayName("감정이 붙은 사건이 셋 이상이면 대화 순서대로 둘을 담고, 빠진 사건의 감정은 사건 없이 남긴다")
+    void keepsEmotionsOfEventsLeftOutOfTheDiary() {
+        respond(new GeminiExtraction(
+                List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1)),
+                        new GeminiEvent(2, "다툼", "친구와 다툼", List.of(2)),
+                        new GeminiEvent(3, "산책", "저녁 산책", List.of(3))),
+                List.of(new GeminiEmotion(1, "떨렸어", "anxious", 2, "during", "떨렸어", List.of(1)),
+                        new GeminiEmotion(2, "서운했어", "sad", 2, "after", "서운했어", List.of(2)),
+                        new GeminiEmotion(3, "개운했어", "calm", 1, "after", "개운했어", List.of(3))),
+                null));
+
+        EmotionExtraction result = extractor.extract(state());
+
+        assertThat(result.events()).extracting("summary").containsExactly("발표에서 말이 막힘", "친구와 다툼");
+        assertThat(result.emotions()).extracting("eventId").containsExactly(1, 2, null);
+    }
+
+    @Test
+    @DisplayName("사건은 상한 2개까지만 남기고, 요약 없는 사건은 버린다 — 감정이 없으면 대화 순서대로")
     void capsAndFiltersEvents() {
         respond(new GeminiExtraction(
                 List.of(new GeminiEvent(1, "발표", "발표에서 말이 막힘", List.of(1)),

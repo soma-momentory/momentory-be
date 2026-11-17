@@ -128,7 +128,7 @@ class PromptFactoryTest {
         assertThat(prompt).contains("intensity");
         assertThat(prompt).contains("before(사건 전)");
         assertThat(prompt).contains("anxious");        // 고정 12종 키
-        assertThat(prompt).contains("최대 2개");        // 사건 상한
+        assertThat(prompt).contains("개수 제한 없이 모두");        // 사건 상한 없음
     }
 
     @Test

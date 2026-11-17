@@ -5,7 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * 대화에서 뽑은 사건 한 건 (모델 비교 계획 §3.1) — 최대 2개.
+ * 대화에서 뽑은 사건 한 건 (모델 비교 계획 §3.1) — 일기에는 감정이 붙은 것을 먼저 최대 2개 담는다.
  *
  * <p>{@code evidence} 는 <b>그 사건에 속하는 사용자 발화 번호 전체</b>(배정)다. 감정의 근거 문장보다
  * 넓다 — {@link ExtractedEmotion#evidenceIds()} 가 이 집합의 부분집합이 된다.

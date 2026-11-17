@@ -76,9 +76,6 @@ class DiaryApiIntegrationTest {
     @Autowired com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec;
 
     @org.springframework.test.context.bean.override.mockito.MockitoBean
-    com.momentory.diary.application.WeatherProvider weatherProvider;
-
-    @org.springframework.test.context.bean.override.mockito.MockitoBean
     com.momentory.retrospect.domain.assistant.EmotionExtractor emotionExtractor;
 
     private MockMvc mockMvc;
@@ -375,70 +372,21 @@ class DiaryApiIntegrationTest {
     }
 
     @Test
-    void weatherIsPersistedOnceAndReturnedByReads() throws Exception {
+    void recordedWeatherIsStillReturnedByReadsAndTheRecordingApiIsGone() throws Exception {
+        // 일기 저장 때 위치를 받아 날씨를 기록하던 API 는 없앴다. 이미 기록된 날씨는 조회에 그대로 나온다.
         User user = userRepository.saveAndFlush(User.create());
         long id = seedDiary(user, "오늘 일기", Emotion.CALM, Instant.now());
-        org.mockito.Mockito.when(weatherProvider.current(37.57, 126.98)).thenReturn("맑음 · 22℃");
-        for (int i = 0; i < 2; i++) {
-            mockMvc.perform(put("/api/v1/diaries/{id}/weather", id)
-                            .header(HttpHeaders.AUTHORIZATION, bearer(user))
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"latitude\":37.57,\"longitude\":126.98}"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.weather").value("맑음 · 22℃"));
-        }
-        org.mockito.Mockito.verify(weatherProvider, org.mockito.Mockito.times(1)).current(37.57, 126.98);
-        org.junit.jupiter.api.Assertions.assertEquals("맑음 · 22℃",
-                diaryRepository.findById(id).orElseThrow().getWeather());
+        jdbcTemplate.update("update diaries set weather = ? where id = ?", "맑음 · 22℃", id);
         mockMvc.perform(get("/api/v1/diaries/{id}", id).header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(jsonPath("$.weather").value("맑음 · 22℃"));
         mockMvc.perform(get("/api/v1/diaries/all").header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(jsonPath("$.diaries[0].weather").value("맑음 · 22℃"));
-    }
-
-    @Test
-    void weatherRejectsOtherUsersPastDatesAndInvalidCoordinates() throws Exception {
-        User owner = userRepository.saveAndFlush(User.create());
-        User other = userRepository.saveAndFlush(User.create());
-        long id = seedDiary(owner, "과거 일기", Emotion.CALM, Instant.now().minusSeconds(172800));
-        String coordinates = "{\"latitude\":37.57,\"longitude\":126.98}";
         mockMvc.perform(put("/api/v1/diaries/{id}/weather", id)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(other)).contentType(MediaType.APPLICATION_JSON).content(coordinates))
-                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("DIARY_NOT_FOUND"));
-        mockMvc.perform(put("/api/v1/diaries/{id}/weather", id)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)).contentType(MediaType.APPLICATION_JSON).content(coordinates))
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DIARY_WEATHER_DATE_MISMATCH"));
-        for (String invalid : new String[] { "{}", "{\"latitude\":91,\"longitude\":0}",
-                "{\"latitude\":0,\"longitude\":181}", "{\"latitude\":\"NaN\",\"longitude\":0}" }) {
-            mockMvc.perform(put("/api/v1/diaries/{id}/weather", id)
-                            .header(HttpHeaders.AUTHORIZATION, bearer(owner)).contentType(MediaType.APPLICATION_JSON).content(invalid))
-                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
-        }
-        mockMvc.perform(put("/api/v1/diaries/{id}/weather", id)
-                        .contentType(MediaType.APPLICATION_JSON).content(coordinates))
-                .andExpect(status().isUnauthorized());
-        mockMvc.perform(put("/api/v1/diaries/{id}/weather", id)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"latitude\":91,\"longitude\":0}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("위도는 -90부터 90까지입니다."));
-        org.mockito.Mockito.verifyNoInteractions(weatherProvider);
-        org.junit.jupiter.api.Assertions.assertNull(diaryRepository.findById(id).orElseThrow().getWeather());
-    }
-
-    @Test
-    void unavailableWeatherDoesNotChangeTheDiary() throws Exception {
-        User user = userRepository.saveAndFlush(User.create());
-        long id = seedDiary(user, "본문 유지", Emotion.CALM, Instant.now());
-        org.mockito.Mockito.when(weatherProvider.current(37.57, 126.98))
-                .thenThrow(new com.momentory.diary.application.WeatherUnavailableException());
-        mockMvc.perform(put("/api/v1/diaries/{id}/weather", id)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(user)).contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"latitude\":37.57,\"longitude\":126.98}"))
-                .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("WEATHER_UNAVAILABLE"));
-        var diary = diaryRepository.findById(id).orElseThrow();
-        org.junit.jupiter.api.Assertions.assertEquals("본문 유지", diary.getOriginal());
-        org.junit.jupiter.api.Assertions.assertNull(diary.getWeather());
+                .andExpect(result -> org.junit.jupiter.api.Assertions.assertTrue(
+                        result.getResponse().getStatus() >= 400, "기록 API 는 더 이상 받지 않는다"));
     }
 
     @Test
