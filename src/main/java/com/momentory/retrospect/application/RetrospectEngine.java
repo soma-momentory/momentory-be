@@ -727,6 +727,10 @@ public class RetrospectEngine {
 
     /** AI 없이 슬롯만으로 만든 최소한의 일기 — 일기 없이 끝나는 것보다는 낫다. */
     private static DiaryOutput fallbackDiary(RetrospectState state) {
+        if (!state.events().isEmpty()) {
+            return new DiaryOutput(state.events().stream().limit(RetrospectState.MAX_EVENTS)
+                    .map(event -> event.summary()).collect(Collectors.joining("\n\n")), null);
+        }
         StringBuilder sb = new StringBuilder();
         if (state.event() != null) {
             sb.append(state.event());
