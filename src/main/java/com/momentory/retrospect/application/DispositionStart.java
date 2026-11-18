@@ -1,5 +1,7 @@
 package com.momentory.retrospect.application;
 
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Set;
 
@@ -7,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
+import com.momentory.common.time.DayBoundary;
 import com.momentory.retrospect.domain.disposition.ConversationSignals;
 import com.momentory.retrospect.domain.disposition.DispositionArm;
 import com.momentory.retrospect.domain.disposition.DispositionAssignment;
@@ -30,23 +33,32 @@ public class DispositionStart {
     public record Plan(DispositionArm arm, StartingDisposition derived, StrategySignals startingSignals) {
     }
 
+    private static final Set<DispositionArm> EXPERIMENT_ARMS = Set.of(DispositionArm.TREATMENT,
+            DispositionArm.CONTROL);
+
     private final DispositionObservationRecordRepository observations;
     private final StrategyPolicy policy;
     private final DispositionAssignment assignment;
-    private final int repeatThreshold;
+    private final int selfLedRepeat;
+    private final int otherViewRepeat;
+    private final int earlyDays;
     private final int window;
     private final double minConfidence;
 
     public DispositionStart(DispositionObservationRecordRepository observations, StrategyPolicy policy,
             @Value("${momentory.disposition.apply-mode:OFF}") DispositionAssignment.Mode mode,
             @Value("${momentory.disposition.apply-user-ids:}") Set<Long> userIds,
-            @Value("${momentory.disposition.repeat-threshold:2}") int repeatThreshold,
+            @Value("${momentory.disposition.self-led-repeat-threshold:1}") int selfLedRepeat,
+            @Value("${momentory.disposition.other-view-repeat-threshold:2}") int otherViewRepeat,
+            @Value("${momentory.disposition.early-days:3}") int earlyDays,
             @Value("${momentory.disposition.window:5}") int window,
             @Value("${momentory.strategy.min-confidence:0.5}") double minConfidence) {
         this.observations = observations;
         this.policy = policy;
         this.assignment = new DispositionAssignment(mode, userIds);
-        this.repeatThreshold = repeatThreshold;
+        this.selfLedRepeat = selfLedRepeat;
+        this.otherViewRepeat = otherViewRepeat;
+        this.earlyDays = earlyDays;
         this.window = window;
         this.minConfidence = minConfidence;
     }
@@ -62,12 +74,26 @@ public class DispositionStart {
                 .stream()
                 .map(o -> new ConversationSignals(o.getResistanceCount(), o.getOtherViewRequestCount()))
                 .toList();
-        StartingDisposition derived = StartingDisposition.of(recent, repeatThreshold,
-                policy.resistanceThreshold());
+        boolean early = inEarlyDays(userId);
+        StartingDisposition derived = StartingDisposition.of(recent, early ? 1 : selfLedRepeat,
+                early ? 1 : otherViewRepeat, policy.resistanceThreshold());
         StrategySignals signals = arm == DispositionArm.TREATMENT
                 ? policy.startingSignals(derived.selfLed(), derived.wantsOtherView())
                 : StrategySignals.initial();
         return new Plan(arm, derived, signals);
+    }
+
+    /** 사용자의 첫 실험 대화가 속한 날부터 {@code earlyDays} 일 안인가(KST · 04:00 경계). 첫 대화면 그날이 시작이다. */
+    private boolean inEarlyDays(Long userId) {
+        return observations.findFirstByUserIdAndApplyArmInOrderByCreatedAtAsc(userId, EXPERIMENT_ARMS)
+                .map(first -> withinEarlyDays(DayBoundary.toLocalDate(first.getCreatedAt()), DayBoundary.today(),
+                        earlyDays))
+                .orElse(true);
+    }
+
+    /** 첫 실험 대화가 속한 날을 1일째로 세어 {@code earlyDays} 일째까지인가. */
+    static boolean withinEarlyDays(LocalDate firstDay, LocalDate today, int earlyDays) {
+        return ChronoUnit.DAYS.between(firstDay, today) < earlyDays;
     }
 
     /** 방금 저장된 회고의 관찰 줄을 연다 — 답변이 오면 여기에 신호가 더해진다. */

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
@@ -24,10 +25,14 @@ import com.momentory.retrospect.domain.strategy.TurnStrategy;
  */
 public class RetrospectState {
 
+    /**
+     * 일기에 담는 사건 수 (모델 비교 계획 §3.1). 대화에서 다루는 이야기 수와는 별개다 — 대화는 이야기 수에 제한이
+     * 없고, 끝에 뽑은 사건 가운데 감정이 붙은 것을 먼저 이만큼 고른다({@code GeminiEmotionExtractor}).
+     */
+    public static final int MAX_EVENTS = 2;
+
     /** 일기 작성 최대 턴 (채팅흐름_v2). */
     public static final int DIARY_MAX_TURNS = 5;
-    /** 한 세션에서 뽑는 사건 개수 상한 (모델 비교 계획 §3.1). */
-    public static final int MAX_EVENTS = 2;
     /**
      * 일기 작성 권장 최소 턴 — 엔진은 5턴(최대)까지 대화를 이어가지만(조기 종료 금지), AI 에게는
      * 이 값을 하한으로 알려 "최소 이만큼은 소재를 넓혀가라"는 진행 안내에 쓴다({@code PromptFactory}).
@@ -126,6 +131,8 @@ public class RetrospectState {
     private StrategySignals strategySignals;
     /** 이번 요청에서 생긴 판단 기록 — 저장하지 않는다. 애플리케이션 서비스가 꺼내 따로 기록한다. */
     private final transient List<TurnJudgmentLog> judgmentLogs = new ArrayList<>();
+    /** 이번 요청에서 회고가 끝났다면 어떻게 끝났는가 — 저장하지 않는다. 애플리케이션 서비스가 세션 행에 옮긴다. */
+    private transient RetrospectEndReason endReason;
 
     public RetrospectState(String id) {
         this.id = id;
@@ -204,8 +211,29 @@ public class RetrospectState {
 
     // ── 진행 ─────────────────────────────────────────────────────────────
 
+    /** 진행 중인 단계로 옮긴다 — 끝내는 것은 종료 사유를 함께 남기는 {@link #complete} · {@link #stop} 으로만 한다. */
     public void changePhase(Phase phase) {
+        if (phase.isTerminal()) {
+            throw new IllegalArgumentException("terminal phase needs an end reason: " + phase);
+        }
         this.phase = phase;
+    }
+
+    /** 일기까지 마치고 회고를 끝낸다 — 어떻게 끝났는지 함께 남긴다. */
+    public void complete(RetrospectEndReason reason) {
+        this.endReason = Objects.requireNonNull(reason, "reason must not be null");
+        this.phase = Phase.COMPLETE;
+    }
+
+    /** 일기 없이 회고를 멈춘다(악용 반복) — 어떻게 끝났는지 함께 남긴다. */
+    public void stop(RetrospectEndReason reason) {
+        this.endReason = Objects.requireNonNull(reason, "reason must not be null");
+        this.phase = Phase.ENDED;
+    }
+
+    /** 이번 요청에서 회고가 끝났다면 그 사유. 끝나지 않았으면 null. */
+    public RetrospectEndReason endReason() {
+        return endReason;
     }
 
     /** 위기 안내로 멈춘다 — 지금 phase 를 기억해 두고 {@link Phase#SAFETY_HOLD} 로 넘어간다. */
@@ -414,7 +442,7 @@ public class RetrospectState {
         return List.copyOf(events);
     }
 
-    /** 대화 끝에 추출한 사건으로 채운다 — 요약이 있는 것만, 최대 2개. */
+    /** 대화 끝에 추출한 사건으로 채운다 — 요약이 있는 것만, 최대 {@link #MAX_EVENTS}개. */
     public void events(List<ExtractedEvent> extracted) {
         events.clear();
         if (extracted == null) {
@@ -668,6 +696,20 @@ public class RetrospectState {
     public void logAskedFeeling(boolean asked) {
         if (!judgmentLogs.isEmpty()) {
             judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withAskedFeeling(asked));
+        }
+    }
+
+    /** 방금 남긴 판단 기록에 이 턴에 열린 탐색 질문이 실제로 나갔는지를 덧붙인다. */
+    public void logQuestionSent(boolean sent) {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withQuestionSent(sent));
+        }
+    }
+
+    /** 방금 남긴 판단 기록에 이 답변이 새 이야기의 시작이었는지를 덧붙인다. */
+    public void logNewTopic(boolean started) {
+        if (!judgmentLogs.isEmpty()) {
+            judgmentLogs.set(judgmentLogs.size() - 1, judgmentLogs.getLast().withNewTopic(started));
         }
     }
 

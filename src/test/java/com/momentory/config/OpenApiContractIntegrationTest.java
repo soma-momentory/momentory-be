@@ -137,20 +137,11 @@ class OpenApiContractIntegrationTest {
     }
 
     @Test
-    void documentsDiaryWeather() throws Exception {
+    void doesNotDocumentDiaryWeatherRecording() throws Exception {
         JsonNode docs = getApiDocs();
-        String path = "/api/v1/diaries/{id}/weather";
-        assertResponseSchema(docs, path, "put", "200", "DiaryResponse");
-        assertErrorExample(docs, path, "put", "400", "ApiErrorResponse", "latitudeRange", "INVALID_REQUEST", "위도는 -90부터 90까지입니다.");
-        assertErrorExample(docs, path, "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
-        assertErrorExample(docs, path, "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
-        assertErrorExample(docs, path, "put", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
-        assertErrorExample(docs, path, "put", "409", "ApiErrorResponse", "DIARY_WEATHER_DATE_MISMATCH", "DIARY_WEATHER_DATE_MISMATCH", "지난 일기에는 현재 날씨를 기록할 수 없습니다.");
-        assertErrorExample(docs, path, "put", "503", "ApiErrorResponse", "WEATHER_UNAVAILABLE", "WEATHER_UNAVAILABLE", "날씨를 가져오지 못했어요. 일기는 그대로 저장돼요.");
-        JsonNode properties = docs.path("components").path("schemas").path("DiaryWeatherRequest").path("properties");
-        assertThat(properties.size()).isEqualTo(2);
-        assertThat(properties.has("latitude")).isTrue();
-        assertThat(properties.has("longitude")).isTrue();
+        assertThat(docs.path("paths").has("/api/v1/diaries/{id}/weather")).isFalse();
+        assertThat(docs.path("components").path("schemas").has("DiaryWeatherRequest")).isFalse();
+        // 이미 기록된 날씨는 일기 조회에 남는다.
         assertThat(docs.path("components").path("schemas").path("DiaryResponse").path("properties").has("weather")).isTrue();
     }
 
@@ -438,6 +429,17 @@ class OpenApiContractIntegrationTest {
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "되돌린 상태에서는 느낀 점을 남길 수 없습니다.");
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
         assertErrorExample(apiDocs, "/api/v1/action-cards/{id}/completion", "put", "404", "ApiErrorResponse", "ACTION_CARD_NOT_FOUND", "ACTION_CARD_NOT_FOUND", "행동 카드를 찾을 수 없습니다.");
+
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe", "get", "200", "WardrobeView");
+        assertOperationTag(apiDocs, "/api/v1/wardrobe", "get", "Wardrobe");
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe/check-in", "post", "200", "TangerineCheckIn");
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe/welcome", "post", "200", "TangerineCheckIn");
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe/outfit", "put", "200", "WardrobeOutfit");
+        assertErrorExample(apiDocs, "/api/v1/wardrobe/outfit", "put", "403", "ApiErrorResponse", "WARDROBE_ITEM_NOT_OWNED", "WARDROBE_ITEM_NOT_OWNED", "가지지 않은 아이템입니다.");
+        assertErrorExample(apiDocs, "/api/v1/wardrobe/outfit", "put", "404", "ApiErrorResponse", "WARDROBE_ITEM_NOT_FOUND", "WARDROBE_ITEM_NOT_FOUND", "아이템을 찾을 수 없습니다.");
+        assertResponseSchema(apiDocs, "/api/v1/wardrobe/items/{itemId}/purchase", "post", "200", "PurchaseResult");
+        assertErrorExample(apiDocs, "/api/v1/wardrobe/items/{itemId}/purchase", "post", "409", "ApiErrorResponse", "TANGERINE_NOT_ENOUGH", "TANGERINE_NOT_ENOUGH", "귤이 모자랍니다.");
+        assertErrorExample(apiDocs, "/api/v1/wardrobe/items/{itemId}/purchase", "post", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
     }
 
     @Test

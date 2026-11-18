@@ -34,6 +34,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -49,6 +51,7 @@ import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.EmotionPhase;
 import com.momentory.retrospect.domain.ExtractedEmotion;
 import com.momentory.retrospect.domain.ExtractedEvent;
+import com.momentory.retrospect.domain.RetrospectEndReason;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.assistant.DiaryChatAssistant;
 import com.momentory.retrospect.domain.assistant.DiaryOutput;
@@ -56,7 +59,6 @@ import com.momentory.retrospect.domain.assistant.DiaryTurn;
 import com.momentory.retrospect.domain.assistant.DiaryWriter;
 import com.momentory.retrospect.domain.assistant.EmotionExtraction;
 import com.momentory.retrospect.domain.assistant.EmotionExtractor;
-import com.momentory.retrospect.domain.assistant.ExplorationAssistant;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
 import com.momentory.retrospect.infrastructure.persistence.RetrospectRepository;
 import com.momentory.user.domain.User;
@@ -67,8 +69,8 @@ import com.momentory.user.infrastructure.UserRepository;
  * AI 포트 4종은 모킹해 흐름을 결정적으로 만든다(실 Gemini 검증은 opt-in 통합 테스트).
  *
  * <p>v2 계약: 시작은 감정을 고르지 않고(일정 이름만), 첫 phase 는 {@code diary_chat}. 일기 작성
- * 채팅을 최대 5턴 이어가면 분기 없이 감정 탐색({@code emotion_exploration})으로 넘어간다(사건이 둘이면
- * {@code await_branch} 에서 사건을 고른다 · 바바의 편지 PRD 14-1). 턴 입력은 {@code content} 또는 {@code optionIds}.
+ * 채팅을 최대 5턴 이어가면 일기로 마무리한다({@code complete}) — 감정 · 바람을 다시 묻던 탐색 단계는 없앴다.
+ * 턴 입력은 {@code content} 또는 {@code optionIds}.
  */
 @SpringBootTest(properties = {
         "JWT_SECRET=JZP9amP0y2bXk2LG9f9piS5jH3vK9B5w7qxgEriqMA4=",
@@ -96,10 +98,10 @@ class RetrospectApiIntegrationTest {
     @Autowired ActionCardRepository actionCardRepository;
     @Autowired AccessTokenIssuer accessTokenIssuer;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @MockitoBean DiaryChatAssistant diaryChatAssistant;
     @MockitoBean EmotionExtractor emotionExtractor;
-    @MockitoBean ExplorationAssistant explorationAssistant;
     @MockitoBean DiaryWriter diaryWriter;
 
     private MockMvc mockMvc;
@@ -120,8 +122,6 @@ class RetrospectApiIntegrationTest {
                 List.of(new ExtractedEmotion(1, "우울한 느낌", Emotion.SAD, 2,
                         EmotionPhase.NOW, "우울해요", List.of(1))),
                 null));
-        // 바람 후보는 엔진 폴백(고정 앞자리)에 맡긴다.
-        when(explorationAssistant.suggestNeeds(any())).thenReturn(List.of());
         // 짧은 기록형 일기 1종.
         when(diaryWriter.write(any())).thenReturn(Optional.of(new DiaryOutput("그냥 일기.", null)));
         // 토픽 추출은 이 테스트 범위 밖 — 빈 목록.
@@ -227,7 +227,7 @@ class RetrospectApiIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"없어요.", "딱히 없었어", "더는 딱히 다른 일은 없었어요.", "싫어", "안 할래요"})
-    @DisplayName("다른 기억 질문에 없음으로 답하면 저장된 대화를 바탕으로 조기에 감정 탐색으로 넘어간다")
+    @DisplayName("다른 기억 질문에 없음으로 답하면 저장된 대화를 바탕으로 조기에 일기로 마무리한다")
     void noOtherMemoryEndsFreeChatAcrossRequests(String answer) throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         long sessionId = startSession(user);
@@ -240,19 +240,22 @@ class RetrospectApiIntegrationTest {
 
         mockMvc.perform(message(user, sessionId, "{\"content\":\"%s\"}".formatted(answer)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.phase").value("emotion_exploration"))
-                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith(
-                        "좋아요. 지금까지 들려주신 이야기를 잘 담아둘게요.\n오늘 이야기는 일기로 정리해뒀어요.")));
+                .andExpect(jsonPath("$.phase").value("complete"))
+                .andExpect(jsonPath("$.done").value(true))
+                .andExpect(jsonPath("$.text").value(
+                        "좋아요. 들려줘서 고마워요.\n오늘 이야기를 정리해뒀어요. 일기에서 천천히 확인해봐요."))
+                .andExpect(jsonPath("$.wishCard").doesNotExist());
         String snapshot = retrospectRepository.findById(sessionId).orElseThrow().getStateJson();
         assertThat(((Number) JsonPath.read(snapshot, "$.diaryTurn")).intValue()).isEqualTo(3);
         assertThat((String) JsonPath.read(snapshot, "$.diaryDraft")).isEqualTo("그냥 일기.");
-        // 초안은 세션에 저장되고, 일기 테이블에는 회고 완료 때 저장된다.
-        assertThat(diaryRepository.findByRetrospectId(sessionId)).isEmpty();
+        // 회고가 끝났으므로 일기 테이블에 저장되고, 바람 카드는 남지 않는다.
+        assertThat(diaryRepository.findByRetrospectId(sessionId)).isPresent();
+        assertThat(actionCardRepository.findByRetrospectId(sessionId)).isEmpty();
     }
 
     @Test
-    @DisplayName("다른 이야기 거절은 두 사건이어도 재선택 없이 대표 사건 감정으로 바로 전환한다")
-    void refusesOtherTopicGoesDirectlyToMainEventEmotion() throws Exception {
+    @DisplayName("다른 이야기 거절은 두 사건이어도 사건 고르기 · 감정 탐색 없이 일기로 마무리한다")
+    void refusesOtherTopicCompletesWithDiary() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         long sessionId = startSession(user);
         when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.of(new DiaryTurn(
@@ -265,17 +268,21 @@ class RetrospectApiIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(message(user, sessionId, "{\"content\":\"준비를 많이 못 했어요\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.text").value(Matchers.endsWith("다른 이야기를 나눠볼까요?")));
+                .andExpect(jsonPath("$.text").value(Matchers.endsWith("다른 기억에 남는 일은 뭐였어요?")));
 
         mockMvc.perform(message(user, sessionId, "{\"content\":\"싫어\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.phase").value("emotion_exploration"))
-                .andExpect(jsonPath("$.done").value(false))
-                .andExpect(jsonPath("$.text").value(Matchers.containsString("답변이 막혔던 면접")));
+                .andExpect(jsonPath("$.phase").value("complete"))
+                .andExpect(jsonPath("$.done").value(true))
+                .andExpect(jsonPath("$.options").doesNotExist())
+                .andExpect(jsonPath("$.text").value(Matchers.not(Matchers.containsString("나눠볼까요"))))
+                .andExpect(jsonPath("$.wishCard").doesNotExist());
         String snapshot = retrospectRepository.findById(sessionId).orElseThrow().getStateJson();
-        assertThat(((Number) JsonPath.read(snapshot, "$.selectedEventId")).intValue()).isEqualTo(2);
+        assertThat((Boolean) JsonPath.read(snapshot, "$.explorationEntered")).isFalse();
         assertThat((Boolean) JsonPath.read(snapshot, "$.awaitingEventSelection")).isFalse();
         assertThat((String) JsonPath.read(snapshot, "$.diaryDraft")).isEqualTo("그냥 일기.");
+        assertThat(diaryRepository.findByRetrospectId(sessionId)).isPresent();
+        assertThat(actionCardRepository.findByRetrospectId(sessionId)).isEmpty();
     }
 
     @Test
@@ -359,8 +366,8 @@ class RetrospectApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("일기 작성 5턴을 이어가면 분기 없이 감정 확인으로 넘어간다(사건이 하나일 때)")
-    void diaryGoesStraightToEmotionConfirm() throws Exception {
+    @DisplayName("일기 작성 5턴을 이어가면 감정 확인 없이 일기로 마무리한다")
+    void diaryCompletesAfterFiveTurnsWithoutExploration() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         long sessionId = startSession(user);
 
@@ -373,10 +380,14 @@ class RetrospectApiIntegrationTest {
         mockMvc.perform(message(user, sessionId,
                         "{\"content\":\"내 의견을 존중받고 싶었어요.\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.phase").value("emotion_exploration"));
+                .andExpect(jsonPath("$.phase").value("complete"))
+                .andExpect(jsonPath("$.done").value(true))
+                .andExpect(jsonPath("$.wishCard").doesNotExist());
 
         String snapshot = retrospectRepository.findById(sessionId).orElseThrow().getStateJson();
         assertThat(((Number) JsonPath.read(snapshot, "$.diaryTurn")).intValue()).isEqualTo(5);
+        assertThat(diaryRepository.findByRetrospectId(sessionId)).isPresent();
+        assertThat(actionCardRepository.findByRetrospectId(sessionId)).isEmpty();
     }
 
     @Test
@@ -419,6 +430,10 @@ class RetrospectApiIntegrationTest {
         Retrospect done = retrospectRepository.findById(sessionId).orElseThrow();
         assertThat(done.getStatus().name()).isEqualTo("COMPLETED");
         assertThat(done.getCompletedAt()).isNotNull();
+        // 연구 지표용 — 어떻게 끝났는지와 사용자의 마지막 턴 시각이 세션 행에 남는다.
+        assertThat(done.getEndReason()).isEqualTo(RetrospectEndReason.USER_REQUEST);
+        assertThat(done.getLastUserTurnAt()).isNotNull().isBeforeOrEqualTo(done.getCompletedAt());
+        assertThat(done.getResumeCount()).isZero();
 
         // 일기는 별도 테이블에 남고, 대표 감정·생성 시기도 함께 저장된다.
         Diary diary = diaryRepository.findByRetrospectId(sessionId).orElseThrow();
@@ -469,6 +484,11 @@ class RetrospectApiIntegrationTest {
         long sessionId = startSession(user);
         mockMvc.perform(message(user, sessionId, "{\"content\":\"팀원이 말을 끊어서 속상했어요.\"}"))
                 .andExpect(status().isOk());
+        Retrospect beforeResume = retrospectRepository.findById(sessionId).orElseThrow();
+        assertThat(beforeResume.getResumeCount()).isZero();
+        assertThat(beforeResume.getLastResumedAt()).isNull();
+        assertThat(beforeResume.getLastUserTurnAt()).isNotNull();
+        assertThat(beforeResume.getEndReason()).isNull();
 
         mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(status().isOk())
@@ -482,10 +502,46 @@ class RetrospectApiIntegrationTest {
                 .andExpect(jsonPath("$.reply.done").value(false))
                 .andExpect(jsonPath("$.reply.options").doesNotExist());
 
-        // 조회는 상태를 바꾸지 않는다 — 같은 세션으로 다음 턴을 그대로 보낼 수 있다.
+        // 조회는 대화 상태를 바꾸지 않고 다시 열렸다는 기록만 남긴다 — 같은 세션으로 다음 턴을 그대로 보낼 수 있다.
+        Retrospect resumed = retrospectRepository.findById(sessionId).orElseThrow();
+        assertThat(resumed.getStateJson()).isEqualTo(beforeResume.getStateJson());
+        assertThat(resumed.getResumeCount()).isEqualTo(1);
+        assertThat(resumed.getLastResumedAt()).isNotNull();
+        mockMvc.perform(get("/api/v1/retrospect/current").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk());
+        assertThat(retrospectRepository.findById(sessionId).orElseThrow().getResumeCount()).isEqualTo(2);
+
         mockMvc.perform(message(user, sessionId, "{\"content\":\"그래도 끝까지 말했어요.\"}"))
                 .andExpect(status().isOk());
         assertThat(retrospectRepository.count()).isEqualTo(1);
+        Retrospect continued = retrospectRepository.findById(sessionId).orElseThrow();
+        assertThat(continued.getLastUserTurnAt()).isAfterOrEqualTo(continued.getLastResumedAt());
+    }
+
+    @Test
+    @DisplayName("이어서 하기 기록 — 턴 처리가 먼저 읽어 둔 낡은 행을 저장해도 재개 횟수를 덮지 않고, 끝난 세션에는 남기지 않는다")
+    void resumeRecordSurvivesAStaleSaveAndSkipsFinishedSessions() {
+        User user = userRepository.saveAndFlush(User.create());
+        Retrospect saved = retrospectRepository.saveAndFlush(
+                Retrospect.start(user.getId(), RetrospectStatus.IN_PROGRESS, null, "{}"));
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        // 턴 처리가 행을 읽어 둔 사이에 「이어서 하기」 조회가 재개를 남긴다.
+        Retrospect stale = retrospectRepository.findById(saved.getId()).orElseThrow();
+        Integer resumed = tx.execute(status -> retrospectRepository.recordResume(saved.getId(), Instant.now()));
+        assertThat(resumed).isEqualTo(1);
+
+        // 턴 처리가 읽어 둔 값으로 행을 저장해도 재개 열은 그대로다.
+        stale.sync(RetrospectStatus.COMPLETED, "{}", Instant.now(), RetrospectEndReason.WRAP_UP_ACCEPTED);
+        retrospectRepository.saveAndFlush(stale);
+        Retrospect reloaded = retrospectRepository.findById(saved.getId()).orElseThrow();
+        assertThat(reloaded.getResumeCount()).isEqualTo(1);
+        assertThat(reloaded.getLastResumedAt()).isNotNull();
+        assertThat(reloaded.getEndReason()).isEqualTo(RetrospectEndReason.WRAP_UP_ACCEPTED);
+
+        // 이미 끝난 세션은 다시 열린 것으로 세지 않는다.
+        Integer afterEnd = tx.execute(status -> retrospectRepository.recordResume(saved.getId(), Instant.now()));
+        assertThat(afterEnd).isZero();
+        assertThat(retrospectRepository.findById(saved.getId()).orElseThrow().getResumeCount()).isEqualTo(1);
     }
 
     @Test
@@ -493,13 +549,9 @@ class RetrospectApiIntegrationTest {
     void currentRestoresPendingOptionsWithoutOptionLinesInText() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         long sessionId = startSession(user);
-        String phase = driveDiaryToBranch(user, sessionId);
-        MvcResult last = mockMvc.perform(
-                        message(user, sessionId, "{\"content\":\"팀원이 말을 끊어서 속상했어요.\"}"))
-                .andReturn();
-        String lastBody = last.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String lastBody = driveDiaryToCheckin(user, sessionId);
         List<String> labels = JsonPath.read(lastBody, "$.options[*].label");
-        assertThat(labels).as(phase + " " + lastBody).isNotEmpty();
+        assertThat(labels).as(lastBody).containsExactly("이제 정리할래요", "조금 더 이야기할래요");
 
         MvcResult current = mockMvc.perform(get("/api/v1/retrospect/current")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user)))
@@ -615,16 +667,24 @@ class RetrospectApiIntegrationTest {
      * 일기 작성 채팅을 분기점까지 몰아준다 — phase 가 {@code diary_chat} 인 동안 자유 텍스트 턴을
      * 계속 보낸다(엔진은 최대 5턴에서 분기점을 낸다). 분기점의 phase 를 돌려준다.
      */
-    private String driveDiaryToBranch(User user, long sessionId) throws Exception {
-        String phase = "diary_chat";
-        for (int i = 0; i < 10 && "diary_chat".equals(phase); i++) {
-            MvcResult turn = mockMvc.perform(
-                            message(user, sessionId, "{\"content\":\"팀원이 말을 끊어서 속상했어요.\"}"))
+    /**
+     * 선택지 질문에서 멈춘 상태를 만든다 — 3턴을 넘긴 뒤 단답이 이어지면 「이제 정리할래요 / 조금 더 이야기할래요」
+     * 체크인이 뜬다. 그 응답 본문을 돌려준다.
+     */
+    private String driveDiaryToCheckin(User user, long sessionId) throws Exception {
+        mockMvc.perform(message(user, sessionId, "{\"content\":\"팀원이 말을 끊어서 속상했어요.\"}"))
+                .andExpect(status().isOk());
+        when(diaryChatAssistant.turn(any(), anyString())).thenReturn(Optional.of(new DiaryTurn(
+                "면접 스터디에서 말이 막혔다", List.of(), null, false,
+                "조금 더 들려줄래요?", null, "none", List.of(), false, true, false, false, false)));
+        String body = "";
+        for (int i = 0; i < 5 && !body.contains("\"options\""); i++) {
+            body = mockMvc.perform(message(user, sessionId, "{\"content\":\"딱히\"}"))
                     .andExpect(status().isOk())
-                    .andReturn();
-            phase = JsonPath.read(turn.getResponse().getContentAsString(), "$.phase");
+                    .andExpect(jsonPath("$.phase").value("diary_chat"))
+                    .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         }
-        return phase;
+        return body;
     }
 
     private MockHttpServletRequestBuilder message(User user, long sessionId, String body) {

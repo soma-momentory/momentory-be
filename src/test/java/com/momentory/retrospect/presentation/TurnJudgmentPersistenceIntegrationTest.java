@@ -56,6 +56,7 @@ import com.momentory.retrospect.application.DispositionStart;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.disposition.DispositionArm;
 import com.momentory.retrospect.domain.disposition.DispositionAssignment;
+import com.momentory.retrospect.domain.disposition.StartingDisposition;
 import com.momentory.retrospect.domain.disposition.TurnObservation;
 import com.momentory.retrospect.domain.strategy.StrategySignals;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
@@ -209,6 +210,10 @@ class TurnJudgmentPersistenceIntegrationTest {
         List<TurnJudgmentRecord> rows = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId);
         assertThat(rows).extracting(TurnJudgmentRecord::getStrategyType).containsExactly("EXPLORE", "EXPLORE");
         assertThat(rows).extracting(TurnJudgmentRecord::getQuestionFocus).containsExactly("OPEN", "OTHER_TOPIC");
+        // 모델이 쓴 질문이 나간 턴만 탐색 질문으로 남는다 — 다른 기억을 묻는 고정 질문은 아니다.
+        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionSent).containsExactly(true, false);
+        // 첫 이야기와 그 이야기를 이어 간 답변은 새 이야기가 아니다.
+        assertThat(rows).extracting(TurnJudgmentRecord::getNewTopic).containsExactly(false, false);
         assertThat(rows).allSatisfy(row -> {
             assertThat(row.getPolicyVersion()).isEqualTo(StrategyPolicy.VERSION);
             assertThat(row.getStrategyApplied()).isTrue();
@@ -221,8 +226,10 @@ class TurnJudgmentPersistenceIntegrationTest {
         // 문장 생성 모델이 실패한 턴은 기록에서 가려낼 수 있다.
         when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.empty());
         say(user, sessionId, "그 생각이 자꾸 나요.");
-        assertThat(judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast().isGenerationFailed())
-                .isTrue();
+        TurnJudgmentRecord failedTurn = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId).getLast();
+        assertThat(failedTurn.isGenerationFailed()).isTrue();
+        // 새 이야기였는지는 문장 생성 모델이 판단하므로, 생성이 실패한 턴은 알 수 없음(null)으로 남는다.
+        assertThat(failedTurn.getNewTopic()).isNull();
 
         // 판단 모델이 실패한 턴에도 방침은 남는다 — 옛 고정 순서로 돌아가지 않는다.
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.empty());
@@ -344,6 +351,84 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
+    @DisplayName("첫 실험 대화 날부터 3일 안에는 다른 관점 요청이 한 번만 있어도 반영한다")
+    void oneOtherViewRequestCountsDuringTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.TREATMENT, 1);
+
+        long sessionId = startSession(user);
+
+        DispositionObservationRecord observation = dispositionObservations.findByRetrospectId(sessionId)
+                .orElseThrow();
+        assertThat(observation.isDerivedOtherView()).isTrue();
+        assertThat(startedSignals(sessionId).explicitMode()).isEqualTo(StrategySignals.OTHER_VIEW);
+    }
+
+    @Test
+    @DisplayName("4일째부터 다른 관점은 두 번의 대화에서 요청해야 반영한다")
+    void otherViewMustRepeatAfterTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.TREATMENT, 4);
+
+        long onceAsked = startSession(user);
+        assertThat(dispositionObservations.findByRetrospectId(onceAsked).orElseThrow().isDerivedOtherView())
+                .isFalse();
+        assertThat(startedSignals(onceAsked).explicitMode()).isNull();
+
+        conversationAskingOtherView(user, DispositionArm.TREATMENT, 4);
+        long twiceAsked = startSession(user);
+        assertThat(dispositionObservations.findByRetrospectId(twiceAsked).orElseThrow().isDerivedOtherView())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("실험 전의 대화는 초반 3일의 시작으로 세지 않는다")
+    void conversationsBeforeTheExperimentDoNotStartTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.NONE, 10);
+
+        long sessionId = startSession(user);
+
+        assertThat(dispositionObservations.findByRetrospectId(sessionId).orElseThrow().isDerivedOtherView()).isTrue();
+    }
+
+    @Test
+    @DisplayName("대조 집단의 첫 대화도 초반 3일의 시작으로 센다")
+    void aControlConversationStartsTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.CONTROL, 4);
+
+        long sessionId = startSession(user);
+
+        assertThat(dispositionObservations.findByRetrospectId(sessionId).orElseThrow().isDerivedOtherView()).isFalse();
+    }
+
+    @Test
+    @DisplayName("4일째부터도 주도성은 저항이 되풀이된 대화 한 번으로 반영한다")
+    void oneSelfLedConversationStillCountsAfterTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.TREATMENT, 4);
+        pastConversationWithResistance(user, 2);
+
+        long sessionId = startSession(user);
+
+        DispositionObservationRecord observation = dispositionObservations.findByRetrospectId(sessionId)
+                .orElseThrow();
+        assertThat(observation.isDerivedSelfLed()).isTrue();
+        assertThat(observation.isDerivedOtherView()).isFalse();
+    }
+
+    @Test
     @DisplayName("전체에 켜면 목록에 없는 계정도 전략 대화를 탄다")
     void turnsOnForEveryoneWhenAllUsersIsSet() throws Exception {
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
@@ -362,6 +447,35 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
+    @DisplayName("탐색 질문 뒤에 새 이야기를 꺼낸 답변은 새 이야기로 남고, 판단 모델의 반응은 그대로 남는다")
+    void recordsThatAnAnswerStartedANewStory() throws Exception {
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(asking("none", "none")));
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
+                "발표를 하셨군요.", "발표했을 때 기분이 어땠어요?", false, false, "발표", "none", List.of())));
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        long sessionId = startSession(user);
+        say(user, sessionId, "오늘 발표했어요.");
+
+        // 기분 질문에 답하지 않고 다른 일을 꺼냈다 — 판단 모델은 「다른 얘기로 넘어감」, 문장 생성 모델은 새 이야기로 본다.
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(reacting("no_answer_or_topic_change")));
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
+                "친구와 저녁을 드셨군요.", "저녁을 먹으면서 기분이 어땠어요?", true, false, "친구와의 저녁", "none",
+                List.of())));
+        say(user, sessionId, "아 맞다 오늘 친구랑 저녁 먹었어요.");
+
+        List<TurnJudgmentRecord> rows = judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId);
+        assertThat(rows).extracting(TurnJudgmentRecord::getNewTopic).containsExactly(false, true);
+        // 반응 칸은 판단 모델의 답 그대로다 — 저항인지는 새 이야기 칸과 함께 읽는다.
+        assertThat(rows).extracting(TurnJudgmentRecord::getReaction)
+                .containsExactly("agree_or_elaborate", "no_answer_or_topic_change");
+        assertThat(rows).extracting(TurnJudgmentRecord::getQuestionSent).containsExactly(true, true);
+        assertThat(jdbc.queryForList("""
+                select new_topic from retrospect_turn_judgments where retrospect_id = ? order by diary_turn""",
+                Boolean.class, sessionId)).containsExactly(false, true);
+    }
+
+    @Test
     @DisplayName("판단만 기록하는 계정은 성향 관찰을 남기지 않는다")
     void doesNotObserveDispositionWithoutStrategy() throws Exception {
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
@@ -372,7 +486,11 @@ class TurnJudgmentPersistenceIntegrationTest {
         say(user, sessionId, "팀원이 말을 끊어서 속상했어요.");
 
         assertThat(judgmentRecords.findByRetrospectIdOrderByDiaryTurn(sessionId)).hasSize(1)
-                .allSatisfy(row -> assertThat(row.getAskedFeeling()).isNull());
+                .allSatisfy(row -> {
+                    assertThat(row.getAskedFeeling()).isNull();
+                    assertThat(row.getQuestionSent()).isNull();
+                    assertThat(row.getNewTopic()).isNull();
+                });
         assertThat(dispositionObservations.findByRetrospectId(sessionId)).isEmpty();
     }
 
@@ -469,6 +587,17 @@ class TurnJudgmentPersistenceIntegrationTest {
         dispositionObservations.saveAndFlush(past);
     }
 
+    /** 며칠 전 그 집단으로 시작해 다른 관점을 요청한 지난 대화의 관찰 한 줄. */
+    private void conversationAskingOtherView(User user, DispositionArm arm, int daysAgo) {
+        Long retrospectId = pastRetrospect(user);
+        DispositionObservationRecord past = DispositionObservationRecord.start(user.getId(), retrospectId, 0.5,
+                StrategyPolicy.VERSION, arm, StartingDisposition.NONE);
+        past.add(new TurnObservation(false, false, true, false, false, false), StrategyPolicy.VERSION);
+        dispositionObservations.saveAndFlush(past);
+        jdbc.update("update retrospect_disposition_observations set created_at = now() - make_interval(days => ?)"
+                + " where retrospect_id = ?", daysAgo, retrospectId);
+    }
+
     private StrategySignals startedSignals(long sessionId) {
         return codec.deserialize(retrospectRepository.findById(sessionId).orElseThrow().getStateJson())
                 .strategySignals();
@@ -481,6 +610,17 @@ class TurnJudgmentPersistenceIntegrationTest {
                 JudgmentItem.END_INTENT, "continue", JudgmentItem.REQUESTED_MODE, requested,
                 JudgmentItem.EMOTION_EXPRESSION, emotion, JudgmentItem.EVENT_INFO, "specific",
                 JudgmentItem.REACTION, "agree_or_elaborate", JudgmentItem.EXPERIENCING_DEPTH, "stage_3");
+        choices.forEach((item, choice) -> items.put(item, new ItemJudgment(choice, 0.9, Map.of(choice, 0.9))));
+        return new TurnJudgment("jev-1.14.0", "v3", items, 1400, 350);
+    }
+
+    /** 바바의 직전 말에 주어진 반응을 보인 답변의 판단. */
+    private static TurnJudgment reacting(String reaction) {
+        Map<JudgmentItem, ItemJudgment> items = new EnumMap<>(JudgmentItem.class);
+        Map<JudgmentItem, String> choices = Map.of(
+                JudgmentItem.END_INTENT, "continue", JudgmentItem.REQUESTED_MODE, "none",
+                JudgmentItem.EMOTION_EXPRESSION, "none", JudgmentItem.EVENT_INFO, "specific",
+                JudgmentItem.REACTION, reaction, JudgmentItem.EXPERIENCING_DEPTH, "stage_1_2");
         choices.forEach((item, choice) -> items.put(item, new ItemJudgment(choice, 0.9, Map.of(choice, 0.9))));
         return new TurnJudgment("jev-1.14.0", "v3", items, 1400, 350);
     }

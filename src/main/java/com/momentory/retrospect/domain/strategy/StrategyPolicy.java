@@ -53,18 +53,26 @@ import com.momentory.retrospect.domain.judgment.TurnJudgment;
  *     턴에 서버가 붙이던 「네, 묻지 않고 들을게요」를 뺐다 — 「좀 더 공감해 줘」에도 같은 약속이 나가 어색했다. 공감을
  *     청했으면 앞 이야기에 공감하고, 받을 말이 없을 때만 「편하게 이야기해 주세요」라고 한다. 공감을 청했거나 편을 들어
  *     달라고 한 턴에는 사용자가 쓰지 않은 말이라도 상황에 맞는 감정을 짚어 줄 수 있다(다른 턴은 사용자가 쓴 감정 말만 쓴다).
+ * <li>v12: 이야기 수 제한을 없앴다. 둘째 이야기에서 더 물을 것이 없어지자 다른 기억도 더 못 묻고(이야기 둘까지),
+ *     첫 이야기에서 낸 마무리 제안이 새 이야기로 넘어와 다시 제안도 못 해, 바바가 질문 없는 받아주기(「네, 듣고
+ *     있어요.」 → 「네.」)만 턴 상한까지 되풀이했다. 이제 (1) 더 물을 것이 없으면 몇 번째 이야기든 다른 기억을 묻는다 —
+ *     바로 앞 턴에 이미 물었으면 연달아 묻지 않고 마무리를 제안한다. (2) 새 이야기에서는 마무리 제안을 처음부터 다시
+ *     센다 — 「조금 더 이야기할래요」 뒤에 꺼낸 이야기에서도 다시 제안할 수 있다. (3) 마무리를 제안한 뒤 질문 없는 턴이
+ *     두 번 이어지면 다시 제안한다(v9 에 있다가 v10 에서 뺀 것). 들어 달라고 한 대화에는 적용하지 않는다.
+ * <li>v13: 이번 대화의 명시적 요청이 저장된 성향보다 앞선다. 함께 알아보자거나 조언을 구하면 재해석 방침을 풀고, 함께
+ *     알아보자 · 조언 · 다른 관점 요청은 쌓인 저항에 따른 드문 질문도 푼다. 요청한 뒤로는 그 대화 끝까지 성향으로 돌아가지 않는다.
  * </ul>
  */
 public class StrategyPolicy {
 
-    public static final String VERSION = "v11";
+    public static final String VERSION = "v13";
 
-    /** 한 대화에서 다루는 이야기 수 — 사건은 둘까지 뽑는다. */
-    public static final int MAX_TOPICS = 2;
     /** 받아들이지 않는 답이 이만큼 연달아 나오면 마무리를 제안한다. */
     static final int YIELD_STREAK_LIMIT = 2;
     /** 저항이 반복된 사용자에게는 이만큼 턴을 건너 한 번만 묻는다. */
     static final int SPARSE_QUESTION_GAP = 2;
+    /** 마무리를 제안한 뒤 질문 없는 턴이 이만큼 이어지면 다시 제안한다. */
+    static final int REPROPOSE_AFTER_QUIET_TURNS = 2;
 
     /** 바바의 직전 말을 받아들이지 않은 반응 — 종류는 달라도 대처는 같다: 물러선다. */
     private static final Set<String> NOT_ACCEPTED = Set.of("correct_interpretation", "argue", "struggle_to_answer",
@@ -125,11 +133,14 @@ public class StrategyPolicy {
         } else if ("other_view".equals(requested)) {
             explicitMode = StrategySignals.OTHER_VIEW;
         } else if ("explore".equals(requested) || "advice".equals(requested)) {
-            // 함께 알아보자거나 조언을 구하면 「듣기만」은 풀린다.
-            explicitMode = StrategySignals.LISTEN.equals(explicitMode) ? null : explicitMode;
+            // 함께 알아보자거나 조언을 구하면 「듣기만」도, 저장된 성향의 재해석도 풀린다.
+            explicitMode = null;
         }
-        StrategySignals now = new StrategySignals(
-                before.resistanceCount() + (reaction != null && RESISTANCE.contains(reaction) ? 1 : 0),
+        // 직접 요청한 방식을 드문 질문이 가로막지 않게 한다 — 저장된 성향으로 미리 채운 저항도 여기서 풀린다.
+        boolean askedForAWay = "explore".equals(requested) || "advice".equals(requested)
+                || "other_view".equals(requested);
+        int resistance = before.resistanceCount() + (reaction != null && RESISTANCE.contains(reaction) ? 1 : 0);
+        StrategySignals now = new StrategySignals(askedForAWay ? 0 : resistance,
                 notAccepted ? before.yieldStreak() + 1 : 0,
                 explicitMode, before.topicNumber(), before.wrapUpProposed(), before.lastType(),
                 before.turnsSinceQuestion(), before.questionsAsked(), before.questionsAfterFeeling(),
@@ -169,26 +180,28 @@ public class StrategyPolicy {
     }
 
     /**
-     * 문장 생성 모델이 「더 물을 것이 없다」고 했을 때 이번 턴을 어떻게 마칠지 — 첫 이야기면 다른 기억을 묻고,
-     * 이미 둘째 이야기면 마무리를 제안한다(이 이야기에서 이미 제안했으면 받아주기만 한다).
+     * 문장 생성 모델이 「더 물을 것이 없다」고 했을 때 이번 턴을 어떻게 마칠지 — 몇 번째 이야기든 다른 기억을 묻는다.
+     * 바로 앞 턴에 다른 기억을 물었는데 사용자가 앞 이야기를 이어 말했고 그마저 더 물을 것이 없으면, 같은 질문을 연달아 하지
+     * 않고 마무리를 제안한다. 갈 곳이 없다고 받아주기만 하지 않는다.
      *
-     * @param otherMemoryAsked 이 대화에서 다른 기억을 이미 물었는가 — 같은 질문은 두 번 하지 않고 마무리를 제안한다
+     * @param justAskedForAnotherMemory 바바의 바로 앞 말이 다른 기억을 묻는 질문이었는가
      */
-    public TurnStrategy whenNothingMoreToAsk(TurnStrategy chosen, StrategySignals s, boolean otherMemoryAsked) {
-        if (s.topicNumber() < MAX_TOPICS && !otherMemoryAsked) {
-            return chosen.withFocus(QuestionFocus.OTHER_TOPIC);
-        }
-        return chosen.withFocus(wrapUpDue(s) ? QuestionFocus.WRAP_UP : QuestionFocus.NONE);
+    public TurnStrategy whenNothingMoreToAsk(TurnStrategy chosen, StrategySignals s, boolean justAskedForAnotherMemory) {
+        return chosen.withFocus(justAskedForAnotherMemory ? QuestionFocus.WRAP_UP : QuestionFocus.OTHER_TOPIC);
     }
 
-    /** 지금 마무리를 제안할 차례인가 — 이야기마다 한 번만 제안한다. */
+    /**
+     * 지금 마무리를 제안할 차례인가 — 이 이야기에서 아직 제안하지 않았거나, 제안한 뒤 질문 없는 턴이 이어졌다.
+     * 더 물을 것이 없는데 제안도 다시 하지 않으면 바바가 같은 공감만 되풀이하고, 사용자는 끝낼 길을 찾지 못한다.
+     */
     private static boolean wrapUpDue(StrategySignals s) {
-        return !s.wrapUpProposed();
+        return !s.wrapUpProposed() || s.turnsSinceQuestion() >= REPROPOSE_AFTER_QUIET_TURNS;
     }
 
     /**
      * 사용자가 새 이야기를 꺼냈다(문장 생성 모델이 알린다) — 이야기 번호를 올리고, 새 이야기에서는 마음을 아직 듣지 못했고
-     * 마무리도 제안한 적이 없는 것으로 둔다. 몇 번째 이야기든 따라간다(사건은 여전히 {@link #MAX_TOPICS} 까지 뽑는다).
+     * 마무리도 제안한 적이 없는 것으로 둔다. 몇 번째 이야기든 따라간다. 바로 앞에서 낸 마무리 제안을 사용자가 마다하고
+     * 꺼낸 이야기여도 그렇다 — 그 이야기에서 더 물을 것이 없어지면 다시 제안할 수 있어야 한다.
      */
     public StrategySignals movedToNewTopic(StrategySignals now) {
         return movedToNewTopic(now, null);
@@ -200,12 +213,10 @@ public class StrategyPolicy {
      */
     public StrategySignals movedToNewTopic(StrategySignals now, String reaction) {
         boolean wasTopicChange = TOPIC_CHANGE.equals(reaction);
-        // 바로 앞 턴에 마무리를 제안했으면 새 이야기에서도 곧바로 다시 제안하지 않는다 — 같은 제안을 연달아 하지 않는다.
-        boolean justProposed = now.wrapUpProposed() && now.turnsSinceQuestion() == 0;
         // 마음을 들은 뒤의 질문 수는 새 이야기에서 다시 센다(8개짜리 생성자가 비워 둔다).
         return new StrategySignals(wasTopicChange ? Math.max(0, now.resistanceCount() - 1) : now.resistanceCount(),
                 wasTopicChange ? 0 : now.yieldStreak(), now.explicitMode(),
-                now.topicNumber() + 1, justProposed, now.lastType(), now.turnsSinceQuestion(),
+                now.topicNumber() + 1, false, now.lastType(), now.turnsSinceQuestion(),
                 now.questionsAsked());
     }
 

@@ -54,7 +54,7 @@ class StrategyConversationRealIntegrationTest {
         var judge = new JevTurnJudge(jevClient, jev);
         var usage = new LlmUsageLogger(0.10, 0.40);
         engine = new RetrospectEngine(new SafetyPolicy(), assistant,
-                s -> new EmotionExtraction(List.of(), List.of(), null), s -> List.of(), s -> Optional.empty(),
+                s -> new EmotionExtraction(List.of(), List.of(), null), s -> Optional.empty(),
                 judge, new StrategyDiaryChat(judge, new StrategyPolicy(0.5, 0.8, 2, 8), writer, usage, 12),
                 usage, e -> { }, 1, 3);
         state = new RetrospectState("strategy-smoke");

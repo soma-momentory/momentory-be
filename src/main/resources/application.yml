@@ -116,6 +116,11 @@ momentory:
       # 위기 안내 기록은 있는데 그날 일기가 없는 날(회고를 멈춘 날)을 이만큼 지난 위험으로 센다. 일기가 남은 날은 지난 일기로
       # 이미 읽는다. 위기 안내는 오탐일 수 있어 지난 일기(7일)보다 짧게 둔다.
       past-crisis-days: 3
+  letter:
+    # 편지의 「작은 일」(추천 · 고르기 · 다음 회고의 「해 봤어요?」 · 다음 편지 재료)을 켜고 끈다(2026-11-17 팀 결정).
+    # false 면 새 편지에 작은 일을 만들지 않고, 저장된 지난 칸도 응답에 싣지 않는다(지우지는 않는다).
+    # 새 앱은 서버 값과 상관없이 작은 일을 그리지 않는다. 운영은 켜 둔다(옛 앱 그대로) · 작은 일의 AI 비용을 없앨 때만 false.
+    actions-enabled: ${LETTER_ACTIONS_ENABLED:true}
   judge:
     # 턴 판단을 켤 사용자 id 목록(쉼표 구분). 비어 있으면 아무에게도 켜지 않는다.
     # 대화 원문이 TypeSafe 로 나가므로, 처리위탁 고지 전에는 테스트 계정과 동의한 참여자만 넣는다.
@@ -125,8 +130,11 @@ momentory:
     # RANDOM(사용자 id 로 반반). 전략 대화 계정에만 해당하고, 성향 관찰은 어느 값이든 계속 저장한다.
     apply-mode: ${DISPOSITION_APPLY_MODE:OFF}
     apply-user-ids: ${DISPOSITION_APPLY_USER_IDS:}
-    # 같은 신호가 이만큼의 대화에서 나와야 반영한다(최근 window 건 안에서). 근거가 쌓이기 전의 임시값이다.
-    repeat-threshold: ${DISPOSITION_REPEAT_THRESHOLD:2}
+    # 첫 실험 대화 날부터 early-days 일 동안은 신호가 한 번만 나와도 반영한다. 그 뒤로는 최근 window 건 안에서 아래 횟수만큼
+    # 나와야 한다 — 주도성은 저항이 되풀이된 대화 수, 다른 관점은 요청한 대화 수다. 근거가 쌓이기 전의 임시값이다.
+    early-days: ${DISPOSITION_EARLY_DAYS:3}
+    self-led-repeat-threshold: ${DISPOSITION_SELF_LED_REPEAT_THRESHOLD:1}
+    other-view-repeat-threshold: ${DISPOSITION_OTHER_VIEW_REPEAT_THRESHOLD:2}
     window: ${DISPOSITION_WINDOW:5}
   strategy:
     # 판단으로 바바의 응답 방식(전략)까지 바꿀 사용자 id 목록(쉼표 구분). 여기 있으면 턴 판단도 함께 켜진다.

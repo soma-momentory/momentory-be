@@ -128,7 +128,7 @@ class PromptFactoryTest {
         assertThat(prompt).contains("intensity");
         assertThat(prompt).contains("before(사건 전)");
         assertThat(prompt).contains("anxious");        // 고정 12종 키
-        assertThat(prompt).contains("최대 2개");        // 사건 상한
+        assertThat(prompt).contains("개수 제한 없이 모두");        // 사건 상한 없음
     }
 
     @Test
@@ -265,25 +265,6 @@ class PromptFactoryTest {
                     .as("%s 프롬프트에 실제 수행 조건이 없다", v)
                     .contains("실제로 했다고 말한 경우에만");
         }
-    }
-
-    /** 사건 슬롯(마지막 턴의 다짐)과 대표 사건(팀 발표)이 어긋난 상태 — 2026-10 바람카드 점검에서 본 모양. */
-    private static RetrospectState stateForExploration() {
-        RetrospectState state = new RetrospectState("sess-x");
-        state.event("다음엔 혼자 끌어안지 않겠다고 다짐한 것");
-        state.events(List.of(new ExtractedEvent(1, "팀 발표", "팀 발표 자료를 혼자 만듦", List.of(1, 2))));
-        state.confirmEmotions(List.of(Emotion.DISAPPOINTED));
-        state.chooseNeeds(List.of(Needs.byWord("인정").orElseThrow()));
-        return state;
-    }
-
-    @Test
-    @DisplayName("바람 프롬프트도 같은 대표 사건과 한국어 감정을 싣는다")
-    void needsPromptUsesCardSituation() {
-        String prompt = prompts.needsPrompt(stateForExploration());
-
-        assertThat(prompt).contains("사건: 팀 발표 자료를 혼자 만듦").contains("확인된 감정: 실망");
-        assertThat(prompt).doesNotContain("다짐한 것").doesNotContain("disappointed");
     }
 
     @Test

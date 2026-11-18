@@ -8,9 +8,7 @@ import org.springframework.stereotype.Component;
 
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.retrospect.domain.Message;
-import com.momentory.retrospect.domain.Need;
 import com.momentory.retrospect.domain.NeedActionCatalog;
-import com.momentory.retrospect.domain.Needs;
 import com.momentory.retrospect.domain.RetrospectState;
 import com.momentory.retrospect.domain.strategy.TurnStrategy;
 
@@ -121,7 +119,6 @@ public class PromptFactory {
                   생각·의미·교훈을 캐묻거나 계기를 반복해서 질문하지 마세요.
                   감정이 계속 없으면 같은 소재에서 2턴이 지난 뒤 전환할 수 있습니다.
                 - 구체적인 공감과 위 기준에 맞는 질문을 같은 응답으로 보내세요. 감정과 이유를 들었으면 공감과 감정 확인 질문을 보냅니다.
-                  사건은 최대 2개입니다. 이미 두 사건이 있으면 다른 기존 사건으로 전환하세요.
                   가볍게 언급한 잡일을 억지로 깊이 탐색하지 마세요. 종료는 서버가 결정합니다.
                 [공감의 기준]
                 - 방금 답변의 구체적인 장면·행동이나 직접 표현한 감정을 짚어 따뜻하게 받아 주세요.
@@ -359,7 +356,7 @@ public class PromptFactory {
         return """
                 아래 대화에서 사용자가 경험한 사건과 그때의 감정을 뽑아주세요.
 
-                [사건] events — 최대 %d개
+                [사건] events — 사용자가 이야기한 사건을 개수 제한 없이 모두 담습니다.
                 - id: 1부터 매깁니다.
                 - label: 그 사건을 부르는 <b>짧은 이름</b>("면접 스터디", "친구와 다툼"). 문장이 아니라
                   이름입니다. 아래 [오늘의 일정]에 해당하는 일이면 그 일정 이름을 그대로 씁니다 —
@@ -403,7 +400,7 @@ public class PromptFactory {
                 [오늘의 일정] %s
                 [대화]
                 %s
-                """.formatted(RetrospectState.MAX_EVENTS, String.join(", ", Emotion.keys()),
+                """.formatted(String.join(", ", Emotion.keys()),
                 EMOTION_GUIDE, examples, orNone(state.schedule()), numberedHistory(state));
     }
 
@@ -558,20 +555,6 @@ public class PromptFactory {
               강도는 계속 1~4 로 매깁니다.
             """;
 
-    /** 바람 확인(G2) — 고정 욕구 목록에서 맥락에 맞는 3~4개를 단어로만 고른다. */
-    public String needsPrompt(RetrospectState state) {
-        return """
-                사용자의 상황·감정을 볼 때 그 밑에 있을 법한 '바람(욕구)'을 아래 고정 목록에서 2~3개 골라
-                단어만 주세요(목록 밖 단어는 쓰지 마세요):
-                %s
-
-                [맥락]
-                사건: %s
-                확인된 감정: %s
-                """.formatted(Needs.ALL.stream().map(Need::word).collect(Collectors.joining(", ")),
-                state.cardSituation(), emotionLabels(state));
-    }
-
     /** 작은 행동 고르기 규칙 — 바바의 편지가 쓴다(회고는 행동을 고르지 않는다). */
     public static final String ACTION_RULES = """
             [규칙]
@@ -709,12 +692,6 @@ public class PromptFactory {
     }
 
     // ── 도우미 ───────────────────────────────────────────────────────────
-
-    /** 확인 감정의 한국어 이름 — 영어 키("disappointed")보다 모델이 사용자 맥락으로 읽는다. */
-    private static String emotionLabels(RetrospectState state) {
-        return orNone(state.confirmedEmotions().stream().map(Emotion::label)
-                .collect(Collectors.joining(", ")));
-    }
 
     private static String orNone(String value) {
         return value == null || value.isBlank() ? "없음" : value;

@@ -37,7 +37,7 @@ import com.momentory.retrospect.infrastructure.ai.LlmRole;
  * 이 흐름이 정하고, 끝없이 이어지지 않게 하는 안전 상한({@code maxTurns})만 둔다. 옛 엔진의 고정 순서 · 5턴 상한 ·
  * 단답 체크인은 여기에 없다.
  *
- * <p>여기서는 한 턴의 결과({@link Outcome})까지만 만든다. 단계 전환(일기 생성 · 감정 탐색으로 넘어가기 · 안전 안내)은
+ * <p>여기서는 한 턴의 결과({@link Outcome})까지만 만든다. 단계 전환(일기 생성 · 마무리 · 안전 안내)은
  * {@link RetrospectEngine} 이 맡는다. 판단 모델이 실패한 턴은 지금까지의 신호로 방침을 고르고, 문장 생성 모델이 실패한
  * 턴은 짧은 고정 문구로 간다.
  */
@@ -112,6 +112,7 @@ public class StrategyDiaryChat {
             state.strategySignals(policy.settle(decision.signals(), strategy));
             state.logStrategy(strategy, StrategyPolicy.VERSION, true);
             state.logAskedFeeling(false);
+            state.logQuestionSent(false);
             return new Outcome(Kind.CLOSE, null, SafetyLevel.NONE, List.of());
         }
 
@@ -174,14 +175,21 @@ public class StrategyDiaryChat {
             // 답하기 어려워했거나 질문과 맞지 않는 말을 했다 — 더 묻지 않고 여기서 정리할지를 묻는다.
             done = policy.whenNoAnswer(strategy, signals);
         } else if (strategy.focus() == QuestionFocus.OPEN && question == null) {
-            done = policy.whenNothingMoreToAsk(done, signals, otherMemoryAsked(state));
+            done = policy.whenNothingMoreToAsk(done, signals, afterOtherMemory);
         }
         // 안전 상한 — 방침이 무엇이든 여기서 정리한다. 이 턴의 방침은 '적용 안 됨'으로 남는다.
         boolean capped = state.diaryTurn() >= maxTurns;
         state.strategySignals(policy.settle(signals, done));
         state.logStrategy(done, StrategyPolicy.VERSION, !capped);
-        // 모델이 쓴 질문이 실제로 나간 턴만 센다 — 다른 기억 질문 · 마무리 제안 · 상한으로 끝난 턴은 기분을 물은 것이 아니다.
-        state.logAskedFeeling(!capped && done.focus() == QuestionFocus.OPEN && question != null && asksFeeling);
+        // 열린 질문이 실제로 나간 턴만 센다 — 다른 기억 질문 · 마무리 제안 · 상한으로 끝난 턴은 탐색 질문도, 기분을 물은 것도
+        // 아니다. 문장 생성이 실패해 고정 열린 질문으로 대신한 턴도 질문은 나갔다(생성 실패 표시로 가른다).
+        boolean questionSent = !capped && done.focus() == QuestionFocus.OPEN && question != null;
+        state.logQuestionSent(questionSent);
+        state.logAskedFeeling(questionSent && asksFeeling);
+        // 새 이야기였는지는 문장 생성 모델이 판단한다 — 생성이 실패한 턴은 알 수 없으므로 비워 둔다.
+        if (written.isPresent()) {
+            state.logNewTopic(newTopic);
+        }
         if (capped) {
             return new Outcome(Kind.FINISH, ack, safetyLevel, safetyFlags);
         }
@@ -223,13 +231,6 @@ public class StrategyDiaryChat {
             }
         }
         return false;
-    }
-
-    /** 이 대화에서 바바가 다른 기억을 이미 물었는가 — 그 문장은 고정이라 대화 기록에서 알아본다. */
-    private static boolean otherMemoryAsked(RetrospectState state) {
-        return state.messages().stream().anyMatch(
-                m -> m.isAssistant() && m.content() != null
-                        && m.content().endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION));
     }
 
     /**

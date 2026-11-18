@@ -70,11 +70,6 @@ public class Diary extends BaseTimeEntity {
         return weather;
     }
 
-    /** 한 번 기록한 날씨는 이후 조회나 재시도로 바꾸지 않는다. */
-    public void recordWeather(String weather) {
-        if (this.weather == null) this.weather = Objects.requireNonNull(weather);
-    }
-
     protected Diary() {
     }
 
