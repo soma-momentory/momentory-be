@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.momentory.actioncard.domain.ActionCard;
@@ -43,6 +44,8 @@ class LetterMaterialsReader {
     private final LetterWishCards wishCards;
     private final com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec;
     private final SafetyEventRepository safetyEvents;
+    /** 꺼져 있으면 전날 고른 일을 편지 재료에 넣지 않는다 — 고를 수 없게 된 일을 편지가 다시 꺼내지 않게(2026-11-17). */
+    private final boolean actionsEnabled;
 
     LetterMaterialsReader(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, DiaryRepository diaryRepository,
@@ -50,7 +53,8 @@ class LetterMaterialsReader {
             ActionCardRepository actionCardRepository, ScheduleRepository scheduleRepository,
             UserProfileRepository userProfileRepository, SafetyPolicy safetyPolicy,
             LetterWishCards wishCards, com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec,
-            SafetyEventRepository safetyEvents) {
+            SafetyEventRepository safetyEvents,
+            @Value("${momentory.letter.actions-enabled:true}") boolean actionsEnabled) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.diaryRepository = diaryRepository;
@@ -63,6 +67,7 @@ class LetterMaterialsReader {
         this.wishCards = wishCards;
         this.diaryEventCodec = diaryEventCodec;
         this.safetyEvents = safetyEvents;
+        this.actionsEnabled = actionsEnabled;
     }
 
     /** 만드는 사이 일기가 지워졌으면 empty. */
@@ -139,6 +144,9 @@ class LetterMaterialsReader {
      * 해 봤는지는 바람카드의 완료 표시가 원본이다. 쉼터에서 나중에 체크한 것도 그대로 반영된다.
      */
     private String previousAction(Letter letter) {
+        if (!actionsEnabled) {
+            return null;
+        }
         return letterRepository
                 .findFirstByUserIdAndLetterDateLessThanOrderByLetterDateDesc(letter.getUserId(),
                         letter.getLetterDate())

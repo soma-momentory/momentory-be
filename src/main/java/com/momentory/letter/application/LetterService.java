@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,16 +36,20 @@ public class LetterService {
     private final ScheduleRepository scheduleRepository;
     private final SafetyPolicy safetyPolicy;
     private final LetterWishCards wishCards;
+    /** 꺼져 있으면 지난 편지의 작은 일도 응답에 싣지 않고, 고르기도 받지 않는다(2026-11-17). 저장된 칸은 지우지 않는다. */
+    private final boolean actionsEnabled;
 
     public LetterService(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, LetterGenerator generator,
-            ScheduleRepository scheduleRepository, SafetyPolicy safetyPolicy, LetterWishCards wishCards) {
+            ScheduleRepository scheduleRepository, SafetyPolicy safetyPolicy, LetterWishCards wishCards,
+            @Value("${momentory.letter.actions-enabled:true}") boolean actionsEnabled) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.generator = generator;
         this.scheduleRepository = scheduleRepository;
         this.safetyPolicy = safetyPolicy;
         this.wishCards = wishCards;
+        this.actionsEnabled = actionsEnabled;
     }
 
     /** 열 수 있는 가장 최근 편지 — 오래된 것이어도 준다. 홈 아이콘의 점은 {@code isNew} 로 판단한다. */
@@ -89,8 +94,8 @@ public class LetterService {
         Letter letter = letterRepository.findByIdAndUserIdForUpdate(id, userId)
                 .filter(l -> l.isOpenableOn(today))
                 .orElseThrow(LetterNotFoundException::new);
-        if (!letter.getStatus().isDone()) {
-            throw new LetterActionNotFoundException(); // 아직 만들지 못한 편지 — 고를 작은 일이 없다.
+        if (!actionsEnabled || !letter.getStatus().isDone()) {
+            throw new LetterActionNotFoundException(); // 작은 일을 껐거나 아직 만들지 못한 편지 — 고를 작은 일이 없다.
         }
         // 작은 일을 골랐다면 편지를 본 것이다. 열람 기록이 빠졌어도 일기를 고칠 때 다시 만들어 고른 일을
         // 지우지 않게 여기서도 남긴다.
@@ -150,7 +155,8 @@ public class LetterService {
         return view(fresh, letterActionRepository.findByLetterIdOrderByPositionAsc(fresh.getId()), today);
     }
 
-    private LetterView view(Letter letter, List<LetterAction> actions, LocalDate today) {
+    private LetterView view(Letter letter, List<LetterAction> stored, LocalDate today) {
+        List<LetterAction> actions = actionsEnabled ? stored : List.of();
         return new LetterView(letter.getId(), letter.getLetterDate(), letter.getStatus(), letter.getQuote(),
                 letter.getInsight(), letter.getTonightQuestion(),
                 actions.stream().map(a -> new LetterView.Action(a.getPosition(), a.getTitle(), a.getSource(),
