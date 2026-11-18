@@ -109,6 +109,10 @@
           "valueFrom": "/momentory/prod/LETTER_GATE_MODE"
         },
         {
+          "name": "LETTER_PICTURE_ENABLED",
+          "valueFrom": "/momentory/prod/LETTER_PICTURE_ENABLED"
+        },
+        {
           "name": "APPLE_PRIVATE_KEY",
           "valueFrom": "/momentory/prod/APPLE_PRIVATE_KEY"
         }
