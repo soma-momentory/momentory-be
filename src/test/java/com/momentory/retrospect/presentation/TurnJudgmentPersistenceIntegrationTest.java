@@ -56,6 +56,7 @@ import com.momentory.retrospect.application.DispositionStart;
 import com.momentory.retrospect.domain.RetrospectStatus;
 import com.momentory.retrospect.domain.disposition.DispositionArm;
 import com.momentory.retrospect.domain.disposition.DispositionAssignment;
+import com.momentory.retrospect.domain.disposition.StartingDisposition;
 import com.momentory.retrospect.domain.disposition.TurnObservation;
 import com.momentory.retrospect.domain.strategy.StrategySignals;
 import com.momentory.retrospect.infrastructure.persistence.Retrospect;
@@ -350,6 +351,84 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
+    @DisplayName("첫 실험 대화 날부터 3일 안에는 다른 관점 요청이 한 번만 있어도 반영한다")
+    void oneOtherViewRequestCountsDuringTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.TREATMENT, 1);
+
+        long sessionId = startSession(user);
+
+        DispositionObservationRecord observation = dispositionObservations.findByRetrospectId(sessionId)
+                .orElseThrow();
+        assertThat(observation.isDerivedOtherView()).isTrue();
+        assertThat(startedSignals(sessionId).explicitMode()).isEqualTo(StrategySignals.OTHER_VIEW);
+    }
+
+    @Test
+    @DisplayName("4일째부터 다른 관점은 두 번의 대화에서 요청해야 반영한다")
+    void otherViewMustRepeatAfterTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.TREATMENT, 4);
+
+        long onceAsked = startSession(user);
+        assertThat(dispositionObservations.findByRetrospectId(onceAsked).orElseThrow().isDerivedOtherView())
+                .isFalse();
+        assertThat(startedSignals(onceAsked).explicitMode()).isNull();
+
+        conversationAskingOtherView(user, DispositionArm.TREATMENT, 4);
+        long twiceAsked = startSession(user);
+        assertThat(dispositionObservations.findByRetrospectId(twiceAsked).orElseThrow().isDerivedOtherView())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("실험 전의 대화는 초반 3일의 시작으로 세지 않는다")
+    void conversationsBeforeTheExperimentDoNotStartTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.NONE, 10);
+
+        long sessionId = startSession(user);
+
+        assertThat(dispositionObservations.findByRetrospectId(sessionId).orElseThrow().isDerivedOtherView()).isTrue();
+    }
+
+    @Test
+    @DisplayName("대조 집단의 첫 대화도 초반 3일의 시작으로 센다")
+    void aControlConversationStartsTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.CONTROL, 4);
+
+        long sessionId = startSession(user);
+
+        assertThat(dispositionObservations.findByRetrospectId(sessionId).orElseThrow().isDerivedOtherView()).isFalse();
+    }
+
+    @Test
+    @DisplayName("4일째부터도 주도성은 저항이 되풀이된 대화 한 번으로 반영한다")
+    void oneSelfLedConversationStillCountsAfterTheEarlyDays() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        conversationAskingOtherView(user, DispositionArm.TREATMENT, 4);
+        pastConversationWithResistance(user, 2);
+
+        long sessionId = startSession(user);
+
+        DispositionObservationRecord observation = dispositionObservations.findByRetrospectId(sessionId)
+                .orElseThrow();
+        assertThat(observation.isDerivedSelfLed()).isTrue();
+        assertThat(observation.isDerivedOtherView()).isFalse();
+    }
+
+    @Test
     @DisplayName("전체에 켜면 목록에 없는 계정도 전략 대화를 탄다")
     void turnsOnForEveryoneWhenAllUsersIsSet() throws Exception {
         when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(told("stage_3")));
@@ -506,6 +585,17 @@ class TurnJudgmentPersistenceIntegrationTest {
             past.add(new TurnObservation(true, false, false, false, false, false), StrategyPolicy.VERSION);
         }
         dispositionObservations.saveAndFlush(past);
+    }
+
+    /** 며칠 전 그 집단으로 시작해 다른 관점을 요청한 지난 대화의 관찰 한 줄. */
+    private void conversationAskingOtherView(User user, DispositionArm arm, int daysAgo) {
+        Long retrospectId = pastRetrospect(user);
+        DispositionObservationRecord past = DispositionObservationRecord.start(user.getId(), retrospectId, 0.5,
+                StrategyPolicy.VERSION, arm, StartingDisposition.NONE);
+        past.add(new TurnObservation(false, false, true, false, false, false), StrategyPolicy.VERSION);
+        dispositionObservations.saveAndFlush(past);
+        jdbc.update("update retrospect_disposition_observations set created_at = now() - make_interval(days => ?)"
+                + " where retrospect_id = ?", daysAgo, retrospectId);
     }
 
     private StrategySignals startedSignals(long sessionId) {

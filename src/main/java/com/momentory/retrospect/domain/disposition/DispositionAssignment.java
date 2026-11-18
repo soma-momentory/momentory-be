@@ -1,5 +1,8 @@
 package com.momentory.retrospect.domain.disposition;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Set;
 
 /**
@@ -9,6 +12,9 @@ import java.util.Set;
  * @param userIds {@code LISTED} 일 때 반영을 켤 사용자 id
  */
 public record DispositionAssignment(Mode mode, Set<Long> userIds) {
+
+    /** 배정을 가르는 실험 이름. 바꾸면 사용자의 집단이 다시 섞이므로 실험 중에는 고정한다. */
+    private static final String EXPERIMENT = "disposition-apply-v1";
 
     public enum Mode {
         /** 아무에게도 반영하지 않는다(기본값). 성향 관찰은 계속 저장한다. */
@@ -27,9 +33,18 @@ public record DispositionAssignment(Mode mode, Set<Long> userIds) {
         return switch (mode) {
             case OFF -> DispositionArm.NONE;
             case LISTED -> userIds.contains(userId) ? DispositionArm.TREATMENT : DispositionArm.NONE;
-            // 가입 순서(짝수 · 홀수)와 얽히지 않게 id 를 섞은 뒤 나눈다.
-            case RANDOM -> (Long.hashCode(userId * 0x9E3779B97F4A7C15L) & 1) == 0
-                    ? DispositionArm.TREATMENT : DispositionArm.CONTROL;
+            case RANDOM -> firstHashBit(userId) == 0 ? DispositionArm.TREATMENT : DispositionArm.CONTROL;
         };
+    }
+
+    /** 가입 순서와 얽히지 않도록 실험 이름과 id 를 SHA-256 으로 섞은 값의 첫 비트. */
+    private static int firstHashBit(long userId) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256")
+                    .digest((EXPERIMENT + ":" + userId).getBytes(StandardCharsets.UTF_8));
+            return hash[0] & 1;
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required by the Java platform", e);
+        }
     }
 }
