@@ -143,4 +143,5 @@ public class DispositionObservationRecord {
     public DispositionArm getApplyArm() { return applyArm; }
     public boolean isDerivedSelfLed() { return derivedSelfLed; }
     public boolean isDerivedOtherView() { return derivedOtherView; }
+    public Instant getCreatedAt() { return createdAt; }
 }

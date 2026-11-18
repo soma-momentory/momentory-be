@@ -79,6 +79,46 @@ class StrategyPolicyTest {
         assertThat(policy.startingSignals(false, false)).isEqualTo(StrategySignals.initial());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"explore", "advice"})
+    void askingToExploreOrForAdviceReleasesAStoredOtherViewForTheRestOfTheTalk(String requested) {
+        StrategyPolicy.Decision start = policy.decide(new J().build(), policy.startingSignals(false, true), true);
+        StrategyPolicy.Decision asked = turn(policy.settle(start.signals(), start.strategy()),
+                new J().requested(requested));
+
+        assertStrategy(asked, StrategyType.EXPLORE, QuestionFocus.OPEN);
+        assertStrategy(turn(asked.signals(), new J()), StrategyType.EXPLORE, QuestionFocus.OPEN);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"explore", "advice"})
+    void askingToExploreOrForAdviceReleasesStoredSparseQuestions(String requested) {
+        StrategyPolicy.Decision start = policy.decide(new J().build(), policy.startingSignals(true, false), true);
+        StrategyPolicy.Decision asked = turn(policy.settle(start.signals(), start.strategy()),
+                new J().requested(requested));
+
+        assertStrategy(asked, StrategyType.EXPLORE, QuestionFocus.OPEN);
+        assertThat(asked.strategy().asChoices()).isFalse();
+        assertStrategy(turn(asked.signals(), new J()), StrategyType.EXPLORE, QuestionFocus.OPEN);
+    }
+
+    @Test
+    void askingForAnotherViewIsNotHeldBackByStoredSparseQuestions() {
+        StrategyPolicy.Decision start = policy.decide(new J().build(), policy.startingSignals(true, false), true);
+
+        assertStrategy(turn(policy.settle(start.signals(), start.strategy()), new J().requested("other_view")),
+                StrategyType.REFRAME, QuestionFocus.OPEN);
+    }
+
+    @Test
+    void withoutAClearRequestTheStoredDispositionStays() {
+        StrategyPolicy.Decision start = policy.decide(new J().build(), policy.startingSignals(false, true), true);
+        J unclear = new J().set(JudgmentItem.REQUESTED_MODE, "explore", 0.4);
+
+        assertThat(turn(policy.settle(start.signals(), start.strategy()), unclear).strategy().type())
+                .isEqualTo(StrategyType.REFRAME);
+    }
+
     private static void assertStrategy(StrategyPolicy.Decision d, StrategyType type, QuestionFocus focus) {
         assertThat(d.strategy().type()).isEqualTo(type);
         assertThat(d.strategy().focus()).isEqualTo(focus);

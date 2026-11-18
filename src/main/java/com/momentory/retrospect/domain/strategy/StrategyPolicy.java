@@ -59,11 +59,13 @@ import com.momentory.retrospect.domain.judgment.TurnJudgment;
  *     바로 앞 턴에 이미 물었으면 연달아 묻지 않고 마무리를 제안한다. (2) 새 이야기에서는 마무리 제안을 처음부터 다시
  *     센다 — 「조금 더 이야기할래요」 뒤에 꺼낸 이야기에서도 다시 제안할 수 있다. (3) 마무리를 제안한 뒤 질문 없는 턴이
  *     두 번 이어지면 다시 제안한다(v9 에 있다가 v10 에서 뺀 것). 들어 달라고 한 대화에는 적용하지 않는다.
+ * <li>v13: 이번 대화의 명시적 요청이 저장된 성향보다 앞선다. 함께 알아보자거나 조언을 구하면 재해석 방침을 풀고, 함께
+ *     알아보자 · 조언 · 다른 관점 요청은 쌓인 저항에 따른 드문 질문도 푼다. 요청한 뒤로는 그 대화 끝까지 성향으로 돌아가지 않는다.
  * </ul>
  */
 public class StrategyPolicy {
 
-    public static final String VERSION = "v12";
+    public static final String VERSION = "v13";
 
     /** 받아들이지 않는 답이 이만큼 연달아 나오면 마무리를 제안한다. */
     static final int YIELD_STREAK_LIMIT = 2;
@@ -131,11 +133,14 @@ public class StrategyPolicy {
         } else if ("other_view".equals(requested)) {
             explicitMode = StrategySignals.OTHER_VIEW;
         } else if ("explore".equals(requested) || "advice".equals(requested)) {
-            // 함께 알아보자거나 조언을 구하면 「듣기만」은 풀린다.
-            explicitMode = StrategySignals.LISTEN.equals(explicitMode) ? null : explicitMode;
+            // 함께 알아보자거나 조언을 구하면 「듣기만」도, 저장된 성향의 재해석도 풀린다.
+            explicitMode = null;
         }
-        StrategySignals now = new StrategySignals(
-                before.resistanceCount() + (reaction != null && RESISTANCE.contains(reaction) ? 1 : 0),
+        // 직접 요청한 방식을 드문 질문이 가로막지 않게 한다 — 저장된 성향으로 미리 채운 저항도 여기서 풀린다.
+        boolean askedForAWay = "explore".equals(requested) || "advice".equals(requested)
+                || "other_view".equals(requested);
+        int resistance = before.resistanceCount() + (reaction != null && RESISTANCE.contains(reaction) ? 1 : 0);
+        StrategySignals now = new StrategySignals(askedForAWay ? 0 : resistance,
                 notAccepted ? before.yieldStreak() + 1 : 0,
                 explicitMode, before.topicNumber(), before.wrapUpProposed(), before.lastType(),
                 before.turnsSinceQuestion(), before.questionsAsked(), before.questionsAfterFeeling(),

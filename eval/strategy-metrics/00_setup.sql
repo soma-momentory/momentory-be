@@ -22,7 +22,22 @@ SELECT
     TIMESTAMPTZ '9999-12-31 00:00:00+09' AS until,
     0.5::float8 AS min_confidence;
 
--- ── 2. 대상 세션 ── 전략 대화로 진행된 회고 한 건이 한 줄.
+-- ── 2. 처음 조건을 충족한 대화 ── 사용자 · 집단마다 한 줄. 답하기 전에 떠난 대화도 시작할 때 조건을 충족했으면 센다.
+CREATE TEMP VIEW sm_first_conditions AS
+SELECT DISTINCT ON (o.user_id, o.apply_arm)
+       o.user_id,
+       o.apply_arm AS arm,
+       r.created_at AS first_condition_at,
+       o.derived_self_led,
+       o.derived_other_view
+FROM retrospect_disposition_observations o
+JOIN retrospects r ON r.id = o.retrospect_id
+CROSS JOIN sm_params p
+WHERE (o.derived_self_led OR o.derived_other_view)
+  AND r.created_at >= p.since AND r.created_at < p.until
+ORDER BY o.user_id, o.apply_arm, r.created_at, r.id;
+
+-- ── 3. 대상 세션 ── 전략 대화로 진행된 회고 한 건이 한 줄.
 CREATE TEMP VIEW sm_sessions AS
 WITH strategy_turns AS (
     SELECT retrospect_id,
@@ -86,6 +101,10 @@ flagged AS (
     FROM dated d
 )
 SELECT f.*,
+       fc.first_condition_at,
+       -- 분석 대상: 처음 조건을 충족한 세션과 그 뒤의 모든 세션. 세션마다 조건으로 거르면, 처치로 저항이 줄어든 사용자가
+       -- 분석에서 빠져 집단 비교가 치우친다.
+       COALESCE(f.started_at >= fc.first_condition_at, FALSE) AS analysis_target,
        CASE
            WHEN f.end_reason IN ('ABUSE_STOPPED', 'LEGACY_EXPLORATION') THEN 'EXCLUDED_ABUSE_OR_LEGACY'
            WHEN f.safety_stopped THEN 'EXCLUDED_SAFETY'
@@ -94,9 +113,10 @@ SELECT f.*,
            WHEN f.other_diary_same_day THEN 'EXCLUDED_OTHER_DIARY'
            ELSE 'DROPOUT'                                 -- 하루가 지나도록 정상 정리 · 사용자 요청으로 끝나지 않았다
        END AS dropout_status
-FROM flagged f;
+FROM flagged f
+LEFT JOIN sm_first_conditions fc ON fc.user_id = f.user_id AND fc.arm = f.arm;
 
--- ── 3. 탐색 질문과 그 반응 ── 실제로 나간 탐색 질문 하나가 한 줄.
+-- ── 4. 탐색 질문과 그 반응 ── 실제로 나간 탐색 질문 하나가 한 줄.
 CREATE TEMP VIEW sm_questions AS
 WITH turns AS (
     SELECT j.*,
@@ -160,6 +180,7 @@ SELECT ss.retrospect_id,
        ss.user_id,
        ss.arm,
        ss.condition_met,
+       ss.analysis_target,
        ss.start_day,
        ss.policy_versions,
        ss.dropout_status,

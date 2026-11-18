@@ -32,6 +32,14 @@
           "value": "prod"
         },
         {
+          "name": "TURN_STRATEGY_ALL_USERS",
+          "value": "true"
+        },
+        {
+          "name": "DISPOSITION_APPLY_MODE",
+          "value": "RANDOM"
+        },
+        {
           "name": "GRAFANA_OTLP_ENABLED",
           "value": "true"
         },
@@ -87,6 +95,10 @@
         {
           "name": "KAKAO_ADMIN_KEY",
           "valueFrom": "/momentory/prod/KAKAO_ADMIN_KEY"
+        },
+        {
+          "name": "TYPESAFE_API_KEY",
+          "valueFrom": "/momentory/prod/TYPESAFE_API_KEY"
         },
         {
           "name": "GEMINI_API_KEY",

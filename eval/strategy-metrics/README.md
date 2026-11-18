@@ -33,7 +33,8 @@ IntelliJ 라면 같은 콘솔에서 `00_setup.sql` 을 먼저 실행한 뒤 다�
 ## 정의 요약
 
 - **대상 세션**: 전략 대화 턴 기록(`policy_version`)이 있는 회고. 지표는 두 집단(`TREATMENT` · `CONTROL`) 가운데
-  과거 성향 반영 조건을 충족한(`derived_*` 가 참) 세션만 본다.
+  사용자가 과거 성향 반영 조건(`derived_*` 가 참)을 처음 충족한 세션과 그 뒤의 모든 세션을 본다. 세션마다 조건으로 거르면
+  처치로 저항이 줄어든 사용자가 분석에서 빠지기 때문이다. `20_progress.sql` 2번의 `condition_met_pct` 로 실제 반영 비율을 본다.
 - **탐색 질문**: `question_sent = true`. 선택형 포함. 공통 첫 질문 · 다른 기억 · 마무리 제안은 제외.
 - **그 반응**: 같은 회고 다음 일기 턴의 Jev `reaction`. 응답 곤란 = `struggle_to_answer`,
   저항 = `refuse_question` · `no_answer_or_topic_change` · `argue`. 확신 0.5 미만은 세지 않는다.

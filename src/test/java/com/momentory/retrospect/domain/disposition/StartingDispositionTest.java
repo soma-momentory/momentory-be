@@ -14,35 +14,49 @@ class StartingDispositionTest {
     }
 
     @Test
-    void derivesNothingFromASingleConversation() {
-        // 하루 컨디션을 성향으로 굳히지 않는다 — 한 대화에서 아무리 뚜렷해도 한 번이면 반영하지 않는다.
-        StartingDisposition once = StartingDisposition.of(List.of(talk(5, 3), talk(0, 0)), 2, 2);
+    void afterTheEarlyDaysOneSelfLedConversationIsEnoughButOtherViewMustRepeat() {
+        StartingDisposition selfLed = StartingDisposition.of(List.of(talk(2, 0), talk(0, 0)), 1, 2, 2);
+        StartingDisposition askedOnce = StartingDisposition.of(List.of(talk(0, 3), talk(0, 0)), 1, 2, 2);
+        StartingDisposition askedTwice = StartingDisposition.of(List.of(talk(0, 1), talk(0, 2)), 1, 2, 2);
 
-        assertThat(once).isEqualTo(StartingDisposition.NONE);
-        assertThat(once.isNone()).isTrue();
-        assertThat(StartingDisposition.of(List.of(), 2, 2).isNone()).isTrue();
+        assertThat(selfLed).isEqualTo(new StartingDisposition(true, false));
+        assertThat(askedOnce).isEqualTo(StartingDisposition.NONE);
+        assertThat(askedTwice).isEqualTo(new StartingDisposition(false, true));
     }
 
     @Test
-    void derivesSelfLedWhenResistanceRepeatedAcrossConversations() {
-        StartingDisposition d = StartingDisposition.of(List.of(talk(2, 0), talk(0, 0), talk(3, 0)), 2, 2);
-
-        assertThat(d.selfLed()).isTrue();
-        assertThat(d.wantsOtherView()).isFalse();
+    void duringTheEarlyDaysOneRequestForAnotherViewIsEnough() {
+        assertThat(StartingDisposition.of(List.of(talk(0, 1)), 1, 1, 2))
+                .isEqualTo(new StartingDisposition(false, true));
     }
 
     @Test
     void aConversationWithLessResistanceThanTheInConversationThresholdDoesNotCount() {
         // 저항이 한 번 나온 대화는 그 대화 안에서도 질문을 줄이지 않았다 — 그런 대화가 여럿이어도 세지 않는다.
-        assertThat(StartingDisposition.of(List.of(talk(1, 0), talk(1, 0), talk(1, 0)), 2, 2).selfLed()).isFalse();
+        assertThat(StartingDisposition.of(List.of(talk(1, 0), talk(1, 0), talk(1, 0)), 1, 2, 2).isNone()).isTrue();
+        assertThat(StartingDisposition.of(List.of(), 1, 1, 2).isNone()).isTrue();
     }
 
     @Test
-    void derivesOtherViewFromExplicitRequestsInSeveralConversations() {
-        StartingDisposition d = StartingDisposition.of(List.of(talk(0, 1), talk(0, 2)), 2, 2);
+    void whenBothAppearOnlyTheMoreFrequentDispositionIsDerived() {
+        assertThat(StartingDisposition.of(List.of(talk(0, 1), talk(2, 0), talk(3, 0)), 1, 1, 2))
+                .isEqualTo(new StartingDisposition(true, false));
+        assertThat(StartingDisposition.of(List.of(talk(2, 0), talk(0, 1), talk(0, 1)), 1, 1, 2))
+                .isEqualTo(new StartingDisposition(false, true));
+    }
 
-        assertThat(d.wantsOtherView()).isTrue();
-        assertThat(d.selfLed()).isFalse();
+    @Test
+    void aTieGoesToTheMoreRecentDisposition() {
+        assertThat(StartingDisposition.of(List.of(talk(2, 0), talk(0, 1)), 1, 1, 2))
+                .isEqualTo(new StartingDisposition(true, false));
+        assertThat(StartingDisposition.of(List.of(talk(0, 1), talk(2, 0)), 1, 1, 2))
+                .isEqualTo(new StartingDisposition(false, true));
+    }
+
+    @Test
+    void aTieInTheSameConversationGoesToTheExplicitRequest() {
+        assertThat(StartingDisposition.of(List.of(talk(2, 1)), 1, 1, 2))
+                .isEqualTo(new StartingDisposition(false, true));
     }
 
     @Test
@@ -66,5 +80,34 @@ class StartingDispositionTest {
             treated += arm == DispositionArm.TREATMENT ? 1 : 0;
         }
         assertThat(treated).isBetween(400L, 600L);
+    }
+
+    @Test
+    void randomAssignmentKeepsEachUsersArmDuringTheExperiment() {
+        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of());
+
+        // 실험 이름이나 해시가 바뀌면 진행 중인 사용자의 집단이 뒤섞인다.
+        assertThat(random.armOf(1L)).isEqualTo(DispositionArm.TREATMENT);
+        assertThat(random.armOf(2L)).isEqualTo(DispositionArm.CONTROL);
+        assertThat(random.armOf(3L)).isEqualTo(DispositionArm.TREATMENT);
+        assertThat(random.armOf(4L)).isEqualTo(DispositionArm.TREATMENT);
+        assertThat(random.armOf(5L)).isEqualTo(DispositionArm.TREATMENT);
+        assertThat(random.armOf(6L)).isEqualTo(DispositionArm.CONTROL);
+        assertThat(random.armOf(7L)).isEqualTo(DispositionArm.CONTROL);
+        assertThat(random.armOf(8L)).isEqualTo(DispositionArm.CONTROL);
+    }
+
+    @Test
+    void randomAssignmentDoesNotFollowSignupOrder() {
+        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of());
+
+        // 가까이 가입한 사용자의 집단이 일정한 주기로 되풀이되면 무작위 배정이 아니다.
+        for (int gap = 1; gap <= 8; gap++) {
+            long sameArm = 0;
+            for (long id = 1; id <= 2000; id++) {
+                sameArm += random.armOf(id) == random.armOf(id + gap) ? 1 : 0;
+            }
+            assertThat(sameArm).as("id 간격 %d", gap).isBetween(880L, 1120L);
+        }
     }
 }
