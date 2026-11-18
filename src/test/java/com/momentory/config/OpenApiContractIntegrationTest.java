@@ -34,7 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         properties = {
                 "JWT_SECRET=JZP9amP0y2bXk2LG9f9piS5jH3vK9B5w7qxgEriqMA4=",
                 "JWT_REFRESH_EXPIRATION=30d",
-                "KAKAO_APP_ID=123456789"
+                "KAKAO_APP_ID=123456789",
+                "springdoc.paths-to-exclude=/test-auth/**"
         }
 )
 @Testcontainers(disabledWithoutDocker = true)
@@ -63,6 +64,28 @@ class OpenApiContractIntegrationTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+    }
+
+    @Test
+    void documentsEventEmotionEditingAndOriginalClassificationFlag() throws Exception {
+        JsonNode docs = getApiDocs();
+        java.nio.file.Files.createDirectories(java.nio.file.Path.of("build/reports"));
+        java.nio.file.Files.writeString(java.nio.file.Path.of("build/reports/openapi.json"), docs.toString());
+        String path = "/api/v1/diaries/{id}/emotions";
+        assertResponseSchema(docs, path, "put", "200", "DiaryResponse");
+        assertErrorExample(docs, path, "put", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+        assertErrorExample(docs, path, "put", "400", "ApiErrorResponse", "invalidEmotions", "INVALID_REQUEST", "감정과 사건을 확인해주세요.");
+        assertErrorExample(docs, path, "put", "401", "ApiErrorResponse", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_REQUIRED", "인증이 필요합니다.");
+        assertErrorExample(docs, path, "put", "404", "ApiErrorResponse", "DIARY_NOT_FOUND", "DIARY_NOT_FOUND", "일기를 찾을 수 없습니다.");
+        JsonNode request = docs.at("/components/schemas/DiaryEmotionsRequest/properties");
+        assertThat(request.size()).isEqualTo(2);
+        assertThat(request.has("events")).isTrue();
+        assertThat(request.has("unlinkedEmotions")).isTrue();
+        JsonNode response = docs.at("/components/schemas/DiaryResponse/properties");
+        assertThat(response.has("events")).isTrue();
+        assertThat(response.has("unlinkedEmotions")).isTrue();
+        assertThat(response.path("emotionClassificationChanged").path("type").asText()).isEqualTo("boolean");
+        assertThat(response.has("emotionClassificationChangedAt")).isFalse();
     }
 
     @Test

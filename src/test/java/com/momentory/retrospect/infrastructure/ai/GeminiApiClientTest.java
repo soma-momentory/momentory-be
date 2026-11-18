@@ -192,6 +192,26 @@ class GeminiApiClientTest {
         assertThat(blocked.retryable()).isFalse();
     }
 
+    @Test
+    void diaryWriterParsesRealStructuredJsonAndPreservesSentencesDespiteParaphrasedEventName() throws Exception {
+        var state = new RetrospectState("diary-wire");
+        state.events(List.of(new com.momentory.retrospect.domain.ExtractedEvent(4, "산책", "공원을 걸었다", List.of(1))));
+        state.addUserMessage("공원에서 천천히 걸었다. 바람이 시원해 기분이 좋았다.");
+        String inner = """
+                {"corrections":[],"paragraphs":[{"eventId":4,"event":"공원에서 보낸 시간","sentences":[
+                "공원에 갔다.","천천히 걸었다.","바람이 불었다.","바람이 시원했다.","기분이 좋았다."]}]}
+                """;
+        server.enqueue(jsonResponse(mapper.writeValueAsString(Map.of("candidates", List.of(
+                Map.of("content", Map.of("parts", List.of(Map.of("text", inner)))))))));
+        var writer = new GeminiDiaryWriter(client(), new PromptFactory(2000, EmotionPromptVariant.ZERO_SHOT));
+        assertThat(writer.write(state).orElseThrow().diary())
+                .isEqualTo("공원에 갔다.\n천천히 걸었다.\n바람이 불었다.\n바람이 시원했다.\n기분이 좋았다.");
+        assertThat(server.getRequestCount()).isEqualTo(1);
+        var body = mapper.readTree(server.takeRequest().getBody().readUtf8());
+        assertThat(body.at("/generationConfig/responseSchema/properties/paragraphs/items/required").toString())
+                .contains("eventId");
+    }
+
     private GeminiApiClient client() {
         GeminiApiProperties properties = new GeminiApiProperties(
                 server.url("/").toString(), "test-key", "gemini-flash-lite-latest",

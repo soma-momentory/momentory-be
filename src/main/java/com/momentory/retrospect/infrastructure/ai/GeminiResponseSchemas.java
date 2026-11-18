@@ -134,8 +134,10 @@ final class GeminiResponseSchemas {
 
     private static Map<String, Object> diaryDraftSchema() {
         LinkedHashMap<String, Object> paragraph = new LinkedHashMap<>();
+        paragraph.put("eventId", Map.of("type", "INTEGER", "description",
+                "주요 사건 목록의 원래 사건 번호. 1부터 다시 매기지 않는다."));
         paragraph.put("event", Map.of("type", "STRING", "description",
-                "이 문단이 다루는 일 한 줄. 때나 장소가 다른 일은 서로 다른 문단이다."));
+                "주요 사건 목록에 있는 사건 이름을 그대로 복사한다."));
         paragraph.put("sentences", Map.of("type", "ARRAY", "items", str(), "description",
                 "이 사건에 대한 문장들. 원소 하나에 한 문장만 담는다."));
         LinkedHashMap<String, Object> correction = new LinkedHashMap<>();
@@ -145,8 +147,9 @@ final class GeminiResponseSchemas {
         // 문단보다 먼저 채우게 한다 — 고쳐 말한 곳을 짚은 뒤에 일기를 쓴다.
         props.put("corrections", Map.of("type", "ARRAY", "items", object(correction, List.of("before", "after")),
                 "description", "사용자가 자기 말을 고쳐 말한 곳. before=고치기 전 표현, after=고친 표현. 없으면 빈 목록."));
-        props.put("paragraphs", Map.of("type", "ARRAY", "items", object(paragraph, List.of("event", "sentences")),
-                "description", "문단 목록. 문단 하나가 한 사건(맥락)이다. 한 가지 일만 이야기했으면 문단은 하나다."));
+        props.put("paragraphs", Map.of("type", "ARRAY", "items", object(paragraph, List.of("eventId", "event", "sentences")),
+                "maxItems", com.momentory.retrospect.domain.RetrospectState.MAX_EVENTS,
+                "description", "선정된 주요 사건만 담은 문단 목록(최대 2개). 문단 하나가 한 사건이다."));
         return object(props, List.of("corrections", "paragraphs"));
     }
 
