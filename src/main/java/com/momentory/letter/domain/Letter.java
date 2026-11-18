@@ -140,6 +140,14 @@ public class Letter extends BaseTimeEntity {
         return status.isDone() && (!stale || openedAt != null);
     }
 
+    /**
+     * 그림일기를 그리고 보여 줘도 되는가 — 안전 판정을 통과한 AI 편지만이다. 판정을 받지 않은 편지(게이트 OFF · SHADOW)도
+     * 제외한다. 그린 뒤에 판정이 바뀔 수 있어(열 때 위기 기록 확인 · 일기 수정) 내보낼 때도 다시 본다.
+     */
+    public boolean allowsPicture() {
+        return status == LetterStatus.READY && safetyPolicy == LetterPolicy.NORMAL;
+    }
+
     /** {@code today}(04:00 경계) 기준으로 열 수 있는가 — 일기 다음 날부터 열린다. */
     public boolean isOpenableOn(LocalDate today) {
         return letterDate.isBefore(today);

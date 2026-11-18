@@ -9,6 +9,7 @@ import com.momentory.common.presentation.ApiErrorResponse;
 import com.momentory.letter.application.LetterActionLockedException;
 import com.momentory.letter.application.LetterActionNotFoundException;
 import com.momentory.letter.application.LetterNotFoundException;
+import com.momentory.letter.application.LetterPictureNotFoundException;
 import com.momentory.letter.application.LetterScheduleNotFoundException;
 
 @RestControllerAdvice(assignableTypes = LetterController.class)
@@ -18,6 +19,7 @@ public class LetterExceptionHandler {
     static final String LETTER_ACTION_NOT_FOUND_MESSAGE = "편지에 그 작은 일이 없습니다.";
     static final String SCHEDULE_NOT_FOUND_MESSAGE = "일정을 찾을 수 없습니다.";
     static final String LETTER_ACTION_LOCKED_MESSAGE = "이미 해 본 작은 일은 바꿀 수 없습니다.";
+    static final String LETTER_PICTURE_NOT_FOUND_MESSAGE = "그림일기를 찾을 수 없습니다.";
 
     @ExceptionHandler(LetterNotFoundException.class)
     ResponseEntity<ApiErrorResponse> handleLetterNotFound() {
@@ -41,5 +43,11 @@ public class LetterExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleActionLocked() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiErrorResponse("LETTER_ACTION_LOCKED", LETTER_ACTION_LOCKED_MESSAGE));
+    }
+
+    @ExceptionHandler(LetterPictureNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> handlePictureNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiErrorResponse("LETTER_PICTURE_NOT_FOUND", LETTER_PICTURE_NOT_FOUND_MESSAGE));
     }
 }

@@ -37,16 +37,19 @@ public class LetterFromRetrospectListener {
     private final LetterTaskLauncher launcher;
     private final LetterActionRepository letterActionRepository;
     private final LetterWishCards wishCards;
+    private final LetterPictureGenerator pictures;
 
     public LetterFromRetrospectListener(DiaryRepository diaryRepository,
             LetterRepository letterRepository, LetterGenerator generator, LetterTaskLauncher launcher,
-            LetterActionRepository letterActionRepository, LetterWishCards wishCards) {
+            LetterActionRepository letterActionRepository, LetterWishCards wishCards,
+            LetterPictureGenerator pictures) {
         this.diaryRepository = diaryRepository;
         this.letterRepository = letterRepository;
         this.generator = generator;
         this.launcher = launcher;
         this.letterActionRepository = letterActionRepository;
         this.wishCards = wishCards;
+        this.pictures = pictures;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
@@ -65,8 +68,12 @@ public class LetterFromRetrospectListener {
             return;
         }
         Long retrospectId = event.retrospectId();
-        launcher.launch(() -> diaryRepository.findByRetrospectId(retrospectId)
-                .ifPresent(diary -> generator.generateForDiary(diary.getId())));
+        // 그림일기는 편지 글을 다 만든 다음, 같은 작업에서 이어 그린다 — 편지가 안전 판정을 통과했는지 보고 정한다.
+        // 일기를 고쳐 다시 만드는 길(아래 regenerate)은 그림을 다시 그리지 않는다(2026-11-18 결정).
+        launcher.launch(() -> diaryRepository.findByRetrospectId(retrospectId).ifPresent(diary -> {
+            generator.generateForDiary(diary.getId());
+            pictures.generateForDiary(diary.getId());
+        }));
     }
 
     /** 일기를 고친 트랜잭션 안에서 표시한다 — 이미 열어 본 편지는 그대로 둔다. */
