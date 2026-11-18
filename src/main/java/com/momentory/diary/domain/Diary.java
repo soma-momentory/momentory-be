@@ -56,6 +56,30 @@ public class Diary extends BaseTimeEntity {
     @Column(name = "events_json", columnDefinition = "TEXT")
     private String eventsJson;
 
+    @Column(name = "original_emotion_selection_json", columnDefinition = "TEXT")
+    private String originalEmotionSelectionJson;
+
+    @Column(name = "emotion_selection_json", columnDefinition = "TEXT")
+    private String emotionSelectionJson;
+
+    @Column(name = "emotion_classification_changed", nullable = false)
+    private boolean emotionClassificationChanged;
+
+    public String getOriginalEmotionSelectionJson() { return originalEmotionSelectionJson; }
+    public String getEmotionSelectionJson() { return emotionSelectionJson; }
+    public boolean isEmotionClassificationChanged() { return emotionClassificationChanged; }
+
+    /** 원본 분류는 최초 수정 전에 한 번만 남긴다. 추가만 한 수정은 변경 지표에 넣지 않는다. */
+    public void updateEmotions(DiaryEmotionSelection original, String originalJson,
+            DiaryEmotionSelection selected, String selectedJson) {
+        if (originalEmotionSelectionJson == null) originalEmotionSelectionJson = Objects.requireNonNull(originalJson);
+        emotionSelectionJson = Objects.requireNonNull(selectedJson);
+        var all = selected.allEmotions();
+        if (!all.contains(primaryEmotion)) primaryEmotion = all.isEmpty() ? null : all.getFirst();
+        emotions = all.isEmpty() ? null : String.join(",", all.stream().map(Emotion::key).toList());
+        emotionClassificationChanged = retrospectId != null && selected.removesFrom(original);
+    }
+
     public String getEventsJson() {
         return eventsJson;
     }
@@ -64,6 +88,10 @@ public class Diary extends BaseTimeEntity {
     public void replaceEvents(String eventsJson) {
         if (retrospectId != null) throw new IllegalStateException("chat diary events belong to retrospect");
         this.eventsJson = Objects.requireNonNull(eventsJson);
+        // 직접 작성 본문이 바뀌면 사건도 새 추출 결과를 따른다. 현재 감정 태그는 유지하며
+        // 새 사건에 근거가 없는 감정은 조회에서 사건 없는 감정으로 돌린다. 채팅 원본에는 적용하지 않는다.
+        this.emotionSelectionJson = null;
+        this.originalEmotionSelectionJson = null;
     }
 
     public String getWeather() {

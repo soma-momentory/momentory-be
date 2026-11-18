@@ -17,9 +17,11 @@ public class DiaryService {
     private final DiaryRepository diaryRepository;
     private final ApplicationEventPublisher events;
     private final DiaryCreationGuard creationGuard;
+    private final DiaryEmotionService emotions;
 
     public DiaryService(DiaryRepository diaryRepository, ApplicationEventPublisher events,
-            DiaryCreationGuard creationGuard) {
+            DiaryCreationGuard creationGuard, DiaryEmotionService emotions) {
+        this.emotions = emotions;
         this.diaryRepository = diaryRepository;
         this.events = events;
         this.creationGuard = creationGuard;
@@ -32,17 +34,17 @@ public class DiaryService {
         creationGuard.requireAvailable(userId);
         Diary diary = Diary.write(userId, original, emotion);
         diary.replaceEvents(eventsJson);
-        return DiaryView.from(diaryRepository.saveAndFlush(diary));
+        return emotions.viewOf(diaryRepository.saveAndFlush(diary));
     }
 
     @Transactional
     public DiaryView updateOriginal(Long userId, Long id, String original, String eventsJson) {
-        Diary diary = diaryRepository.findByIdAndUserId(id, userId)
+        Diary diary = diaryRepository.findForEmotionUpdate(id, userId)
                 .orElseThrow(DiaryNotFoundException::new);
         diary.updateOriginal(original);
         if (eventsJson != null) diary.replaceEvents(eventsJson);
         events.publishEvent(new DiaryOriginalUpdated(diary.getId()));
-        return DiaryView.from(diary);
+        return emotions.viewOf(diary);
     }
 
     /**
@@ -73,6 +75,6 @@ public class DiaryService {
                 .orElseThrow(DiaryNotFoundException::new);
         diary.updateOriginal(original);
         events.publishEvent(new DiaryOriginalUpdated(diary.getId()));
-        return DiaryView.from(diary);
+        return emotions.viewOf(diary);
     }
 }

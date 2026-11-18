@@ -26,8 +26,10 @@ import com.momentory.retrospect.domain.Emotion;
 public class DiaryQueryService {
 
     private final DiaryRepository diaryRepository;
+    private final DiaryEmotionService emotions;
 
-    public DiaryQueryService(DiaryRepository diaryRepository) {
+    public DiaryQueryService(DiaryRepository diaryRepository, DiaryEmotionService emotions) {
+        this.emotions = emotions;
         this.diaryRepository = diaryRepository;
     }
 
@@ -43,12 +45,8 @@ public class DiaryQueryService {
         YearMonth target = YearMonth.of(year, month);
         Instant start = DayBoundary.startOfDay(target.atDay(1));
         Instant end = DayBoundary.startOfDay(target.plusMonths(1).atDay(1));
-        return diaryRepository
-                .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
-                        userId, start, end)
-                .stream()
-                .map(DiaryView::from)
-                .toList();
+        return emotions.viewsOf(diaryRepository
+                .findByUserIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(userId, start, end));
     }
 
     /**
@@ -56,10 +54,7 @@ public class DiaryQueryService {
      */
     @Transactional(readOnly = true)
     public List<DiaryView> getAll(Long userId) {
-        return diaryRepository.findByUserIdOrderByCreatedAtDesc(userId)
-                .stream()
-                .map(DiaryView::from)
-                .toList();
+        return emotions.viewsOf(diaryRepository.findByUserIdOrderByCreatedAtDesc(userId));
     }
 
     /**
@@ -117,7 +112,7 @@ public class DiaryQueryService {
     @Transactional(readOnly = true)
     public DiaryView getOne(Long userId, Long id) {
         return diaryRepository.findByIdAndUserId(id, userId)
-                .map(DiaryView::from)
+                .map(emotions::viewOf)
                 .orElseThrow(DiaryNotFoundException::new);
     }
 
