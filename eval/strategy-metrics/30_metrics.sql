@@ -4,7 +4,7 @@
 -- 자동 집계는 사람 판정과 대조한 뒤 보조로만 쓴다. 감정 명료화율은 사람 판정만 있어 여기에 없다.
 -- 신뢰구간과 사용자 묶음 분석은 3번 표를 내보내 통계 스크립트로 한다.
 
--- ── 1. 응답 곤란률 · 저항률 ── 분석 대상(두 집단 · 조건 충족) 세션.
+-- ── 1. 응답 곤란률 · 저항률 ── 분석 대상(두 집단 · 처음 조건을 충족한 세션부터) 세션.
 --   세션 단위         : 한 번 이상 나온 세션 ÷ 전체 세션(문서의 정의)
 --   질문 있는 세션    : 한 번 이상 나온 세션 ÷ 탐색 질문이 있는 세션
 --   질문 단위         : 그 반응이 뒤따른 탐색 질문 ÷ 실제 탐색 질문
@@ -26,7 +26,7 @@ SELECT arm,
              / NULLIF(count(*) FILTER (WHERE explore_questions > 0), 0), 1) AS resistance_rate_questioned,
        round(100.0 * sum(resistance_questions) / NULLIF(sum(explore_questions), 0), 1) AS resistance_rate_question
 FROM sm_session_metrics
-WHERE arm IN ('TREATMENT', 'CONTROL') AND condition_met
+WHERE arm IN ('TREATMENT', 'CONTROL') AND analysis_target
 GROUP BY arm
 ORDER BY arm DESC;
 
@@ -42,7 +42,7 @@ SELECT arm,
        count(*) FILTER (WHERE dropout_status = 'EXCLUDED_OTHER_DIARY') AS excluded_other_diary,
        count(*) FILTER (WHERE dropout_status = 'PENDING') AS pending_today
 FROM sm_session_metrics
-WHERE arm IN ('TREATMENT', 'CONTROL') AND condition_met
+WHERE arm IN ('TREATMENT', 'CONTROL') AND analysis_target
 GROUP BY arm
 ORDER BY arm DESC;
 
@@ -51,6 +51,7 @@ ORDER BY arm DESC;
 SELECT retrospect_id,
        user_id,
        arm,
+       condition_met,
        start_day,
        policy_versions,
        explore_questions,
@@ -63,5 +64,5 @@ SELECT retrospect_id,
        dropped_out,
        dropout_evaluable
 FROM sm_session_metrics
-WHERE arm IN ('TREATMENT', 'CONTROL') AND condition_met
+WHERE arm IN ('TREATMENT', 'CONTROL') AND analysis_target
 ORDER BY user_id, start_day, retrospect_id;
