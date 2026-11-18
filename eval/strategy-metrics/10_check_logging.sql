@@ -32,8 +32,9 @@ UNION ALL
 SELECT '탐색 질문 뒤 새 이야기인데 응답 곤란으로 판단됨', count(*), '적을수록 좋음 (응답 곤란으로 셈)'
 FROM sm_questions WHERE answer_new_topic IS TRUE AND response_class = 'STRUGGLE'
 UNION ALL
-SELECT '탐색 질문이 나갔는데 방침이 탐색 · 재해석이 아님', count(*), '0'
-FROM sm_questions WHERE strategy_type NOT IN ('EXPLORE', 'REFRAME')
+-- 물러서기(YIELD)도 받아들이지 않는 답을 인정한 뒤 질문할 수 있다. 질문 없이 받아주기만 하는 REFLECT 와 끝내는 CLOSE 는 질문이 나가면 안 된다.
+SELECT '탐색 질문이 나갔는데 방침이 탐색 · 재해석 · 물러서기가 아님', count(*), '0'
+FROM sm_questions WHERE strategy_type NOT IN ('EXPLORE', 'REFRAME', 'YIELD')
 UNION ALL
 SELECT '한 회고에 규칙 버전이 둘 이상', count(*), '0 (파일럿 중 규칙을 바꾸지 않는다)'
 FROM sm_sessions WHERE policy_versions LIKE '%,%'
