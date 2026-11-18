@@ -22,6 +22,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -190,6 +191,20 @@ class OpenApiContractIntegrationTest {
         JsonNode response = docs.at("/components/schemas/LetterResponse/properties");
         assertThat(response.has("isNew")).isTrue();
         assertThat(response.has("helplines")).isTrue();
+        assertThat(response.has("hasPicture")).isTrue();
+
+        assertThat(docs.path("paths").has("/api/v1/letters/{id}/picture/share")).isFalse();
+        for (String picture : List.of("/api/v1/letters/{id}/picture")) {
+            assertResponseSchema(docs, picture, "get", "200", "LetterPictureResponse");
+            assertErrorExample(docs, picture, "get", "400", "ApiErrorResponse", "INVALID_REQUEST", "INVALID_REQUEST", "잘못된 요청입니다.");
+            assertErrorExample(docs, picture, "get", "401", "ApiErrorResponse", auth, auth, authMessage);
+            assertErrorExample(docs, picture, "get", "404", "ApiErrorResponse", "LETTER_NOT_FOUND", "LETTER_NOT_FOUND", "편지를 찾을 수 없습니다.");
+            assertErrorExample(docs, picture, "get", "404", "ApiErrorResponse", "LETTER_PICTURE_NOT_FOUND", "LETTER_PICTURE_NOT_FOUND", "그림일기를 찾을 수 없습니다.");
+            assertOperationTag(docs, picture, "get", "Letters");
+        }
+        JsonNode picture = docs.at("/components/schemas/LetterPictureResponse/properties");
+        assertThat(picture.size()).isEqualTo(2);
+        assertThat(picture.has("mimeType") && picture.has("image")).isTrue();
 
         String letterTime = "/api/v1/users/me/letter-time";
         assertResponseSchema(docs, letterTime, "put", "200", "LetterTimeResponse");

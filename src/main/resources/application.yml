@@ -121,6 +121,13 @@ momentory:
     # false 면 새 편지에 작은 일을 만들지 않고, 저장된 지난 칸도 응답에 싣지 않는다(지우지는 않는다).
     # 새 앱은 서버 값과 상관없이 작은 일을 그리지 않는다. 운영은 켜 둔다(옛 앱 그대로) · 작은 일의 AI 비용을 없앨 때만 false.
     actions-enabled: ${LETTER_ACTIONS_ENABLED:true}
+    # 바바의 그림일기(2026-11-18) — 편지 글 다음에 일기를 4컷으로 그린다. 기본은 꺼 둔다: BE 를 먼저 배포하고 앱이 나간 뒤에 켠다.
+    # user-ids 를 채우면 그 계정에만 그린다(처음엔 팀 계정). 비우면 모두. 그림 한 장 약 0.041달러(장면 나누기 + lite 그리기).
+    picture:
+      enabled: ${LETTER_PICTURE_ENABLED:false}
+      user-ids: ${LETTER_PICTURE_USER_IDS:}
+      plan-model: ${LETTER_PICTURE_PLAN_MODEL:gemini-3.8-flash}
+      image-model: ${LETTER_PICTURE_IMAGE_MODEL:gemini-3.1-flash-lite-image}
   judge:
     # 턴 판단을 켤 사용자 id 목록(쉼표 구분). 비어 있으면 아무에게도 켜지 않는다.
     # 대화 원문이 TypeSafe 로 나가므로, 처리위탁 고지 전에는 테스트 계정과 동의한 참여자만 넣는다.

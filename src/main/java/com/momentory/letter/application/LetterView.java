@@ -10,7 +10,7 @@ import com.momentory.letter.domain.LetterStatus;
 /** 화면에 보여 줄 편지 한 통 — 다 만든 상태(READY · FALLBACK · QUIET)만 담긴다. */
 public record LetterView(Long id, LocalDate date, LetterStatus status, String quote, String insight,
         String tonightQuestion, List<Action> actions, List<String> helplines, boolean isNew,
-        Instant openedAt) {
+        Instant openedAt, boolean hasPicture) {
 
     public LetterView {
         actions = List.copyOf(actions);
