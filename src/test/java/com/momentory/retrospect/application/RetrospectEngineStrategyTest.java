@@ -570,6 +570,17 @@ class RetrospectEngineStrategyTest {
     }
 
     @Test
+    void keepsTalkingWhenTheUserJudgesSomeoneElsesSuicide() {
+        reply = new StrategyReply("그 선택이 이해가 안 되셨군요.", "", false, false, "지인의 죽음", "none", List.of());
+
+        ReplyDto said = say("그렇게 자살을 선택한 거에 대해 참 비겁하고 이해가 안돼.", plain());
+
+        assertThat(state.phase()).isEqualTo(Phase.DIARY_CHAT);
+        assertThat(said.text()).contains("그 선택이 이해가 안 되셨군요.");
+        assertThat(state.safety().level()).isEqualTo(com.momentory.retrospect.domain.safety.SafetyLevel.CAUTION);
+    }
+
+    @Test
     void takesTheFirstTextAfterTheGuidanceAsAnAnswerInsteadOfRepeatingTheQuestion() {
         reply = new StrategyReply("많이 지치셨군요.", "", false, false, "요즘", "risk", List.of("hopeless"));
         say("요즘 다 내려놓고 싶다는 생각이 들어", plain());

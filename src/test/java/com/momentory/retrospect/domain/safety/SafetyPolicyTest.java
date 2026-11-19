@@ -104,6 +104,33 @@ class SafetyPolicyTest {
     }
 
     @Test
+    @DisplayName("남의 자살을 전하거나 평한 말은 멈추지 않고 주의만 남긴다")
+    void othersSuicideIsOnlyCaution() {
+        for (String text : List.of("나에 대한 생각은 별로 안들었어. 그렇게 자살을 선택한 거에 대해 참 비겁하고 이해가 안돼.",
+                "친구가 자살했대", "아침에 배우 자살 소식을 들었어", "경찰은 자살로 추정한대",
+                "자살한 사람 가족들은 얼마나 힘들까", "그 사람이 자살을 택한 이유를 모르겠어")) {
+            ScanResult result = policy.scan(text);
+            assertThat(result.level()).as(text).isEqualTo(SafetyLevel.CAUTION);
+            assertThat(result.flags()).as(text).containsExactly(SafetyPolicy.FLAG_OTHERS_SUICIDE);
+            assertThat(result.level().stopsRetrospect()).as(text).isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("남의 자살 이야기여도 본인 위험의 단서가 있으면 그대로 멈춘다")
+    void othersSuicideWithASelfRiskHintStillStops() {
+        for (String text : List.of("친구가 자살했대. 나도 따라가고 싶어", "그 사람이 자살을 선택한 게 이해돼. 나도 그러고 싶다",
+                "자살 소식 듣고 자살 충동이 들었어", "작년에 자살 시도했어", "나도 자살할까", "자살하고 싶어",
+                "자살", "자살 생각이 났어", "배우가 자살했대. 죽으면 편할까")) {
+            assertThat(policy.scan(text).level()).as(text).isEqualTo(SafetyLevel.IMMINENT);
+        }
+        // 다른 위기 키워드는 남의 자살 이야기와 같이 나와도 그대로 잡는다.
+        ScanResult withRisk = policy.scan("친구가 자살했대. 요즘 살기 싫어");
+        assertThat(withRisk.level()).isEqualTo(SafetyLevel.RISK);
+        assertThat(withRisk.flags()).contains(SafetyPolicy.FLAG_CRISIS, SafetyPolicy.FLAG_OTHERS_SUICIDE);
+    }
+
+    @Test
     @DisplayName("[알려진 한계] 과거 언급과 문맥으로만 가를 말은 이번에 빼지 않았다 — 임상 검수 뒤에 다룬다")
     void knownLimits() {
         assertThat(policy.scan("작년에는 정말 죽고 싶었다. 지금은 괜찮다").level()).isEqualTo(SafetyLevel.IMMINENT);
