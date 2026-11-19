@@ -1,6 +1,7 @@
 package com.momentory.retrospect.infrastructure.ai;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -686,20 +687,23 @@ public class PromptFactory {
     }
 
     /**
-     * 일기 생성(G4) — 사용자가 한 말을 빠짐없이 담아 최소 5문장, 길어도 8문장 안팎으로 풀어 쓴다.
+     * 일기 생성(G4) — 선정된 주요 사건 최대 2개 안에서 사용자가 한 말을 5~8문장으로 풀어 쓴다.
      * 새 사건·인물·장소는 만들지 않지만, 사용자가 말한 장면과 마음은 짧게 요약하지 않고 풀어 쓴다.
      */
     public String diaryPrompt(RetrospectState state) {
         return """
-                아래 대화를 바탕으로, 사용자가 오늘 직접 쓴 것처럼 자연스러운 1인칭 일기를 써 주세요.
+                아래 주요 사건과 관련 대화를 바탕으로, 사용자가 오늘 직접 쓴 것처럼 자연스러운 1인칭 일기를 써 주세요.
+                - 주요 사건은 최대 %d개입니다. [주요 사건]에 지정된 일만 쓰고, 다른 일은 대화에 있어도 넣지 않습니다.
+                  주요 사건 선정 기준은 감정이 드러난 사건 우선 → 그 사건의 사용자 턴 수가 많은 순 → 먼저 언급한 순입니다.
+                  분량을 채우려고 다른 사건을 추가하지 마세요.
                 - 분량: <b>최소 %d문장</b>, 길어도 %d문장 안팎. 짧게 요약하지 말고 풀어 씁니다. 작성 후 문장 수를 확인하세요.
-                - 사용자가 한 말은 하나도 빼지 말고 담습니다(아래 「고쳐 말한 경우」만 예외). 걱정·혼잣말·스스로에게 한 말·바바의 말에 보인 반응도
+                - 선정된 주요 사건 안에서 사용자가 한 말은 하나도 빼지 말고 담습니다(아래 「고쳐 말한 경우」만 예외). 걱정·혼잣말·스스로에게 한 말·바바의 말에 보인 반응도
                   사용자의 하루입니다. 사용자가 한 말마다 그때의 상황과 생각, 마음을 한 문장 이상으로 풀어 씁니다.
                   서로 다른 행동·생각·감정을 한 문장에 몰아 넣지 마세요.
-                - 비중 있게 다룬 사건과 감정을 가장 길게 다루고, 가볍게 언급한 일은 짧게 녹입니다.
+                - 선정된 사건과 그 사건의 감정·생각만 다룹니다. 선정되지 않은 일은 짧게라도 끼워 넣지 않습니다.
                 - 문단은 사건(맥락) 단위입니다. 먼저 사용자가 이야기한 일이 몇 가지인지 구분하세요.
                   때·장소·함께한 사람이 다른 일은 서로 다른 일입니다(오전의 발표와 퇴근 후의 산책은 두 가지 일).
-                  paragraphs 에는 그 일마다 원소를 하나씩 두고, event 에 무슨 일인지 짧게 적은 뒤 그 일에 대한 문장을
+                  paragraphs 에는 그 일마다 원소를 하나씩 두고, eventId는 [주요 사건]의 번호, event는 그 사건 이름을 그대로 복사한 뒤 그 일에 대한 문장을
                   sentences 에 순서대로 한 원소에 한 문장씩 담습니다. 그 일에 대한 감정과 생각도 같은 문단에 둡니다.
                   한 가지 일만 이야기했다면 문단은 하나입니다. 같은 일의 문장을 여러 문단으로 나누지 마세요.
                   사건이 실제로 달라질 때만 새 문단을 만듭니다.
@@ -714,10 +718,32 @@ public class PromptFactory {
                   (before=고치기 전 표현, after=고친 표현). 없으면 빈 목록.
                 - paragraphs: 위 기준의 문단 목록. corrections 의 before 표현과 고쳤다는 사실은 어떤 문장에도 쓰지 않습니다.
 
+                [주요 사건]
+                %s
                 [대화]
                 %s
-                """.formatted(GeminiDiaryWriter.MIN_SENTENCES, GeminiDiaryWriter.MAX_SENTENCES,
-                        fullHistory(state));
+                """.formatted(RetrospectState.MAX_EVENTS, GeminiDiaryWriter.MIN_SENTENCES, GeminiDiaryWriter.MAX_SENTENCES,
+                        diaryEvents(state), diaryHistory(state));
+    }
+
+    private String diaryEvents(RetrospectState state) {
+        if (state.events().isEmpty()) return "확정된 사건이 없습니다. 아래 대화에서 선정 기준에 따라 최대 2개만 골라 쓰세요.";
+        return state.events().stream().limit(RetrospectState.MAX_EVENTS)
+                .map(event -> "- [사건 " + event.id() + "] " + event.topicLabel() + ": " + event.summary()).collect(Collectors.joining("\n"));
+    }
+
+    /** 고른 사건의 근거 발화만 G4에 준다. 제외된 사건으로 문단을 채우는 경로를 막는다. */
+    String diaryHistory(RetrospectState state) {
+        if (state.events().isEmpty()) return fullHistory(state);
+        Set<Integer> evidence = state.events().stream().limit(RetrospectState.MAX_EVENTS)
+                .flatMap(event -> event.evidence().stream()).collect(Collectors.toSet());
+        StringBuilder result = new StringBuilder();
+        int userSeq = 0;
+        for (Message message : state.messages()) {
+            if (!message.isUser() || message.content() == null || message.content().isBlank()) continue;
+            if (evidence.contains(++userSeq)) result.append("나: ").append(message.content().strip()).append('\n');
+        }
+        return result.toString().strip();
     }
 
     // ── 히스토리 ─────────────────────────────────────────────────────────

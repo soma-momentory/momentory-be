@@ -126,4 +126,21 @@ public class LetterController {
         return LetterResponse.from(letterService.chooseAction(principal.userId(), id, request.position(),
                 request.whenLabel(), request.scheduleId(), request.remindAt()));
     }
+
+    @Operation(summary = "그림일기", description = "편지에 실린 바바의 4컷 그림(3:4 JPEG)을 base64 로 준다. 편지 응답의 hasPicture 가 true 일 때만 있다. 편지와 같이 일기 다음 날 04:00 부터 받을 수 있다.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = LetterPictureResponse.class))),
+            @ApiResponse(responseCode = "400", description = "잘못된 경로 값", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(name = "INVALID_REQUEST", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"잘못된 요청입니다.\"}"))),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = @ExampleObject(name = "AUTHENTICATION_REQUIRED", value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}"))),
+            @ApiResponse(responseCode = "404", description = "편지 또는 그림 없음(아직 열리지 않은 날짜 · 남의 편지 · 기능이 꺼짐 · 그리지 않았거나 실패 · 그리는 중)", content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ApiErrorResponse.class), examples = {
+                    @ExampleObject(name = "LETTER_NOT_FOUND", value = "{\"code\":\"LETTER_NOT_FOUND\",\"message\":\"편지를 찾을 수 없습니다.\"}"),
+                    @ExampleObject(name = "LETTER_PICTURE_NOT_FOUND", value = "{\"code\":\"LETTER_PICTURE_NOT_FOUND\",\"message\":\"그림일기를 찾을 수 없습니다.\"}")
+            }))
+    })
+    @GetMapping(value = "/{id}/picture", produces = MediaType.APPLICATION_JSON_VALUE)
+    public LetterPictureResponse getPicture(@Login LoginPrincipal principal, @Parameter(example = "12") @PathVariable Long id) {
+        return LetterPictureResponse.from(letterService.picture(principal.userId(), id));
+    }
+
 }

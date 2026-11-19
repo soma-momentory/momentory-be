@@ -42,10 +42,13 @@ public class DiaryController {
 
     private final DiaryQueryService diaryQueryService;
     private final DiaryService diaryService;
+    private final com.momentory.diary.application.DiaryEmotionService emotions;
     private final com.momentory.diary.application.WrittenDiaryService writtenDiaries;
 
     public DiaryController(DiaryQueryService diaryQueryService, DiaryService diaryService,
-            com.momentory.diary.application.WrittenDiaryService writtenDiaries) {
+            com.momentory.diary.application.WrittenDiaryService writtenDiaries,
+            com.momentory.diary.application.DiaryEmotionService emotions) {
+        this.emotions = emotions;
         this.diaryQueryService = diaryQueryService;
         this.diaryService = diaryService;
         this.writtenDiaries = writtenDiaries;
@@ -114,6 +117,39 @@ public class DiaryController {
     public DiaryResponse updateOriginal(@Login LoginPrincipal principal, @PathVariable Long id,
             @Valid @RequestBody DiaryWriteRequest request) {
         return DiaryResponse.from(writtenDiaries.update(principal.userId(), id, request.original()));
+    }
+
+    @Operation(summary = "사건별 감정 수정 — 최초 분류는 보존")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "저장 성공",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = DiaryResponse.class))),
+            @ApiResponse(responseCode = "400", description = "잘못된 사건·감정",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "INVALID_REQUEST", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"잘못된 요청입니다.\"}"),
+                                    @ExampleObject(name = "invalidEmotions", value = "{\"code\":\"INVALID_REQUEST\",\"message\":\"감정과 사건을 확인해주세요.\"}") })),
+            @ApiResponse(responseCode = "401", description = "인증 필요",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "AUTHENTICATION_REQUIRED", value = "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"인증이 필요합니다.\"}") })),
+            @ApiResponse(responseCode = "404", description = "일기 없음",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApiErrorResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "DIARY_NOT_FOUND", value = "{\"code\":\"DIARY_NOT_FOUND\",\"message\":\"일기를 찾을 수 없습니다.\"}") }))
+    })
+    @PutMapping(value = "/{id}/emotions", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public DiaryResponse updateEmotions(@Login LoginPrincipal principal, @PathVariable Long id,
+            @Valid @RequestBody DiaryEmotionsRequest request) {
+        return DiaryResponse.from(emotions.update(principal.userId(), id,
+                request.events().stream().map(event -> new com.momentory.diary.application.DiaryEmotionService.EventSelection(
+                        event.eventId(), event.emotions().stream().map(key -> com.momentory.retrospect.domain.Emotion.fromKey(key).orElseThrow()).toList())).toList(),
+                request.unlinkedEmotions().stream().map(key -> com.momentory.retrospect.domain.Emotion.fromKey(key).orElseThrow()).toList()));
     }
 
     @Operation(summary = "월별 일기 목록 조회", description = "연·월(KST 기준)에 작성된 일기를 최신순으로 돌려준다.")

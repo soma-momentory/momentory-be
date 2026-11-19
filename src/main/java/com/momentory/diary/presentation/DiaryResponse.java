@@ -24,12 +24,21 @@ public record DiaryResponse(
         @Schema(description = "감정 태그 키 목록(일기에서 드러난 감정 전체)", example = "[\"angry\", \"disappointed\"]") List<String> emotions,
         @Schema(description = "일기 본문") String original,
         @Schema(description = "작성 시각(생성 시기)", example = "2026-08-14T02:23:47.850Z") Instant createdAt,
-        @Schema(description = "기록 당시 위치의 날씨 예보 · 기온. 없는 기록은 생략", example = "맑음 · 22℃") String weather) {
+        @Schema(description = "기록 당시 위치의 날씨 예보 · 기온. 없는 기록은 생략", example = "맑음 · 22℃") String weather,
+        @Schema(description = "사건별 현재 감정") List<EventResponse> events,
+        @Schema(description = "사건에 연결되지 않은 현재 감정 키") List<String> unlinkedEmotions,
+        @Schema(description = "현재 감정에서 최초 채팅 분류 감정이 하나라도 빠졌는지. 원래 감정을 모두 복원하면 false") boolean emotionClassificationChanged) {
+
+    public record EventResponse(int eventId, String label, String summary, List<String> emotions) {}
 
     static DiaryResponse from(DiaryView view) {
         return new DiaryResponse(view.id(), view.retrospectId(),
                 keyOf(view.primaryEmotion()), view.emotions(),
-                view.original(), view.createdAt(), view.weather());
+                view.original(), view.createdAt(), view.weather(),
+                view.emotionSelection().events().stream().map(event -> new EventResponse(event.eventId(),
+                        event.label(), event.summary(), event.emotions().stream().map(Emotion::key).toList())).toList(),
+                view.emotionSelection().unlinkedEmotions().stream().map(Emotion::key).toList(),
+                view.emotionClassificationChanged());
     }
 
     private static String keyOf(Emotion emotion) {

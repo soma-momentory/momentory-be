@@ -26,6 +26,12 @@ public class DiaryExceptionHandler {
                 .body(new ApiErrorResponse("DIARY_NOT_FOUND", "일기를 찾을 수 없습니다."));
     }
 
+    @ExceptionHandler(com.momentory.diary.application.InvalidDiaryEmotionsException.class)
+    ResponseEntity<ApiErrorResponse> handleInvalidEmotions() {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiErrorResponse("INVALID_REQUEST", "감정과 사건을 확인해주세요."));
+    }
+
     /** 월이 1~12 를 벗어나는 등 연·월 조합이 잘못됐을 때({@code YearMonth.of} 가 던진다). */
     @ExceptionHandler(DateTimeException.class)
     ResponseEntity<ApiErrorResponse> handleInvalidYearMonth() {

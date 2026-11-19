@@ -20,7 +20,8 @@ public record LetterResponse(
         @Schema(description = "오늘 해 볼 작은 일(최대 3개). 조용한 편지이거나 서버가 작은 일을 끈 동안(LETTER_ACTIONS_ENABLED=false)은 빈 목록") List<Action> actions,
         @Schema(description = "도움받을 곳. 조용한 편지에만 있고 나머지는 빈 목록") List<String> helplines,
         @Schema(description = "받은 날 · 그다음 날이면 true. 홈 아이콘 점은 isNew 이고 openedAt 이 없을 때 단다", example = "true") boolean isNew,
-        @Schema(description = "처음 연 시각. 아직 안 열었으면 null", nullable = true) Instant openedAt
+        @Schema(description = "처음 연 시각. 아직 안 열었으면 null", nullable = true) Instant openedAt,
+        @Schema(description = "바바의 그림일기가 있는가. 그림은 GET /api/v1/letters/{id}/picture 로 따로 받는다. 기능이 꺼졌거나 그리지 않은 편지(조용한 편지 · 기본 편지 · 실패 · 그리는 중)면 false", example = "true") boolean hasPicture
 ) {
 
     public record Action(
@@ -39,6 +40,6 @@ public record LetterResponse(
                 view.tonightQuestion(),
                 view.actions().stream().map(a -> new Action(a.position(), a.title(), a.source(), a.chosen(),
                         a.whenLabel(), a.scheduleId(), a.remindAt())).toList(),
-                view.helplines(), view.isNew(), view.openedAt());
+                view.helplines(), view.isNew(), view.openedAt(), view.hasPicture());
     }
 }

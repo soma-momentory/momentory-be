@@ -74,6 +74,9 @@ class DiaryApiIntegrationTest {
     @Autowired AccessTokenIssuer accessTokenIssuer;
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired com.momentory.diary.infrastructure.DiaryEventCodec diaryEventCodec;
+    @Autowired com.momentory.retrospect.infrastructure.persistence.RetrospectStateCodec stateCodec;
+    @Autowired com.momentory.diary.application.DiaryEmotionService diaryEmotions;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @org.springframework.test.context.bean.override.mockito.MockitoBean
     com.momentory.retrospect.domain.assistant.EmotionExtractor emotionExtractor;
@@ -607,6 +610,223 @@ class DiaryApiIntegrationTest {
                     second.get(15, java.util.concurrent.TimeUnit.SECONDS))).containsExactlyInAnyOrder(201, 409);
         }
         org.junit.jupiter.api.Assertions.assertEquals(1, diaryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).size());
+    }
+
+    @Test
+    void eventEmotionsPreserveOriginalAndCountOnlyOriginalRemoval() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long id = seedDiaryWithEvents(user);
+        long retrospectId = diaryRepository.findById(id).orElseThrow().getRetrospectId();
+        String source = retrospectRepository.findById(retrospectId).orElseThrow().getStateJson();
+        mockMvc.perform(get("/api/v1/diaries/" + id).header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.events[0].label").value("친구와 만남"))
+                .andExpect(jsonPath("$.events[0].emotions[0]").value("joy"))
+                .andExpect(jsonPath("$.events[1].emotions[0]").value("joy"))
+                .andExpect(jsonPath("$.unlinkedEmotions[0]").value("sad"))
+                .andExpect(jsonPath("$.emotionClassificationChanged").value(false));
+        String added = "{\"events\":[{\"eventId\":1,\"emotions\":[\"joy\",\"calm\"]},{\"eventId\":2,\"emotions\":[\"joy\"]}],\"unlinkedEmotions\":[\"sad\",\"ashamed\"]}";
+        putEmotions(user, id, added).andExpect(status().isOk())
+                .andExpect(jsonPath("$.emotionClassificationChanged").value(false));
+        String baseline = diaryRepository.findById(id).orElseThrow().getOriginalEmotionSelectionJson();
+        String restored = "{\"events\":[{\"eventId\":1,\"emotions\":[\"joy\"]},{\"eventId\":2,\"emotions\":[\"joy\"]}],\"unlinkedEmotions\":[\"sad\"]}";
+        putEmotions(user, id, restored).andExpect(status().isOk())
+                .andExpect(jsonPath("$.emotionClassificationChanged").value(false));
+        String corrected = "{\"events\":[{\"eventId\":1,\"emotions\":[\"calm\"]},{\"eventId\":2,\"emotions\":[\"joy\"]}],\"unlinkedEmotions\":[\"sad\"]}";
+        putEmotions(user, id, corrected).andExpect(status().isOk())
+                .andExpect(jsonPath("$.emotionClassificationChanged").value(false));
+        String removed = corrected.replace("\"joy\"", "\"calm\"");
+        putEmotions(user, id, removed).andExpect(status().isOk())
+                .andExpect(jsonPath("$.emotionClassificationChanged").value(true))
+                .andExpect(jsonPath("$.emotionClassificationChangedAt").doesNotExist());
+        org.assertj.core.api.Assertions.assertThat(diaryRepository.findById(id).orElseThrow().isEmotionClassificationChanged()).isTrue();
+        putEmotions(user, id, removed).andExpect(status().isOk());
+        putEmotions(user, id, restored).andExpect(status().isOk())
+                .andExpect(jsonPath("$.emotionClassificationChanged").value(false));
+        var saved = diaryRepository.findById(id).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(saved.isEmotionClassificationChanged()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(saved.getOriginalEmotionSelectionJson()).isEqualTo(baseline);
+        org.assertj.core.api.Assertions.assertThat(retrospectRepository.findById(retrospectId).orElseThrow().getStateJson()).isEqualTo(source);
+        org.assertj.core.api.Assertions.assertThat(saved.getOriginal()).isEqualTo("친구를 만나고 산책했다.");
+        org.assertj.core.api.Assertions.assertThat(saved.getEmotions()).isEqualTo("joy,sad");
+    }
+
+    @Test
+    void confirmedChatEmotionsStayLinkedToTheSelectedEvent() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long id = seedDiaryWithEvents(user);
+        long retrospectId = diaryRepository.findById(id).orElseThrow().getRetrospectId();
+        var state = stateCodec.deserialize(retrospectRepository.findById(retrospectId).orElseThrow().getStateJson());
+        state.selectEvent(2);
+        state.confirmEmotions(java.util.List.of(Emotion.AFFECTION));
+        jdbcTemplate.update("UPDATE retrospects SET state_json = ? WHERE id = ?", stateCodec.serialize(state), retrospectId);
+        jdbcTemplate.update("UPDATE diaries SET primary_emotion = 'AFFECTION', emotions = 'affection,joy,sad' WHERE id = ?", id);
+        mockMvc.perform(get("/api/v1/diaries/" + id).header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.events[0].emotions[0]").value("joy"))
+                .andExpect(jsonPath("$.events[1].emotions[0]").value("affection"))
+                .andExpect(jsonPath("$.events[1].emotions[1]").value("joy"))
+                .andExpect(jsonPath("$.unlinkedEmotions[0]").value("sad"));
+    }
+
+    @Test
+    void sameEmotionCanBeBothEventLinkedAndUnlinkedInOriginalExtraction() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long id = seedDiaryWithEvents(user);
+        long retrospectId = diaryRepository.findById(id).orElseThrow().getRetrospectId();
+        var state = stateCodec.deserialize(retrospectRepository.findById(retrospectId).orElseThrow().getStateJson());
+        var emotions = new java.util.ArrayList<>(state.emotions());
+        emotions.add(new com.momentory.retrospect.domain.ExtractedEmotion(null, "기뻤다", Emotion.JOY, null, null, "기뻤다", java.util.List.of(3)));
+        state.emotions(emotions);
+        jdbcTemplate.update("UPDATE retrospects SET state_json = ? WHERE id = ?", stateCodec.serialize(state), retrospectId);
+        mockMvc.perform(get("/api/v1/diaries/" + id).header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.events[0].emotions[0]").value("joy"))
+                .andExpect(jsonPath("$.unlinkedEmotions[0]").value("sad"))
+                .andExpect(jsonPath("$.unlinkedEmotions[1]").value("joy"));
+    }
+
+    @Test
+    void standaloneEmotionsAndClearingAllPersistWithoutInventingEvents() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long id = seedDiary(user, "짧은 기록", Emotion.SAD, Instant.now());
+        putEmotions(user, id, "{\"events\":[],\"unlinkedEmotions\":[\"sad\",\"joy\"]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.emotionClassificationChanged").value(false));
+        putEmotions(user, id, "{\"events\":[],\"unlinkedEmotions\":[]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.events").isEmpty())
+                .andExpect(jsonPath("$.emotions").isEmpty()).andExpect(jsonPath("$.emotionClassificationChanged").value(true));
+        var saved = diaryRepository.findById(id).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(saved.getPrimaryEmotion()).isNull();
+        org.assertj.core.api.Assertions.assertThat(saved.getEmotions()).isNull();
+        mockMvc.perform(get("/api/v1/diaries/" + id).header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.emotions").isEmpty())
+                .andExpect(jsonPath("$.unlinkedEmotions").isEmpty());
+    }
+
+    @Test
+    void writtenDiarySelectionIsEditableButNeverCountsAsChatClassificationCorrection() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        var diary = com.momentory.diary.domain.Diary.write(user.getId(), "혼자 쓴 일기", Emotion.JOY);
+        diary.replaceEvents(diaryEventCodec.serialize(java.util.List.of(
+                new com.momentory.diary.domain.DiaryEvent("산책", "공원을 걸었다", java.util.List.of(Emotion.JOY)))));
+        long id = diaryRepository.saveAndFlush(diary).getId();
+        putEmotions(user, id, "{\"events\":[{\"eventId\":1,\"emotions\":[\"sad\"]}],\"unlinkedEmotions\":[]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.emotions[0]").value("sad"))
+                .andExpect(jsonPath("$.emotionClassificationChanged").value(false));
+        org.assertj.core.api.Assertions.assertThat(diaryRepository.findById(id).orElseThrow().isEmotionClassificationChanged()).isFalse();
+    }
+
+    @Test
+    void writtenBodyReplacementRefreshesEventsAndKeepsSelectedEmotions() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        var diary = com.momentory.diary.domain.Diary.write(user.getId(), "산책했다", Emotion.JOY);
+        diary.replaceEvents(diaryEventCodec.serialize(java.util.List.of(
+                new com.momentory.diary.domain.DiaryEvent("산책", "공원을 걸었다", java.util.List.of(Emotion.JOY)))));
+        long id = diaryRepository.saveAndFlush(diary).getId();
+        putEmotions(user, id, "{\"events\":[{\"eventId\":1,\"emotions\":[\"sad\"]}],\"unlinkedEmotions\":[]}")
+                .andExpect(status().isOk());
+        org.mockito.Mockito.when(emotionExtractor.extract(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.momentory.retrospect.domain.assistant.EmotionExtraction(
+                        java.util.List.of(new com.momentory.retrospect.domain.ExtractedEvent(1, "직장 회의", "회의에 참석했다", java.util.List.of(1))),
+                        java.util.List.of(), null));
+        mockMvc.perform(put("/api/v1/diaries/" + id).header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"original\":\"회의에 참석했다\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.events[0].label").value("직장 회의"))
+                .andExpect(jsonPath("$.events[0].emotions").isEmpty())
+                .andExpect(jsonPath("$.unlinkedEmotions[0]").value("sad"));
+        mockMvc.perform(get("/api/v1/diaries/" + id).header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.events[0].label").value("직장 회의"));
+        putEmotions(user, id, "{\"events\":[{\"eventId\":1,\"emotions\":[\"sad\"]}],\"unlinkedEmotions\":[]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.events[0].label").value("직장 회의"))
+                .andExpect(jsonPath("$.events[0].emotions[0]").value("sad"));
+    }
+
+    @Test
+    void invalidEmotionEditsAndOtherUsersCannotMutateDiary() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        User other = userRepository.saveAndFlush(User.create());
+        long id = seedDiaryWithEvents(user);
+        String valid = "{\"events\":[{\"eventId\":1,\"emotions\":[]},{\"eventId\":2,\"emotions\":[]}],\"unlinkedEmotions\":[]}";
+        putEmotions(other, id, valid).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("DIARY_NOT_FOUND"));
+        mockMvc.perform(put("/api/v1/diaries/" + id + "/emotions").contentType(MediaType.APPLICATION_JSON).content(valid))
+                .andExpect(status().isUnauthorized());
+        for (String invalid : java.util.List.of(
+                "{\"events\":[],\"unlinkedEmotions\":[]}",
+                "{\"events\":[{\"eventId\":1,\"emotions\":[]},{\"eventId\":1,\"emotions\":[]}],\"unlinkedEmotions\":[]}",
+                valid.replace("eventId\":2", "eventId\":3"),
+                valid.replace("\"unlinkedEmotions\":[]", "\"unlinkedEmotions\":[\"unknown\"]"),
+                "{\"events\":null,\"unlinkedEmotions\":[]}",
+                "{\"events\":[null],\"unlinkedEmotions\":[]}",
+                "{\"events\":[],\"unlinkedEmotions\":[null]}",
+                "{}")) {
+            putEmotions(user, id, invalid).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+        var saved = diaryRepository.findById(id).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(saved.getEmotionSelectionJson()).isNull();
+        org.assertj.core.api.Assertions.assertThat(saved.getOriginalEmotionSelectionJson()).isNull();
+        org.assertj.core.api.Assertions.assertThat(saved.isEmotionClassificationChanged()).isFalse();
+    }
+
+    @Test
+    void emotionSnapshotTagsAndCorrectionFlagRollBackTogether() {
+        User user = userRepository.saveAndFlush(User.create());
+        long id = seedDiaryWithEvents(user);
+        var tx = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            diaryEmotions.update(user.getId(), id, java.util.List.of(
+                    new com.momentory.diary.application.DiaryEmotionService.EventSelection(1, java.util.List.of()),
+                    new com.momentory.diary.application.DiaryEmotionService.EventSelection(2, java.util.List.of())), java.util.List.of());
+            diaryRepository.flush();
+            throw new IllegalStateException("force rollback");
+        })).isInstanceOf(IllegalStateException.class);
+        var saved = diaryRepository.findById(id).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(saved.getPrimaryEmotion()).isEqualTo(Emotion.JOY);
+        org.assertj.core.api.Assertions.assertThat(saved.getEmotionSelectionJson()).isNull();
+        org.assertj.core.api.Assertions.assertThat(saved.getOriginalEmotionSelectionJson()).isNull();
+        org.assertj.core.api.Assertions.assertThat(saved.isEmotionClassificationChanged()).isFalse();
+    }
+
+    @Test
+    void concurrentCorrectionAndRestorationKeepOneOriginalAndFlagMatchesSavedSelection() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        long id = seedDiaryWithEvents(user);
+        String corrected = "{\"events\":[{\"eventId\":1,\"emotions\":[]},{\"eventId\":2,\"emotions\":[]}],\"unlinkedEmotions\":[\"sad\"]}";
+        String restored = "{\"events\":[{\"eventId\":1,\"emotions\":[\"joy\"]},{\"eventId\":2,\"emotions\":[\"joy\"]}],\"unlinkedEmotions\":[\"sad\"]}";
+        try (var workers = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var ready = new java.util.concurrent.CountDownLatch(2);
+            java.util.function.Function<String, java.util.concurrent.Callable<Integer>> request = json -> () -> {
+                ready.countDown();
+                if (!ready.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new AssertionError("not ready");
+                return putEmotions(user, id, json).andReturn().getResponse().getStatus();
+            };
+            var first = workers.submit(request.apply(corrected));
+            var second = workers.submit(request.apply(restored));
+            org.assertj.core.api.Assertions.assertThat(java.util.List.of(first.get(15, java.util.concurrent.TimeUnit.SECONDS),
+                    second.get(15, java.util.concurrent.TimeUnit.SECONDS))).containsOnly(200);
+        }
+        var saved = diaryRepository.findById(id).orElseThrow();
+        var baseline = diaryEventCodec.deserializeSelection(saved.getOriginalEmotionSelectionJson());
+        var selection = diaryEventCodec.deserializeSelection(saved.getEmotionSelectionJson());
+        org.assertj.core.api.Assertions.assertThat(saved.isEmotionClassificationChanged()).isEqualTo(selection.removesFrom(baseline));
+        org.assertj.core.api.Assertions.assertThat(baseline.events().getFirst().emotions()).containsExactly(Emotion.JOY);
+        org.assertj.core.api.Assertions.assertThat(baseline.unlinkedEmotions()).containsExactly(Emotion.SAD);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions putEmotions(User user, long id, String json) throws Exception {
+        return mockMvc.perform(put("/api/v1/diaries/" + id + "/emotions")
+                .header(HttpHeaders.AUTHORIZATION, bearer(user)).contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    private long seedDiaryWithEvents(User user) {
+        var state = new com.momentory.retrospect.domain.RetrospectState("emotion-test");
+        state.events(java.util.List.of(
+                new com.momentory.retrospect.domain.ExtractedEvent(1, "친구와 만남", "친구와 저녁을 먹었다", java.util.List.of(1)),
+                new com.momentory.retrospect.domain.ExtractedEvent(2, "산책", "공원을 걸었다", java.util.List.of(2))));
+        state.emotions(java.util.List.of(
+                new com.momentory.retrospect.domain.ExtractedEmotion(1, "좋았다", Emotion.JOY, null, null, "좋았다", java.util.List.of(1)),
+                new com.momentory.retrospect.domain.ExtractedEmotion(2, "즐거웠다", Emotion.JOY, null, null, "즐거웠다", java.util.List.of(2)),
+                new com.momentory.retrospect.domain.ExtractedEmotion(null, "슬펐다", Emotion.SAD, null, null, "슬펐다", java.util.List.of(3))));
+        var retro = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(), RetrospectStatus.COMPLETED, null, stateCodec.serialize(state)));
+        return diaryRepository.saveAndFlush(com.momentory.diary.domain.Diary.create(user.getId(), retro.getId(),
+                "친구를 만나고 산책했다.", Emotion.JOY, "joy,sad")).getId();
     }
 
     // ── 도우미 ───────────────────────────────────────────────────────────

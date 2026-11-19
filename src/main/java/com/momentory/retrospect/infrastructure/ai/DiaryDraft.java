@@ -1,6 +1,9 @@
 package com.momentory.retrospect.infrastructure.ai;
 
 import java.util.List;
+import java.util.ArrayList;
+import com.momentory.retrospect.domain.ExtractedEvent;
+import com.momentory.retrospect.domain.RetrospectState;
 import java.util.stream.Collectors;
 
 /**
@@ -38,10 +41,12 @@ record DiaryDraft(List<Correction> corrections, List<Paragraph> paragraphs) {
      * @param event     이 문단이 다루는 일 한 줄. 본문에는 쓰지 않는다 — 모델이 서로 다른 일을 먼저 구분하게 하려고 받는다.
      * @param sentences 그 일에 대한 문장들
      */
-    record Paragraph(String event, List<String> sentences) {
+    record Paragraph(Integer eventId, String event, List<String> sentences) {
+
+        Paragraph(String event, List<String> sentences) { this(null, event, sentences); }
 
         Paragraph(List<String> sentences) {
-            this(null, sentences);
+            this(null, null, sentences);
         }
 
         List<String> cleaned() {
@@ -55,6 +60,22 @@ record DiaryDraft(List<Correction> corrections, List<Paragraph> paragraphs) {
         }
     }
 
+    /** 원본 사건 ID로 문단을 검증하고 같은 사건의 문단은 합친다. 빠진 사건이 있으면 안전 대체를 사용한다. */
+    DiaryDraft forEvents(List<ExtractedEvent> events) {
+        if (events.isEmpty()) return this;
+        List<Paragraph> scoped = new ArrayList<>();
+        for (var event : events.stream().limit(RetrospectState.MAX_EVENTS).toList()) {
+            List<String> sentences = paragraphs == null ? List.of() : paragraphs.stream()
+                    .filter(paragraph -> paragraph != null)
+                    .filter(paragraph -> paragraph.eventId() != null && paragraph.eventId() == event.id())
+                    .flatMap(paragraph -> paragraph.cleaned().stream()).toList();
+            if (sentences.isEmpty()) return new DiaryDraft(corrections, List.of());
+            scoped.add(new Paragraph(event.id(), event.topicLabel(), sentences));
+        }
+        DiaryDraft result = new DiaryDraft(corrections, scoped);
+        return result.cleaned().size() == scoped.size() ? result : new DiaryDraft(corrections, List.of());
+    }
+
     private List<List<String>> cleaned() {
         if (paragraphs == null) {
             return List.of();
@@ -65,6 +86,7 @@ record DiaryDraft(List<Correction> corrections, List<Paragraph> paragraphs) {
                 // 고치기 전 표현이 그대로 남은 문장은 뺀다 — 지시를 어긴 문장이 일기에 남지 않게 하는 마지막 그물이다.
                 .map(sentences -> sentences.stream().filter(s -> !mentionsCorrectedWord(s)).toList())
                 .filter(sentences -> !sentences.isEmpty())
+                .limit(RetrospectState.MAX_EVENTS)
                 .toList();
     }
 

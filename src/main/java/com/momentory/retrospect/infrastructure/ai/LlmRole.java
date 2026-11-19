@@ -28,6 +28,10 @@ public enum LlmRole {
     LETTER_VERIFY("AI-LETTER-VERIFY"),
     /** 소원 심사 — 띄우기 전 판별과 이름 · 연락처 고치기. 소원 1건당 1회. */
     WISH_REVIEW("AI-WISH-REVIEW"),
+    /** 그림일기 1단계 — 일기를 4컷 장면으로 나눈다. 그림을 만드는 편지 1통당 1회. */
+    LETTER_PICTURE_PLAN("AI-LETTER-PICTURE-PLAN"),
+    /** 그림일기 2단계 — 장면 설명과 기준 그림으로 4컷을 그린다. 그림을 만드는 편지 1통당 1회. */
+    LETTER_PICTURE_DRAW("AI-LETTER-PICTURE-DRAW"),
     /** 주간 리포트의 글(표지 문장 · 바바가 본 한 주 · 좋은 말 · 공통점 문장). 그 주를 처음 열 때 1회. */
     WEEKLY_REPORT("AI-WEEKLY-REPORT");
 

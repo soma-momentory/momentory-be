@@ -26,7 +26,7 @@ import com.momentory.retrospect.infrastructure.ai.GeminiStructuredOutputs.Gemini
  *
  * <p>모델 출력을 그대로 믿지 않고 어댑터에서 정리한다:
  * <ul>
- *   <li>사건은 요약이 있는 것만 남기고, 그중 감정이 붙은 사건을 먼저 최대 {@link RetrospectState#MAX_EVENTS}개
+ *   <li>사건은 요약이 있는 것만 남기고, 그중 감정이 붙은 사건·사용자 턴 수·첫 언급 순으로 최대 {@link RetrospectState#MAX_EVENTS}개
  *       고른다 — 모델에는 대화에 나온 사건을 모두 뽑게 하고 서버가 고른다. 고른 사건은 대화에 나온 순서를 지킨다.</li>
  *   <li>고르지 않은 사건에 붙은 감정은 버리지 않고 {@code eventId} 만 비운다 — 그날 느낀 감정이기 때문이다.</li>
  *   <li>감정의 {@code normalized}·{@code phase} 는 모르는 값이면 null(도메인 타입으로만 매핑).</li>
@@ -63,7 +63,7 @@ public class GeminiEmotionExtractor implements EmotionExtractor {
                 Emotion.fromKey(raw.inferredEmotion()).orElse(null));
     }
 
-    /** 일기에 담을 사건 — 감정이 붙은 사건을 먼저, 그다음 나머지를 대화 순서대로 채워 상한만큼. 순서는 대화 순서. */
+    /** 일기에 담을 사건 — 감정 여부 → 사용자 턴 수(중복 없는 근거 발화 수) → 첫 언급 순으로 고른다. 본문은 대화 순서를 유지한다. */
     static List<ExtractedEvent> pickForDiary(List<ExtractedEvent> events, List<ExtractedEmotion> emotions) {
         if (events.size() <= RetrospectState.MAX_EVENTS) {
             return events;
@@ -71,7 +71,9 @@ public class GeminiEmotionExtractor implements EmotionExtractor {
         Set<Integer> felt = emotions.stream().map(ExtractedEmotion::eventId).filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         List<ExtractedEvent> ranked = new ArrayList<>(events);
-        ranked.sort(Comparator.comparing(e -> !felt.contains(e.id())));
+        ranked.sort(Comparator.comparing((ExtractedEvent e) -> !felt.contains(e.id()))
+                .thenComparing(Comparator.comparingInt((ExtractedEvent e) -> e.evidence().size()).reversed())
+                .thenComparingInt(e -> e.evidence().isEmpty() ? Integer.MAX_VALUE : e.evidence().getFirst()));
         Set<ExtractedEvent> picked = Set.copyOf(ranked.subList(0, RetrospectState.MAX_EVENTS));
         return events.stream().filter(picked::contains).toList();
     }
