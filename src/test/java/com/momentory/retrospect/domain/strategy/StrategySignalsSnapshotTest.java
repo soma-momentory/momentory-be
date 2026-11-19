@@ -51,4 +51,15 @@ class StrategySignalsSnapshotTest {
 
         assertThat(mapper.readValue(mapper.writeValueAsString(signals), StrategySignals.class)).isEqualTo(signals);
     }
+
+    @Test
+    void roundTripsTheDetailQuestionCountAndReadsItAsZeroWhenMissing() {
+        StrategySignals signals = new StrategySignals(0, 0, null, 1, false, StrategyType.EXPLORE, 0, 1, null, null, 1);
+        JsonMapper mapper = JsonMapper.builder().build();
+
+        assertThat(mapper.readValue(mapper.writeValueAsString(signals), StrategySignals.class).detailQuestions())
+                .isEqualTo(1);
+        assertThat(mapper.readValue("{\"resistanceCount\":0,\"turnsSinceQuestion\":0}", StrategySignals.class)
+                .detailQuestions()).isZero();
+    }
 }

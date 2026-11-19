@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
  *
  * <p><b>주의</b>: 아래 키워드 목록은 원본 docstring 이 밝힌 대로 임상 검수 전 시드다.
  * 부분일치라 오탐이 있다. 「손목이 아파요」 같은 관용 표현 몇 가지만 {@link #IDIOMS} 로 좁게 뺐고,
- * 목록 자체의 교체는 임상 검수 후에 한다.
+ * 남의 자살을 전한 말은 {@link #OTHERS_SUICIDE} 로 주의만 남긴다. 목록 자체의 교체는 임상 검수 후에 한다.
  */
 public class SafetyPolicy {
 
@@ -39,7 +39,26 @@ public class SafetyPolicy {
     /** 자해 · 죽음과 이어지는 말이 같은 글에 하나라도 있으면 관용 표현을 지우지 않는다(「손목이 아파도 긋고 싶다」). */
     private static final Pattern HARM = Pattern.compile("긋|그었|그어|칼|커터|면도|상처|피가|피를|자해|끊|죽|버리고싶|끝내");
 
+    /**
+     * 남의 자살을 전하거나 평한 꼴 — 「자살」 낱말 하나로 가장 높은 등급이 나가, 뉴스 · 지인의 죽음을 두고 한 말에도
+     * 「지금 느끼는 고통이…」 안내가 떴다. 이 꼴의 「자살」은 위기 키워드에서 빼고 {@link SafetyLevel#CAUTION} 으로만 남긴다.
+     * 대화를 멈출지는 AI 판정(사용자 본인의 위험만 risk 이상)이 정한다. 남의 자살을 겪은 사람은 위험이 높아질 수
+     * 있어 아예 지우지는 않는다.
+     */
+    private static final Pattern OTHERS_SUICIDE = Pattern.compile(
+            "자살(했|한(거|게|것|걸|건|사람|분|친구|뒤|후|이유|소식|사건|일)|을?(선택|택)|로(생을|세상|숨|사망|추정|판명)"
+                    + "|소식|사건|기사|뉴스|보도|추정|유족|사망)");
+    /**
+     * 본인 위험의 단서 — 하나라도 있으면 남의 자살 이야기여도 빼지 않는다(「나도 따라가고 싶다」, 「자살 시도」).
+     * 넓게 잡는다: 여기 걸려 오탐이 남는 쪽이 놓치는 쪽보다 낫다.
+     */
+    private static final Pattern SELF_RISK_HINT = Pattern.compile(
+            "나도|저도|나역시|나또한|따라(가|갈|죽)|같이(죽|가)|싶|자살할|자살하려|자살하면|자살하고|자살해|자살시도|자살충동"
+                    + "|자살생각|자살했으면|자해|죽을래|죽을까|죽어야|죽으면|끝내|충동");
+
     public static final String FLAG_CRISIS = "crisis_expression";
+    /** 남의 자살을 전하거나 평했다 — 멈추지 않고 주의만 남긴다. */
+    public static final String FLAG_OTHERS_SUICIDE = "others_suicide_mention";
     public static final String FLAG_PROFANITY = "profanity";
 
     private static final List<String> RESOURCES = List.of(
@@ -81,6 +100,12 @@ public class SafetyPolicy {
     public ScanResult scan(String text) {
         String raw = withoutWhitespace(text == null ? "" : text);
         String t = withoutIdioms(raw);
+        boolean othersSuicide = false;
+        if (!SELF_RISK_HINT.matcher(t).find()) {
+            String withoutOthers = OTHERS_SUICIDE.matcher(t).replaceAll("·");
+            othersSuicide = !withoutOthers.equals(t);
+            t = withoutOthers;
+        }
         List<String> flags = new ArrayList<>();
         SafetyLevel level = SafetyLevel.NONE;
 
@@ -90,6 +115,10 @@ public class SafetyPolicy {
         } else if (containsAny(t, RISK)) {
             level = SafetyLevel.RISK;
             flags.add(FLAG_CRISIS);
+        }
+        if (othersSuicide) {
+            flags.add(FLAG_OTHERS_SUICIDE);
+            level = SafetyLevel.max(level, SafetyLevel.CAUTION);
         }
         if (containsAny(raw, PROFANITY)) {
             flags.add(FLAG_PROFANITY);
