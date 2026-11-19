@@ -7,6 +7,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import com.momentory.retrospect.domain.RetrospectState;
+import com.momentory.retrospect.domain.safety.SafetyLevel;
+import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.domain.strategy.QuestionFocus;
 import com.momentory.retrospect.domain.strategy.StrategyType;
 import com.momentory.retrospect.domain.strategy.TurnStrategy;
@@ -201,6 +203,38 @@ class StrategyTurnPromptTest {
         assertThat(prompts.strategySystem())
                 .doesNotContain("감정만 있으면 계기를", "그 감정이 맞는지 한 번 확인", "\"OO님\"으로 부릅니다")
                 .contains("[이번 턴에 할 일]을 따릅니다", "항상 존댓말", "지어내지 않습니다", "안전 신호");
+    }
+
+    @Test
+    void judgesCrisisOnlyFromTheLatestAnswerAndTheUsersOwnRisk() {
+        String prompt = prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
+
+        assertThat(prompt).contains("- safetyLevel: none|caution|risk|imminent. [방금 사용자 답변]만 보고 매깁니다.",
+                "방금 답변에 새 위험 신호가 없으면 none", "사용자 본인이 스스로를 해치거나",
+                "다른 사람의 죽음·자살 소식을 전하거나 그 사람에 대한 생각·평가를 말한 것", "자기는 괜찮다는 해명은 위기가");
+        // 기준이 목록의 다른 항목처럼 줄 머리에서 시작한다(텍스트 블록 들여쓰기가 섞이지 않는다).
+        assertThat(prompt).containsPattern("(?m)^- safetyLevel: ").doesNotContain("%s");
+    }
+
+    @Test
+    void replacesTheCrisisGuidanceInTheHistoryWithAShortMark() {
+        SafetyPolicy safety = new SafetyPolicy();
+        RetrospectState state = new RetrospectState("s1");
+        state.addAssistantMessage("그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        state.addUserMessage("아는 사람이 자살했다는데 이해가 안 돼.");
+        state.addAssistantMessage(safety.guidanceFor(SafetyLevel.IMMINENT).render());
+        state.addAssistantMessage("그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        state.addUserMessage("아니 난 괜찮았다니까");
+
+        String prompt = prompts.strategyTurnPrompt(state, "아니 난 괜찮았다니까",
+                new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
+
+        // 사용자의 말은 그대로 두고, 바바의 안내 전문만 짧은 표시로 바꾼다.
+        assertThat(prompt).contains("나: 아는 사람이 자살했다는데 이해가 안 돼.", "바바: " + PromptFactory.GUIDANCE_MARK)
+                .doesNotContain("지금 느끼는 고통이", "자살예방 상담전화 109");
+        assertThat(prompts.diaryTurnPrompt(state, "아니 난 괜찮았다니까"))
+                .contains("[방금 사용자 답변]만 보고 매깁니다", PromptFactory.GUIDANCE_MARK)
+                .doesNotContain("지금 느끼는 고통이");
     }
 
     @ParameterizedTest
