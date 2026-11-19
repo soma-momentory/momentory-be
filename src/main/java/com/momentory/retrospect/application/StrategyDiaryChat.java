@@ -59,7 +59,7 @@ public class StrategyDiaryChat {
     static final String GO_ON = "편하게 이야기해 주세요.";
     /**
      * 기분 다음에 생각을 여는 질문 — 겪은 일이면 자기 자신에 대한 생각(「스스로에 대해서는 어떤 생각」), 지켜본 일이면 그 일이나
-     * 그 사람에 대한 생각(「그분에 대해서는 어떤 생각」)이다. 「어떤 점에서 부족하다는 생각이 들었어요?」처럼 그 생각을 이어 묻는
+     * 그 사람에 대한 생각(「그 일에 대해서는 어떤 생각」)이다. 「어떤 점에서 부족하다는 생각이 들었어요?」처럼 그 생각을 이어 묻는
      * 질문은 아니다.
      */
     private static final Pattern THOUGHT_STEP_QUESTION = Pattern.compile(

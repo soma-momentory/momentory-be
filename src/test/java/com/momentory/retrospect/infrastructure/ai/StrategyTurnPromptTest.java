@@ -210,12 +210,13 @@ class StrategyTurnPromptTest {
         TurnStrategy explore = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
 
         assertThat(prompt(explore)).contains("생각을 물을 때는 그 일이 누구의 일인지 먼저 봅니다",
-                "사용자가 지켜보거나 전해 들은 일이면 자기 자신을 묻지 않고", "'그 소식을 듣고 그분에 대해서는 어떤 생각이",
+                "사용자가 지켜보거나 전해 들은 일이면 자기 자신을 묻지 않고", "'그 소식을 듣고 그 일에 대해서는 어떤 생각이",
+                "사용자가 그 사람을 부른 말을 그대로 씁니다('이진우씨에 대해서는', '다친", "한 사람이 아닌데 '그분'이라고 하거나",
                 "지켜본 일에 '스스로에 대해서는 어떤 생각이 들었어요?'라고 묻지 않습니다");
         // 서버가 기분 다음 질문 차례를 알릴 때도 지켜본 일의 갈래를 함께 알린다.
         assertThat(prompt(explore.withFeelingKnown(true).withAskedAfterFeeling(0)))
                 .contains("지켜보거나 전해 들은 일이면 그 일이나 그 사람에 대한 생각을 묻습니다",
-                        "'그분에 대해서는 어떤 생각이 들었어요?'");
+                        "'그 일에 대해서는 어떤 생각이 들었어요?'", "사람을 물을 때는 사용자가 그 사람을 부른 말을 그대로 씁니다");
         assertThat(prompt(explore.withFeelingKnown(true).withAskedAfterFeeling(1)))
                 .contains("사용자가 방금 말한 그 생각을 그 말로 받아 한 번 더 묻습니다");
     }
@@ -237,6 +238,16 @@ class StrategyTurnPromptTest {
         assertThat(prompt(heard)).contains("생각보다 먼저 그 일을 구체적으로 한 번 묻습니다");
         assertThat(prompt(heard.withDetailAsked(true))).doesNotContain("생각보다 먼저 그 일을 구체적으로",
                 "이미 한 번 구체적으로 물었습니다");
+    }
+
+    @Test
+    void asksAboutTheUsersOwnSituationWhenTheyOverlapItWithSomeoneElsesStory() {
+        TurnStrategy explore = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+
+        assertThat(prompt(explore)).contains("남의 일을 말하면서 자기 처지나 마음을 겹쳐 말했으면",
+                "'남 일 같지 않아'", "사용자가 겹쳐 본 자기 처지를 받아", "화제를 다시 남에게로 돌리지 않습니다");
+        assertThat(prompt(explore.withFeelingKnown(true).withAskedAfterFeeling(0)))
+                .contains("남의 일에 자기 처지를 겹쳐 말했으면 그 사람이 아니라 사용자 자신의 처지를 묻습니다");
     }
 
     @Test
