@@ -534,4 +534,24 @@ class StrategyPolicyTest {
         assertStrategy(policy.decideWithoutJudgment(StrategySignals.initial(), true), StrategyType.CLOSE,
                 QuestionFocus.NONE);
     }
+
+    @Test
+    void countsTheDetailQuestionPerStoryWithoutUsingUpTheQuestionsAfterTheFeeling() {
+        TurnStrategy open = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+        StrategySignals start = StrategySignals.initial();
+        assertThat(policy.askedEnoughDetail(start)).isFalse();
+
+        StrategySignals asked = policy.settle(start, open, true);
+        assertThat(asked.detailQuestions()).isEqualTo(1);
+        assertThat(policy.askedEnoughDetail(asked)).isTrue();
+
+        // 기분을 들은 뒤에 나간 구체화 질문은 「자기 자신에 대한 생각 → 그 생각」 두 질문으로 세지 않는다.
+        StrategySignals heard = start.withQuestionsAfterFeeling(0);
+        assertThat(policy.settle(heard, open, true).questionsAfterFeeling()).isZero();
+        assertThat(policy.settle(heard, open, false).questionsAfterFeeling()).isEqualTo(1);
+
+        // 질문이 나가지 않은 턴은 세지 않고, 새 이야기에서는 다시 센다.
+        assertThat(policy.settle(start, open.withFocus(QuestionFocus.NONE), true).detailQuestions()).isZero();
+        assertThat(policy.movedToNewTopic(asked).detailQuestions()).isZero();
+    }
 }

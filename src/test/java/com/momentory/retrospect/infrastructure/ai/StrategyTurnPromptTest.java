@@ -221,6 +221,25 @@ class StrategyTurnPromptTest {
     }
 
     @Test
+    void asksForDetailOnceWhenTheStoryIsVagueAndGoesToTheFeelingWhenItIsConcrete() {
+        TurnStrategy explore = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+
+        assertThat(prompt(explore)).contains("먼저 무슨 일이었는지가 구체적인지 봅니다",
+                "구체적이면 사실을 더 캐묻지 않고 그때의 기분을 묻습니다", "'회사에서 일이 좀 있었어'",
+                "기분보다 먼저, 사용자가 쓴 말을 받아 그 일을 구체적으로 묻습니다", "'친구랑 뭐 하면서 놀았어요?'",
+                "구체적으로 묻는 것은 한 이야기에 한 번뿐입니다", "asksForDetail: question 이 무슨 일이 있었는지")
+                .doesNotContain("이미 한 번 구체적으로 물었습니다");
+        // 서버가 센 대로 — 이미 물었으면 기분으로 넘어가라고 알린다.
+        assertThat(prompt(explore.withDetailAsked(true))).contains("이미 한 번 구체적으로 물었습니다",
+                "사실을 더 묻지 않고 그때의 기분을 묻습니다(asksForDetail false)");
+        // 기분부터 말했으면, 아직 묻지 않았을 때만 생각보다 먼저 구체적으로 묻는다.
+        TurnStrategy heard = explore.withFeelingKnown(true).withAskedAfterFeeling(0);
+        assertThat(prompt(heard)).contains("생각보다 먼저 그 일을 구체적으로 한 번 묻습니다");
+        assertThat(prompt(heard.withDetailAsked(true))).doesNotContain("생각보다 먼저 그 일을 구체적으로",
+                "이미 한 번 구체적으로 물었습니다");
+    }
+
+    @Test
     void judgesCrisisOnlyFromTheLatestAnswerAndTheUsersOwnRisk() {
         String prompt = prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
 

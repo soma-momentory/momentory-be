@@ -802,6 +802,33 @@ class RetrospectEngineStrategyTest {
                 .endsWith("어떤 점에서 비겁하다는 생각이 들었어요?");
     }
 
+    private static StrategyReply askedDetail(String ack, String question) {
+        return new StrategyReply(ack, question, false, false, "오늘의 일", "none", List.of(), false, false, false,
+                false, false, true);
+    }
+
+    @Test
+    void tellsTheWriterTheDetailWasAlreadyAskedAfterOneDetailQuestion() {
+        reply = askedDetail("일이 있으셨군요.", "회사에서 어떤 일이 있었어요?");
+        assertThat(say("회사에서 일이 좀 있었어", plain()).text()).endsWith("회사에서 어떤 일이 있었어요?");
+        assertThat(courses.getLast().detailAsked()).isFalse();
+        assertThat(state.strategySignals().detailQuestions()).isEqualTo(1);
+
+        reply = wrote("다시 하라고 하셨군요.", "그 말을 들었을 때 기분이 어땠어요?");
+        say("팀장님이 보고서를 다시 쓰라고 했어", plain());
+
+        assertThat(courses.getLast().detailAsked()).isTrue();
+    }
+
+    @Test
+    void aDetailQuestionAfterTheFeelingDoesNotUseUpTheThoughtQuestions() {
+        reply = askedDetail("짜증나셨군요.", "무슨 일이 있었어요?");
+        say("오늘 너무 짜증났어", heard());
+
+        assertThat(state.strategySignals().questionsAfterFeeling()).isZero();
+        assertThat(state.strategySignals().detailQuestions()).isEqualTo(1);
+    }
+
     @Test
     void stillAsksTheFirstOpenThoughtQuestionOfAStory() {
         reply = wrote("속상하셨군요.", "그때 어떤 생각이 들었어요?");

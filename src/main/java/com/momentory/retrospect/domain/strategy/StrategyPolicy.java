@@ -69,6 +69,7 @@ import com.momentory.retrospect.domain.judgment.TurnJudgment;
  *     뒤의 질문을 서버가 세어 이번에 물을 것을 알리고 두 번(자기 자신에 대한 생각 → 그 생각)을 물으면 그 이야기의 질문을 마친다.
  *     위기 등급은 방금 답변 하나와 사용자 본인의 위험만 보고 매기게 했다(남의 죽음 이야기 · 괜찮다는 해명에 안내가 거듭 나갔다).
  *     뉴스 · 남의 일처럼 지켜본 일이면 기분 다음에 자기 자신이 아니라 그 일이나 그 사람에 대한 생각을 묻는다.
+ *     이야기를 시작할 때 무슨 일인지 막연하면 기분보다 먼저 그 일을 구체적으로 한 번 묻는다(이야기마다 서버가 센다).
  * </ul>
  */
 public class StrategyPolicy {
@@ -83,6 +84,8 @@ public class StrategyPolicy {
     static final int REPROPOSE_AFTER_QUIET_TURNS = 2;
     /** 한 이야기에서 기분을 들은 뒤에 묻는 질문 수 — 자기 자신에 대한 생각, 그리고 그 생각을 한 번 더. */
     static final int QUESTIONS_AFTER_FEELING = 2;
+    /** 한 이야기에서 무슨 일이었는지 구체적으로 묻는 질문 수 — 막연하게 말했을 때 한 번만 묻고 기분으로 넘어간다. */
+    static final int DETAIL_QUESTIONS = 1;
 
     /** 바바의 직전 말을 받아들이지 않은 반응 — 종류는 달라도 대처는 같다: 물러선다. */
     private static final Set<String> NOT_ACCEPTED = Set.of("correct_interpretation", "argue", "struggle_to_answer",
@@ -158,7 +161,7 @@ public class StrategyPolicy {
                 notAccepted ? before.yieldStreak() + 1 : 0,
                 explicitMode, before.topicNumber(), before.wrapUpProposed(), before.lastType(),
                 before.turnsSinceQuestion(), before.questionsAsked(), afterFeeling,
-                before.deepestStage());
+                before.deepestStage(), before.detailQuestions());
         boolean askedToBeHeard = "listen".equals(requested) || "refuse_question".equals(reaction);
         return new Decision(choose(endRequested, notAccepted, reaction, askedToBeHeard, now), now);
     }
@@ -250,20 +253,34 @@ public class StrategyPolicy {
         return s.questionsAfterFeeling() != null && s.questionsAfterFeeling() >= QUESTIONS_AFTER_FEELING;
     }
 
+    /** 이 이야기에서 무슨 일이었는지 구체적으로 묻는 질문을 다 물었는가 — 그 뒤로는 사실을 더 캐묻지 않는다. */
+    public boolean askedEnoughDetail(StrategySignals s) {
+        return s.detailQuestions() >= DETAIL_QUESTIONS;
+    }
+
     /** 턴을 마친 뒤의 신호 — 실제로 나간 방침을 반영한다. */
     public StrategySignals settle(StrategySignals now, TurnStrategy done) {
+        return settle(now, done, false);
+    }
+
+    /**
+     * @param detailQuestion 이번 턴에 나간 질문이 무슨 일이었는지 구체적으로 묻는 질문인가 — 이야기마다 세고, 기분을 들은 뒤의
+     *                       질문(자기 자신에 대한 생각 → 그 생각)으로는 세지 않는다
+     */
+    public StrategySignals settle(StrategySignals now, TurnStrategy done, boolean detailQuestion) {
         boolean asked = done.focus() == QuestionFocus.OPEN || done.focus() == QuestionFocus.OTHER_TOPIC;
         // 마무리 제안도 사용자에게 답을 구한 턴이다 — 「질문 없는 턴」은 그 뒤부터 다시 센다.
         boolean sought = asked || done.focus() == QuestionFocus.WRAP_UP;
         // 마음을 들은 뒤에 한 질문을 센다 — 다른 기억을 묻는 질문은 이 이야기의 질문이 아니다.
         Integer afterFeeling = now.questionsAfterFeeling();
-        if (afterFeeling != null && done.focus() == QuestionFocus.OPEN) {
+        boolean detailAsked = detailQuestion && done.focus() == QuestionFocus.OPEN;
+        if (afterFeeling != null && done.focus() == QuestionFocus.OPEN && !detailAsked) {
             afterFeeling++;
         }
         return new StrategySignals(now.resistanceCount(), now.yieldStreak(), now.explicitMode(), now.topicNumber(),
                 now.wrapUpProposed() || done.focus() == QuestionFocus.WRAP_UP, done.type(),
                 sought ? 0 : now.turnsSinceQuestion() + 1, now.questionsAsked() + (asked ? 1 : 0), afterFeeling,
-                now.deepestStage());
+                now.deepestStage(), now.detailQuestions() + (detailAsked ? 1 : 0));
     }
 
     /** 한 대화 안에서 저항이 이 횟수부터 질문을 줄인다. */

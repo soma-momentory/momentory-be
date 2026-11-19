@@ -121,6 +121,9 @@ final class GeminiResponseSchemas {
                 "이어서 물을 질문 한 문장. 묻지 않는 턴이거나 nothingMoreToAsk 가 true 면 빈 문자열."));
         props.put("asksFeeling", Map.of("type", "BOOLEAN", "description",
                 "question 이 그때의 기분을 물으면 true. 사실·이유·자기 자신에 대한 생각을 묻거나 질문이 없으면 false."));
+        props.put("asksForDetail", Map.of("type", "BOOLEAN", "description",
+                "question 이 무슨 일이 있었는지 구체적인 내용(어떤 장면, 무엇을 했는지, 무슨 말을 들었는지)을 물으면 true. "
+                        + "기분·생각을 묻거나 질문이 없으면 false."));
         props.put("repeatsEarlier", Map.of("type", "BOOLEAN", "description",
                 "question 이 [대화]에서 바바가 이미 한 질문과 같은 것을 물으면 true. 말이 달라도 묻는 내용이 같으면 true. "
                         + "앞의 질문에 상황만 덧붙여 다시 물은 것도 true. 사용자가 답한 생각을 이어 더 묻는 질문은 false."));
@@ -134,7 +137,7 @@ final class GeminiResponseSchemas {
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
         return object(props,
-                List.of("newTopic", "nothingMoreToAsk", "ack", "question", "asksFeeling", "repeatsEarlier",
+                List.of("newTopic", "nothingMoreToAsk", "ack", "question", "asksFeeling", "asksForDetail", "repeatsEarlier",
                         "askedForSide", "wantsToTalkMore", "ackRepeatsEarlier", "safetyLevel"));
     }
 

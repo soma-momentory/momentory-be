@@ -24,13 +24,22 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * @param wantsToTalkMore  방금 답변이 어떤 일을 더 얘기하고 싶다는 말인가 — 그렇다면 서버는 그 이야기가 이어지는 동안 묻지 않는다.
  *                         모르면 null
  * @param ackRepeatsEarlier 이번 받아주는 말이 바바가 앞에서 한 말과 뜻이 같거나, 방금 답변에 새로 받을 내용이 없는가. 모르면 null
+ * @param asksForDetail    이번 질문이 무슨 일이 있었는지 구체적인 내용을 묻는가 — 서버가 이야기마다 세어 한 번만 묻게 한다.
+ *                         모르면 null
  */
 public record StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
         String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier,
-        Boolean askedForSide, Boolean wantsToTalkMore, Boolean ackRepeatsEarlier) {
+        Boolean askedForSide, Boolean wantsToTalkMore, Boolean ackRepeatsEarlier, Boolean asksForDetail) {
 
     public StrategyReply {
         safetyFlags = safetyFlags == null ? List.of() : List.copyOf(safetyFlags);
+    }
+
+    public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
+            String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier,
+            Boolean askedForSide, Boolean wantsToTalkMore, Boolean ackRepeatsEarlier) {
+        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, asksFeeling, repeatsEarlier,
+                askedForSide, wantsToTalkMore, ackRepeatsEarlier, null);
     }
 
     public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
@@ -71,6 +80,10 @@ public record StrategyReply(String ack, String question, boolean newTopic, boole
 
     public boolean questionRepeatsEarlier() {
         return Boolean.TRUE.equals(repeatsEarlier);
+    }
+
+    public boolean questionAsksForDetail() {
+        return Boolean.TRUE.equals(asksForDetail);
     }
 
     public boolean questionAsksFeeling() {
