@@ -28,6 +28,7 @@ import com.momentory.retrospect.domain.judgment.TurnJudgmentLog;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.domain.strategy.QuestionFocus;
 import com.momentory.retrospect.domain.strategy.StrategyPolicy;
+import com.momentory.retrospect.domain.strategy.StrategySignals;
 import com.momentory.retrospect.domain.strategy.StrategyType;
 import com.momentory.retrospect.domain.strategy.TurnStrategy;
 
@@ -569,6 +570,31 @@ class RetrospectEngineStrategyTest {
     }
 
     @Test
+    void keepsTalkingWhenTheUserJudgesSomeoneElsesSuicide() {
+        reply = new StrategyReply("그 선택이 이해가 안 되셨군요.", "", false, false, "지인의 죽음", "none", List.of());
+
+        ReplyDto said = say("그렇게 자살을 선택한 거에 대해 참 비겁하고 이해가 안돼.", plain());
+
+        assertThat(state.phase()).isEqualTo(Phase.DIARY_CHAT);
+        assertThat(said.text()).contains("그 선택이 이해가 안 되셨군요.");
+        assertThat(state.safety().level()).isEqualTo(com.momentory.retrospect.domain.safety.SafetyLevel.CAUTION);
+    }
+
+    @Test
+    void takesTheFirstTextAfterTheGuidanceAsAnAnswerInsteadOfRepeatingTheQuestion() {
+        reply = new StrategyReply("많이 지치셨군요.", "", false, false, "요즘", "risk", List.of("hopeless"));
+        say("요즘 다 내려놓고 싶다는 생각이 들어", plain());
+        assertThat(state.phase()).isEqualTo(Phase.SAFETY_HOLD);
+
+        reply = new StrategyReply("괜찮으셨군요.", "", false, false, "요즘", "none", List.of());
+        ReplyDto resumed = say("아니 그런 뜻 아니었어, 난 괜찮아", plain());
+
+        assertThat(state.phase()).isEqualTo(Phase.DIARY_CHAT);
+        assertThat(resumed.text()).contains("괜찮으셨군요.");
+        assertThat(state.messages()).anyMatch(m -> m.isUser() && "아니 그런 뜻 아니었어, 난 괜찮아".equals(m.content()));
+    }
+
+    @Test
     void doesNotLogTheWritersQuestionAsSentWhenACrisisReplyReplacesIt() {
         // 모델이 기분 질문을 쓰면서 위기 등급도 매겼다 — 바바의 말 대신 위기 안내가 나간다.
         reply = new StrategyReply("많이 지치셨군요.", "그때 기분이 어땠어요?", false, false, "요즘", "risk",
@@ -594,6 +620,283 @@ class RetrospectEngineStrategyTest {
         assertThat(restored.strategySignals().lastType()).isEqualTo(StrategyType.EXPLORE);
         // 켜짐 여부는 요청마다 서비스가 정한다 — 저장되지 않는다.
         assertThat(restored.turnStrategyEnabled()).isFalse();
+    }
+
+    private static StrategyReply wantsMore(String ack) {
+        return new StrategyReply(ack, "어떤 점이 그랬어요?", false, false, "발표", "none", List.of(), false, false, false,
+                true, false);
+    }
+
+    private static StrategyReply listened(String ack, boolean sameAsEarlier) {
+        return new StrategyReply(ack, "", false, false, "발표", "none", List.of(), false, false, false, false,
+                sameAsEarlier);
+    }
+
+    @Test
+    void agreesAndThenOnlyEmpathizesWhileTheUserTalksMoreAboutAStory() {
+        say("발표 망쳐서 허무해.", plain());
+
+        reply = wantsMore("네, 그 이야기 더 들을게요.");
+        assertThat(say("발표 얘기 좀 더 하고 싶어", plain()).text()).isEqualTo("네, 그 이야기 더 들을게요.");
+        assertThat(state.strategySignals().explicitMode()).isEqualTo(StrategySignals.HEAR_OUT);
+        assertThat(RetrospectState.fromSnapshot(state.toSnapshot()).strategySignals().explicitMode())
+                .isEqualTo(StrategySignals.HEAR_OUT);
+
+        // 모델이 질문을 써도 내보내지 않는다.
+        reply = wrote("밤새 준비하셨군요.", "그때 기분이 어땠어요?");
+        assertThat(say("밤새 준비했거든", plain()).text()).isEqualTo("밤새 준비하셨군요.");
+        assertThat(courses.getLast().type()).isEqualTo(StrategyType.REFLECT);
+        assertThat(courses.getLast().focus()).isEqualTo(QuestionFocus.NONE);
+        assertThat(lastLog().questionSent()).isFalse();
+    }
+
+    @Test
+    void agreesEvenWhenTheWriterLeavesTheAckEmpty() {
+        say("발표 망쳐서 허무해.", plain());
+
+        reply = wantsMore("");
+
+        assertThat(say("발표 얘기 더 할래", plain()).text()).isEqualTo(StrategyDiaryChat.HEAR_OUT_ACK);
+    }
+
+    @Test
+    void doesNotTreatTheRequestAsAvoidingTheQuestion() {
+        say("발표 망쳐서 허무해.", plain());
+
+        reply = wantsMore("네, 그 이야기 더 들을게요.");
+        ReplyDto agreed = say("그거 말고 아까 그 얘기 더 하고 싶어", judged("continue", "none", "no_answer_or_topic_change"));
+
+        assertThat(agreed.text()).isEqualTo("네, 그 이야기 더 들을게요.");
+        assertThat(agreed.options()).isNullOrEmpty();
+    }
+
+    @Test
+    void asksForAnotherMemoryInsteadOfSayingTheSameThingAgain() {
+        say("발표 망쳐서 허무해.", plain());
+        reply = wantsMore("네, 그 이야기 더 들을게요.");
+        say("발표 얘기 더 하고 싶어", plain());
+        reply = listened("허무하셨군요.", false);
+        say("진짜 허무했어", plain());
+
+        // 말은 달라도 뜻이 같다고 모델이 알렸다.
+        reply = listened("허무한 마음이 드셨군요.", true);
+        ReplyDto said = say("그냥 허무했어", plain());
+
+        assertThat(said.text()).isEqualTo("그랬군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+    }
+
+    @Test
+    void asksForAnotherMemoryWhenTheAckIsWordForWordTheSame() {
+        say("발표 망쳐서 허무해.", plain());
+        reply = wantsMore("네, 그 이야기 더 들을게요.");
+        say("발표 얘기 더 하고 싶어", plain());
+        reply = listened("허무하셨군요.", false);
+        say("진짜 허무했어", plain());
+
+        // 모델이 알리지 않았어도 서버가 같은 문장을 알아본다.
+        ReplyDto said = say("그냥 허무했어", plain());
+
+        assertThat(said.text()).isEqualTo("그랬군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+    }
+
+    @Test
+    void proposesWrappingUpRatherThanAskingForAnotherMemoryTwiceInARow() {
+        say("발표 망쳐서 허무해.", plain());
+        reply = wantsMore("네, 그 이야기 더 들을게요.");
+        say("발표 얘기 더 하고 싶어", plain());
+        reply = listened("허무하셨군요.", true);
+        assertThat(say("진짜 허무했어", plain()).text()).endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION);
+
+        reply = listened("허무한 마음이 드셨군요.", true);
+
+        assertThat(say("그냥 발표가 계속 생각나", plain()).text()).endsWith(StrategyDiaryChat.WRAP_UP_QUESTION);
+    }
+
+    @Test
+    void treatsNothingMoreToAskWhileHearingOutAsNothingNew() {
+        say("발표 망쳐서 허무해.", plain());
+        reply = wantsMore("네, 그 이야기 더 들을게요.");
+        say("발표 얘기 더 하고 싶어", plain());
+
+        reply = nothingMore("정말 오래 걸리셨네요.");
+
+        assertThat(say("진짜 오래 걸렸다니까", plain()).text())
+                .isEqualTo("그랬군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+    }
+
+    @Test
+    void countsTheQuestionsAfterTheFeelingAndMovesOnAfterTwo() {
+        reply = wrote("속상하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        assertThat(say("발표 망쳐서 속상했어", heard()).text()).endsWith("어떤 생각이 들었어요?");
+        assertThat(courses.getLast().askedAfterFeeling()).isZero();
+
+        reply = wrote("그런 생각이 드셨군요.", "어떤 점에서 부족하다는 생각이 들었어요?");
+        assertThat(say("내가 부족한 것 같았어", plain()).text()).endsWith("부족하다는 생각이 들었어요?");
+        assertThat(courses.getLast().askedAfterFeeling()).isEqualTo(1);
+
+        // 모델이 또 질문을 써도 내보내지 않고 다른 기억으로 넘어간다.
+        reply = wrote("매번 지적받으셨군요.", "어떤 지적을 자주 받으셨나요?");
+        ReplyDto moved = say("자료를 매번 지적받으니까", plain());
+
+        assertThat(courses.getLast().askedAfterFeeling()).isEqualTo(2);
+        assertThat(moved.text()).isEqualTo("매번 지적받으셨군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+    }
+
+    @Test
+    void doesNotAskAboutTheUsersThoughtOfThemselvesTwiceWithOnlyTheSituationAdded() {
+        reply = wrote("속상하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        say("발표 망쳐서 속상했어", heard());
+
+        // 사용자가 사실만 더 말했고, 모델은 상황만 덧붙여 같은 질문을 썼으며 같은 질문이라고 알리지도 않았다.
+        reply = wrote("사흘이나 걸리셨군요.", "사흘이나 공들인 자료를 다시 만들라고 했을 때, 스스로에 대해서는 어떤 생각이 들었어요?");
+        ReplyDto moved = say("사실 자료 만드는 데 사흘이나 걸렸어", plain());
+
+        assertThat(moved.text()).isEqualTo("사흘이나 걸리셨군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+        assertThat(lastLog().questionSent()).isFalse();
+    }
+
+    @Test
+    void doesNotReopenTheThoughtQuestionEvenWithoutMentioningThemselves() {
+        reply = wrote("속상하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        say("발표 망쳐서 속상했어", heard());
+
+        // 실제 모델이 쓴 문장 — 「스스로」를 빼고 같은 것을 다시 물었다.
+        reply = wrote("사흘이나 걸려 만드셨군요.", "사흘이나 걸려 만들었는데 다시 만들라고 해서 어떤 생각이 들었어요?");
+        ReplyDto moved = say("사실 자료 만드는 데 사흘이나 걸렸어", plain());
+
+        assertThat(moved.text()).isEqualTo("사흘이나 걸려 만드셨군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+        assertThat(lastLog().questionSent()).isFalse();
+    }
+
+    @Test
+    void doesNotReopenTheThoughtQuestionWithAnotherWord() {
+        reply = wrote("속상하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        say("발표 망쳐서 속상했어", heard());
+
+        reply = wrote("사흘이나 걸리셨군요.", "그 말을 듣고 무슨 생각이 들었어요?");
+
+        assertThat(say("사실 사흘이나 걸렸어", plain()).text()).endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION);
+    }
+
+    @Test
+    void doesNotReopenTheThoughtQuestionAboutSomethingTheUserOnlyWatched() {
+        reply = wrote("놀라셨겠어요.", "그 소식을 듣고 그 일에 대해서는 어떤 생각이 들었어요?");
+        say("아는 사람 부고를 들었는데 벙쪘어", heard());
+
+        // 생각을 말하지 않고 사실만 더 말했는데 모델이 같은 것을 다시 물었다.
+        reply = wrote("어제까지 연락하셨군요.", "어제까지 연락했는데 그 소식을 들으니 어떤 생각이 들었어요?");
+        ReplyDto moved = say("어제까지만 해도 연락했었어", plain());
+
+        assertThat(moved.text()).isEqualTo("어제까지 연락하셨군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+        assertThat(lastLog().questionSent()).isFalse();
+    }
+
+    @Test
+    void stillFollowsUpOnTheThoughtAboutSomethingTheUserOnlyWatched() {
+        reply = wrote("놀라셨겠어요.", "그 소식을 듣고 그분에 대해서는 어떤 생각이 들었어요?");
+        say("아는 사람 부고를 들었는데 벙쪘어", heard());
+
+        reply = wrote("그 선택이 이해가 안 되셨군요.", "어떤 점에서 비겁하다는 생각이 들었어요?");
+
+        assertThat(say("그런 선택을 한 게 비겁하다고 생각했어", plain()).text())
+                .endsWith("어떤 점에서 비겁하다는 생각이 들었어요?");
+    }
+
+    private static StrategyReply askedDetail(String ack, String question) {
+        return new StrategyReply(ack, question, false, false, "오늘의 일", "none", List.of(), false, false, false,
+                false, false, true);
+    }
+
+    @Test
+    void tellsTheWriterTheDetailWasAlreadyAskedAfterOneDetailQuestion() {
+        reply = askedDetail("일이 있으셨군요.", "회사에서 어떤 일이 있었어요?");
+        assertThat(say("회사에서 일이 좀 있었어", plain()).text()).endsWith("회사에서 어떤 일이 있었어요?");
+        assertThat(courses.getLast().detailAsked()).isFalse();
+        assertThat(state.strategySignals().detailQuestions()).isEqualTo(1);
+
+        reply = wrote("다시 하라고 하셨군요.", "그 말을 들었을 때 기분이 어땠어요?");
+        say("팀장님이 보고서를 다시 쓰라고 했어", plain());
+
+        assertThat(courses.getLast().detailAsked()).isTrue();
+    }
+
+    @Test
+    void aDetailQuestionAfterTheFeelingDoesNotUseUpTheThoughtQuestions() {
+        reply = askedDetail("짜증나셨군요.", "무슨 일이 있었어요?");
+        say("오늘 너무 짜증났어", heard());
+
+        assertThat(state.strategySignals().questionsAfterFeeling()).isZero();
+        assertThat(state.strategySignals().detailQuestions()).isEqualTo(1);
+    }
+
+    @Test
+    void stillAsksTheFirstOpenThoughtQuestionOfAStory() {
+        reply = wrote("속상하셨군요.", "그때 어떤 생각이 들었어요?");
+
+        assertThat(say("발표 망쳐서 속상했어", heard()).text()).endsWith("그때 어떤 생각이 들었어요?");
+    }
+
+    @Test
+    void stillFollowsUpOnTheThoughtTheUserNamed() {
+        reply = wrote("속상하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        say("발표 망쳐서 속상했어", heard());
+
+        reply = wrote("그런 생각이 드셨군요.", "어떤 점에서 스스로 부족하다는 생각이 들었어요?");
+
+        assertThat(say("내가 부족한 것 같았어", plain()).text()).endsWith("어떤 점에서 스스로 부족하다는 생각이 들었어요?");
+    }
+
+    @Test
+    void asksAboutTheUsersThoughtOfThemselvesAgainInANewStory() {
+        reply = wrote("속상하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        say("발표 망쳐서 속상했어", heard());
+
+        reply = newStory("엄마와 다투셨군요.", "그때 기분이 어땠어요?", "엄마와의 다툼");
+        say("저녁에 엄마랑 다퉜어", plain());
+
+        reply = wrote("서운하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        assertThat(say("서운했어", heard()).text()).endsWith("그때 스스로에 대해서는 어떤 생각이 들었어요?");
+    }
+
+    @Test
+    void startsCountingAgainInANewStory() {
+        reply = wrote("속상하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        say("발표 망쳐서 속상했어", heard());
+        reply = wrote("그런 생각이 드셨군요.", "어떤 점에서 그런 생각이 들었어요?");
+        say("내가 부족한 것 같았어", plain());
+
+        reply = newStory("엄마와 통화하셨군요.", "그때 기분이 어땠어요?", "엄마와의 통화");
+
+        assertThat(say("오늘 엄마랑 통화했어", plain()).text()).endsWith("그때 기분이 어땠어요?");
+        assertThat(state.strategySignals().questionsAfterFeeling()).isNull();
+    }
+
+    @Test
+    void followsTheStoryWhenTheUserContinuesItAfterBeingAskedForAnotherMemory() {
+        reply = wrote("속상하셨군요.", "그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        say("발표 망쳐서 속상했어", heard());
+        reply = wrote("그런 생각이 드셨군요.", "어떤 점에서 그런 생각이 들었어요?");
+        say("내가 부족한 것 같았어", plain());
+        reply = wrote("매번 지적받으셨군요.", "");
+        assertThat(say("자료를 매번 지적받으니까", plain()).text()).endsWith(RetrospectEngine.OTHER_MEMORY_QUESTION);
+
+        reply = wrote("인정받고 싶으셨군요.", "언제 가장 그런 생각이 드세요?");
+
+        assertThat(say("사실 인정받고 싶었던 것 같아", plain()).text()).endsWith("언제 가장 그런 생각이 드세요?");
+    }
+
+    @Test
+    void asksAgainOnceTheUserMovesToANewStory() {
+        say("발표 망쳐서 허무해.", plain());
+        reply = wantsMore("네, 그 이야기 더 들을게요.");
+        say("발표 얘기 더 하고 싶어", plain());
+
+        reply = newStory("엄마와 통화하셨군요.", "그때 기분이 어땠어요?", "엄마와의 통화");
+        say("아 오늘 엄마랑 통화했어", plain());
+        assertThat(state.strategySignals().explicitMode()).isNull();
+
+        reply = wrote("오랜만에 목소리를 들으셨군요.", "그때 기분이 어땠어요?");
+        assertThat(say("오랜만에 목소리 들었어", plain()).text()).endsWith("그때 기분이 어땠어요?");
     }
 
     @Test

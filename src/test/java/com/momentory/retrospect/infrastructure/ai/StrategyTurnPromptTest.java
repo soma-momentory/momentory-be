@@ -7,6 +7,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import com.momentory.retrospect.domain.RetrospectState;
+import com.momentory.retrospect.domain.safety.SafetyLevel;
+import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.retrospect.domain.strategy.QuestionFocus;
 import com.momentory.retrospect.domain.strategy.StrategyType;
 import com.momentory.retrospect.domain.strategy.TurnStrategy;
@@ -26,7 +28,7 @@ class StrategyTurnPromptTest {
     void leavesWhatToAskToTheWriterWithOnePrinciple() {
         String prompt = prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
 
-        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "방금 짚은", "발표 망쳐서 허무해.",
+        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "말한 그 생각을", "발표 망쳐서 허무해.",
                 "이미 말한 것을 다시 묻지 않습니다", "이유를 이미 말했는데 이유를 또 묻지 않습니다",
                 "언제 마무리할지는 서버가 정합니다");
         // 옛 고정 순서나 단계별로 정해 둔 질문은 없다.
@@ -43,10 +45,55 @@ class StrategyTurnPromptTest {
     @Test
     void pointsQuestionsAtHowTheUserFeltRatherThanAtMoreFacts() {
         assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
-                .contains("그 일을 겪은 사용자의 마음", "사실을 더 캐묻지 않고 그때의 기분을 묻습니다",
-                        "'○○ 했을 때 기분이 어땠어요?'", "'어떤 생각이 드셨나요'로 에둘러 묻는 질문은 쓰지 않습니다",
-                        "그때의 마음을 아직 한 번도 묻지 않았고", "일어난 일만 듣고 끝내지 않습니다",
+                .contains("그 일을 겪은 사용자의 기분과 생각", "사실을 더 캐묻지 않고 그때의 기분을 묻습니다",
+                        "'○○ 했을 때 기분이 어땠어요?'", "기분을 물을 차례에 '어떤 생각이 드셨나요'로 에둘러 묻지 않습니다",
+                        "그때의 기분을 아직 한 번도 묻지 않았고", "일어난 일만 듣고 끝내지 않습니다",
                         "같은 것을 다시 묻지 않고 true 로 둡니다", "한 번 물은 것은 한 번으로 끝냅니다");
+    }
+
+    @Test
+    void asksAboutTheUsersThoughtOfThemselvesAfterTheFeelingInsteadOfTheirHeart() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("기분을 말했으면 그때 자기 자신에 대해서는(지켜본 일이면 그 일이나 그 사람에 대해서는) 어떤 생각이 들었는지를",
+                        "'그때 스스로에 대해서는 어떤 생각이 들었어요?'",
+                        "asksFeeling: question 이 그때의 기분을 물으면 true")
+                .doesNotContain("어떤 마음이 들었는지", "자기 마음을 스스로 짚었으면");
+    }
+
+    @Test
+    void keepsAskingOnceMoreAfterTheUserNamesAThoughtAboutThemselves() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("사용자가 방금 그 생각을 처음 말했으면 반드시 false",
+                        "이미 이어 물었고 사용자가 답했으면 true", "말한 그 생각을 사용자가 쓴 말로 받아 한 번 더 묻습니다",
+                        "이어 한 걸음 더 묻는 것은 다시 묻는 것이 아닙니다", "사용자가 답한 생각을 이어 더 묻는 질문은 false");
+    }
+
+    @Test
+    void tellsTheWriterWhatToAskFromTheServersCount() {
+        TurnStrategy known = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false).withFeelingKnown(true);
+
+        assertThat(prompt(known.withAskedAfterFeeling(0))).contains("이번에는 생각을 묻습니다",
+                "직접 겪은 일이면 사건이나 다른 사람의 말에 대한 생각이 아니라 사용자 자신에 대한 생각을 묻습니다");
+        assertThat(prompt(known.withAskedAfterFeeling(1))).contains("방금 말한 그 생각을 그 말로 받아 한 번 더 묻습니다",
+                "사실만 더 말했으면 앞의 질문을 다시 묻지 않습니다", "앞의 질문에 상황만 덧붙여 다시 물은 것도 true");
+        assertThat(prompt(known.withAskedAfterFeeling(2))).contains("이 이야기에서 물을 것은 다 물었습니다");
+        assertThat(prompt(known.withAskedAfterFeeling(2).withAfterOtherMemory(true)))
+                .doesNotContain("이 이야기에서 물을 것은 다 물었습니다");
+    }
+
+    @Test
+    void tellsTheWriterHowToJudgeNewContentWhileHearingOut() {
+        TurnStrategy quiet = new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false);
+
+        assertThat(prompt(quiet.withHearingOut(true))).contains("더 얘기하고 싶다고 한 이야기를 듣고 있습니다",
+                "nothingMoreToAsk 와 ackRepeatsEarlier 를 true 로 둡니다");
+        assertThat(prompt(quiet)).doesNotContain("더 얘기하고 싶다고 한 이야기를 듣고 있습니다");
+    }
+
+    @Test
+    void keepsTheWordHeartOutOfQuestions() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("질문에는 '마음'이라는 말을 쓰지 않습니다", "'그때 기분이 어땠어요?'로 묻습니다");
     }
 
     @Test
@@ -128,7 +175,16 @@ class StrategyTurnPromptTest {
                 .contains("[자기 편을 들어 달라는 물음]", "'내가 이상해?'", "사용자 편에서 분명하게",
                         "상대를 나쁘게 말하거나 탓하지는 않습니다", "이 턴에는 질문하지 않습니다",
                         "재해석이어도 이것이 먼저입니다", "askedForSide: 위 [자기 편을 들어 달라는 물음]대로",
-                        "단 하나의 예외", "물음을 되받기만 하는 것은 답이 아닙니다");
+                        "예외: 방금 답변이 자기 편을", "물음을 되받기만 하는 것은 답이 아닙니다");
+    }
+
+    @Test
+    void tellsTheWriterToAgreeAndNotAskWhenTheUserWantsToTalkMore() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("[더 얘기하고 싶다는 말]", "어떤 일을 더 얘기하고 싶다고 분명히 말했으면 true",
+                        "이어 말하기만 한 것은 false", "먼저 알겠다고 답합니다", "'네, 그 이야기 더 들을게요.'",
+                        "내용을 짚어 공감하는 문장을 꼭 붙입니다", "ackRepeatsEarlier", "새로 받을 내용이 없으면 true",
+                        "되풀이하거나 강조하기만 하고 새로운 사실·기분·생각이");
     }
 
     @Test
@@ -147,6 +203,104 @@ class StrategyTurnPromptTest {
         assertThat(prompts.strategySystem())
                 .doesNotContain("감정만 있으면 계기를", "그 감정이 맞는지 한 번 확인", "\"OO님\"으로 부릅니다")
                 .contains("[이번 턴에 할 일]을 따릅니다", "항상 존댓말", "지어내지 않습니다", "안전 신호");
+    }
+
+    @Test
+    void asksAboutTheEventOrPersonInsteadOfThemselvesForSomethingTheUserOnlyWatched() {
+        TurnStrategy explore = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+
+        assertThat(prompt(explore)).contains("생각을 물을 때는 그 일이 누구의 일인지 먼저 봅니다",
+                "사용자가 지켜보거나 전해 들은 일이면 자기 자신을 묻지 않고", "'그 소식을 듣고 그 일에 대해서는 어떤 생각이",
+                "사용자가 그 사람을 부른 말을 그대로 씁니다('이진우씨에 대해서는', '다친", "한 사람이 아닌데 '그분'이라고 하거나",
+                "지켜본 일에 '스스로에 대해서는 어떤 생각이 들었어요?'라고 묻지 않습니다");
+        // 서버가 기분 다음 질문 차례를 알릴 때도 지켜본 일의 갈래를 함께 알린다.
+        assertThat(prompt(explore.withFeelingKnown(true).withAskedAfterFeeling(0)))
+                .contains("지켜보거나 전해 들은 일이면 그 일이나 그 사람에 대한 생각을 묻습니다",
+                        "'그 일에 대해서는 어떤 생각이 들었어요?'", "사람을 물을 때는 사용자가 그 사람을 부른 말을 그대로 씁니다");
+        assertThat(prompt(explore.withFeelingKnown(true).withAskedAfterFeeling(1)))
+                .contains("사용자가 방금 말한 그 생각을 그 말로 받아 한 번 더 묻습니다");
+    }
+
+    @Test
+    void asksForDetailOnceWhenTheStoryIsVagueAndGoesToTheFeelingWhenItIsConcrete() {
+        TurnStrategy explore = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+
+        assertThat(prompt(explore)).contains("먼저 무슨 일이었는지가 구체적인지 봅니다",
+                "구체적이면 사실을 더 캐묻지 않고 그때의 기분을 묻습니다", "'회사에서 일이 좀 있었어'",
+                "기분보다 먼저, 사용자가 쓴 말을 받아 그 일을 구체적으로 묻습니다", "'친구랑 뭐 하면서 놀았어요?'",
+                "구체적으로 묻는 것은 한 이야기에 한 번뿐입니다", "asksForDetail: question 이 무슨 일이 있었는지")
+                .doesNotContain("이미 한 번 구체적으로 물었습니다");
+        // 서버가 센 대로 — 이미 물었으면 기분으로 넘어가라고 알린다.
+        assertThat(prompt(explore.withDetailAsked(true))).contains("이미 한 번 구체적으로 물었습니다",
+                "사실을 더 묻지 않고 그때의 기분을 묻습니다(asksForDetail false)");
+        // 기분부터 말했으면, 아직 묻지 않았을 때만 생각보다 먼저 구체적으로 묻는다.
+        TurnStrategy heard = explore.withFeelingKnown(true).withAskedAfterFeeling(0);
+        assertThat(prompt(heard)).contains("생각보다 먼저 그 일을 구체적으로 한 번 묻습니다");
+        assertThat(prompt(heard.withDetailAsked(true))).doesNotContain("생각보다 먼저 그 일을 구체적으로",
+                "이미 한 번 구체적으로 물었습니다");
+    }
+
+    @Test
+    void asksAboutTheUsersOwnSituationWhenTheyOverlapItWithSomeoneElsesStory() {
+        TurnStrategy explore = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+
+        assertThat(prompt(explore)).contains("남의 일을 말하면서 자기 처지나 마음을 겹쳐 말했으면",
+                "'남 일 같지 않아'", "사용자가 겹쳐 본 자기 처지를 받아", "화제를 다시 남에게로 돌리지 않습니다");
+        assertThat(prompt(explore.withFeelingKnown(true).withAskedAfterFeeling(0)))
+                .contains("남의 일에 자기 처지를 겹쳐 말했으면 그 사람이 아니라 사용자 자신의 처지를 묻습니다");
+    }
+
+    @Test
+    void judgesCrisisOnlyFromTheLatestAnswerAndTheUsersOwnRisk() {
+        String prompt = prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
+
+        assertThat(prompt).contains("- safetyLevel: none|caution|risk|imminent. [방금 사용자 답변]만 보고 매깁니다.",
+                "방금 답변에 새 위험 신호가 없으면 none", "사용자 본인이 스스로를 해치거나",
+                "다른 사람의 죽음·자살 소식을 전하거나 그 사람에 대한 생각·평가를 말한 것", "자기는 괜찮다는 해명은 위기가");
+        // 기준이 목록의 다른 항목처럼 줄 머리에서 시작한다(텍스트 블록 들여쓰기가 섞이지 않는다).
+        assertThat(prompt).containsPattern("(?m)^- safetyLevel: ").doesNotContain("%s");
+    }
+
+    @Test
+    void replacesTheCrisisGuidanceInTheHistoryWithAShortMark() {
+        SafetyPolicy safety = new SafetyPolicy();
+        RetrospectState state = new RetrospectState("s1");
+        state.addAssistantMessage("그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        state.addUserMessage("아는 사람이 자살했다는데 이해가 안 돼.");
+        state.addAssistantMessage(safety.guidanceFor(SafetyLevel.IMMINENT).render());
+        state.addAssistantMessage("그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        state.addUserMessage("아니 난 괜찮았다니까");
+
+        String prompt = prompts.strategyTurnPrompt(state, "아니 난 괜찮았다니까",
+                new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
+
+        // 사용자의 말은 그대로 두고, 바바의 안내 전문만 짧은 표시로 바꾼다.
+        assertThat(prompt).contains("나: 아는 사람이 자살했다는데 이해가 안 돼.", "바바: " + PromptFactory.GUIDANCE_MARK)
+                .doesNotContain("지금 느끼는 고통이", "자살예방 상담전화 109");
+        assertThat(prompts.diaryTurnPrompt(state, "아니 난 괜찮았다니까"))
+                .contains("[방금 사용자 답변]만 보고 매깁니다", PromptFactory.GUIDANCE_MARK)
+                .doesNotContain("지금 느끼는 고통이");
+    }
+
+    @Test
+    void tellsTheWriterHowToTakeTheFirstAnswerAfterTheGuidanceOnlyOnThatTurn() {
+        SafetyPolicy safety = new SafetyPolicy();
+        RetrospectState state = new RetrospectState("s1");
+        state.addAssistantMessage("그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        state.addUserMessage("그 사람이 자살을 택한 게 이해가 안 돼.");
+        state.addAssistantMessage(safety.guidanceFor(SafetyLevel.IMMINENT).render());
+        state.addUserMessage("아니 나는 괜찮다고");
+        TurnStrategy strategy = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+
+        assertThat(prompts.strategyTurnPrompt(state, "아니 나는 괜찮다고", strategy))
+                .contains("- 위기 안내 뒤:", "그 말을 믿고 담담하게 받습니다", "정말 괜찮은지 캐묻지 않습니다");
+        assertThat(prompts.diaryTurnPrompt(state, "아니 나는 괜찮다고")).contains("- 위기 안내 뒤:");
+
+        // 그다음 턴부터는 붙지 않는다.
+        state.addAssistantMessage("괜찮으셨군요.");
+        state.addUserMessage("응.");
+        assertThat(prompts.strategyTurnPrompt(state, "응.", strategy)).doesNotContain("- 위기 안내 뒤:");
+        assertThat(prompt(strategy)).doesNotContain("- 위기 안내 뒤:");
     }
 
     @ParameterizedTest

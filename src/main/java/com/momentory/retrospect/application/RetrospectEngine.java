@@ -840,14 +840,21 @@ public class RetrospectEngine {
     }
 
     /**
-     * 「이어서 얘기하기」 — 위기 안내로 멈추기 전 phase 로 돌아간다. 들어온 입력을 답변으로 처리하지
-     * 않고, <b>멈추기 직전에 보던 질문을 한 번 더 보여준다</b>. 위기 표현이 곧 답변으로 굳어버리면
+     * 「이어서 얘기하기」 — 위기 안내로 멈추기 전 phase 로 돌아간다. 빈 이어가기 요청이면 위기 발화를 답으로
+     * 삼지 않고 <b>멈추기 직전에 보던 질문을 한 번 더 보여준다</b>. 위기 표현이 곧 답변으로 굳어버리면
      * 사용자가 다시 답할 기회를 잃고, 맥 끊긴 채로 대화가 이어지기 때문이다.
      *
      * <p>직전 질문을 찾지 못하는 드문 경우(히스토리가 비정상)엔 예전처럼 phase 에 맞춰 이어간다.
+     *
+     * <p>단, 글이 들어왔으면 그 글을 답으로 받는다. 앱의 「이어서 얘기하기」는 서버를 부르지 않고 입력창만 열어서,
+     * 안내 뒤 처음 쓴 말이 곧 이어가기 요청으로 온다. 그 말(「아니 나는 괜찮다고」)을 버리고 질문만 다시 내면
+     * 해명이 무시된 채 같은 질문이 반복됐다. 이 글도 보통 턴처럼 안전 점검을 다시 거친다.
      */
     private ReplyDto handleSafetyResume(RetrospectState state, TurnCommand command) {
         Phase resumed = state.resumeFromHold();
+        if (resumed == Phase.DIARY_CHAT && command.hasContent()) {
+            return handleDiaryTurn(state, command);
+        }
         String question = lastQuestionBeforeHold(state);
         if (question != null && !question.isBlank()) {
             state.addAssistantMessage(question);

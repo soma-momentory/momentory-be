@@ -8,7 +8,7 @@ package com.momentory.retrospect.domain.strategy;
  *
  * @param resistanceCount    바바의 질문·해석 뒤 답하지 않음·화제 전환·반박이 나온 횟수 — 질문 빈도를 줄이는 데 쓴다
  * @param yieldStreak        사용자가 바바의 말을 받아들이지 않은 턴이 지금까지 연달아 이어진 횟수
- * @param explicitMode       가장 최근에 명시적으로 요청한 응답 방식(LISTEN·OTHER_VIEW). 없으면 null
+ * @param explicitMode       가장 최근에 명시적으로 요청한 응답 방식(LISTEN·OTHER_VIEW·HEAR_OUT). 없으면 null
  * @param topicNumber        지금 몇 번째 이야기인가(1부터)
  * @param wrapUpProposed     지금 이야기에서 마무리를 이미 제안했는가
  * @param lastType           직전 턴의 방침. 없으면 null
@@ -16,19 +16,30 @@ package com.momentory.retrospect.domain.strategy;
  * @param questionsAsked     이 대화에서 바바가 한 질문 수(첫 질문은 세지 않는다)
  * @param questionsAfterFeeling 지금 이야기에서 그때의 마음을 들은 뒤로 바바가 한 질문 수. 아직 마음을 듣지 못했으면 null
  * @param deepestStage 지금 이야기에서 가장 깊었던 체험 깊이(1~2단계=1 … 5단계 이상=4). 판단된 적이 없으면 null
+ * @param detailQuestions 지금 이야기에서 무슨 일이었는지 구체적으로 물은 횟수(없으면 0)
  */
 public record StrategySignals(int resistanceCount, Integer yieldStreak, String explicitMode, Integer topicNumber,
         Boolean wrapUpProposed, StrategyType lastType, int turnsSinceQuestion, Integer questionsAsked,
-        Integer questionsAfterFeeling, Integer deepestStage) {
+        Integer questionsAfterFeeling, Integer deepestStage, Integer detailQuestions) {
 
     public static final String LISTEN = "LISTEN";
     public static final String OTHER_VIEW = "OTHER_VIEW";
+    /** 어떤 일을 더 얘기하고 싶다고 했다 — 그 이야기가 이어지는 동안 묻지 않고 공감만 한다. 새 이야기로 넘어가면 풀린다. */
+    public static final String HEAR_OUT = "HEAR_OUT";
 
     public StrategySignals {
         yieldStreak = yieldStreak == null ? 0 : yieldStreak;
         topicNumber = topicNumber == null ? 1 : topicNumber;
         wrapUpProposed = wrapUpProposed != null && wrapUpProposed;
         questionsAsked = questionsAsked == null ? 0 : questionsAsked;
+        detailQuestions = detailQuestions == null ? 0 : detailQuestions;
+    }
+
+    public StrategySignals(int resistanceCount, Integer yieldStreak, String explicitMode, Integer topicNumber,
+            Boolean wrapUpProposed, StrategyType lastType, int turnsSinceQuestion, Integer questionsAsked,
+            Integer questionsAfterFeeling, Integer deepestStage) {
+        this(resistanceCount, yieldStreak, explicitMode, topicNumber, wrapUpProposed, lastType, turnsSinceQuestion,
+                questionsAsked, questionsAfterFeeling, deepestStage, null);
     }
 
     /** 지금 이야기에서 아직 마음을 듣지 못한 신호. */
@@ -45,7 +56,12 @@ public record StrategySignals(int resistanceCount, Integer yieldStreak, String e
     /** 지금 이야기에서 마음을 들은 뒤의 질문 수와 가장 깊었던 단계를 바꾼다. */
     public StrategySignals withFollowUp(Integer count, Integer deepest) {
         return new StrategySignals(resistanceCount, yieldStreak, explicitMode, topicNumber, wrapUpProposed, lastType,
-                turnsSinceQuestion, questionsAsked, count, deepest);
+                turnsSinceQuestion, questionsAsked, count, deepest, detailQuestions);
+    }
+
+    public StrategySignals withExplicitMode(String mode) {
+        return new StrategySignals(resistanceCount, yieldStreak, mode, topicNumber, wrapUpProposed, lastType,
+                turnsSinceQuestion, questionsAsked, questionsAfterFeeling, deepestStage, detailQuestions);
     }
 
     public static StrategySignals initial() {

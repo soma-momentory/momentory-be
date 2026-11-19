@@ -2,6 +2,7 @@ package com.momentory.retrospect.application;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -48,11 +49,23 @@ public class StrategyDiaryChat {
     static final String PLAIN_ACK = "네, 듣고 있어요.";
     /** 문장 생성 모델이 실패한 턴에 질문이 필요하면 쓰는 말 — 무엇을 물을지 알 수 없으므로 이야기를 열어 둔다. */
     /** 받아줄 말이 따로 없을 때 쓰는 짧은 말들 — 바로 앞에서 한 말과 같은 것은 고르지 않는다. */
-    static final List<String> PLAIN_ACKS = List.of(PLAIN_ACK, "네.", "그랬군요.");
+    static final String SHORT_ACK = "그랬군요.";
+    static final List<String> PLAIN_ACKS = List.of(PLAIN_ACK, "네.", SHORT_ACK);
+    /** 어떤 일을 더 얘기하고 싶다는 말에 모델이 받아주는 말을 쓰지 못했을 때 알겠다고 답하는 말. */
+    static final String HEAR_OUT_ACK = "네, 그 이야기 더 들을게요.";
     static final String PLAIN_QUESTION = "조금 더 들려주실래요?";
     static final String WRAP_UP_QUESTION = "여기까지 일기로 정리해볼까요?";
     /** 들어 달라고만 하고 받아줄 다른 말이 없을 때의 짧은 말 — 정해 둔 약속 문구(「묻지 않고 들을게요」)는 붙이지 않는다. */
     static final String GO_ON = "편하게 이야기해 주세요.";
+    /**
+     * 기분 다음에 생각을 여는 질문 — 겪은 일이면 자기 자신에 대한 생각(「스스로에 대해서는 어떤 생각」), 지켜본 일이면 그 일이나
+     * 그 사람에 대한 생각(「그 일에 대해서는 어떤 생각」)이다. 「어떤 점에서 부족하다는 생각이 들었어요?」처럼 그 생각을 이어 묻는
+     * 질문은 아니다.
+     */
+    private static final Pattern THOUGHT_STEP_QUESTION = Pattern.compile(
+            "(스스로|자기 자신|자신|본인).{0,20}어떤 생각|에\\s*대해서?\\s*는?\\s*(어떤|무슨)\\s*생각");
+    /** 무슨 생각이 들었는지를 처음부터 다시 여는 질문 — 사용자가 말한 생각을 받아 잇는 질문에는 이 말이 들어가지 않는다. */
+    private static final Pattern OPEN_THOUGHT_QUESTION = Pattern.compile("(어떤|무슨)\\s*생각");
 
     enum Kind {
         /** 바바의 말을 그대로 내보낸다. */
@@ -105,9 +118,13 @@ public class StrategyDiaryChat {
                 .map(j -> policy.decide(j, state.strategySignals(), ignoreReaction))
                 .orElseGet(() -> policy.decideWithoutJudgment(state.strategySignals(), stopPhrase));
         // 이 이야기에서 기분을 이미 들었는지(방금 답변 포함)를 문장 생성 모델에 알린다 — 들은 기분을 다시 묻지 않게 한다.
-        boolean feelingKnown = policy.observeAnswer(decision.signals(), judgment.orElse(null))
-                .questionsAfterFeeling() != null;
-        TurnStrategy strategy = decision.strategy().withFeelingKnown(feelingKnown).withAfterOtherMemory(afterOtherMemory);
+        Integer askedAfterFeeling = policy.observeAnswer(decision.signals(), judgment.orElse(null))
+                .questionsAfterFeeling();
+        TurnStrategy strategy = decision.strategy().withFeelingKnown(askedAfterFeeling != null)
+                .withAfterOtherMemory(afterOtherMemory)
+                .withAskedAfterFeeling(askedAfterFeeling == null ? 0 : askedAfterFeeling)
+                .withHearingOut(StrategySignals.HEAR_OUT.equals(decision.signals().explicitMode()))
+                .withDetailAsked(policy.askedEnoughDetail(decision.signals()));
         if (strategy.type() == StrategyType.CLOSE) {
             state.strategySignals(policy.settle(decision.signals(), strategy));
             state.logStrategy(strategy, StrategyPolicy.VERSION, true);
@@ -126,8 +143,11 @@ public class StrategyDiaryChat {
         String question = null;
         boolean newTopic = false;
         boolean asksFeeling = false;
+        boolean asksForDetail = false;
         boolean repeatsEarlierQuestion = false;
         boolean askedForSide = false;
+        boolean wantsToTalkMore = false;
+        boolean saidSameBefore = false;
         SafetyLevel safetyLevel = SafetyLevel.NONE;
         List<String> safetyFlags = List.of();
         if (written.isPresent()) {
@@ -140,13 +160,19 @@ public class StrategyDiaryChat {
                 state.event(reply.topic());
             }
             String said = withoutVocative(state, RetrospectEngine.empathyStatements(reply.ack()));
+            wantsToTalkMore = reply.userWantsToTalkMore();
+            // 듣는 중에 모델이 더 물을 것이 없다고 한 것은 방금 답변에 새로 받을 내용이 없다는 뜻이다.
+            saidSameBefore = reply.saysTheSameAsEarlier() || (strategy.hearingOut() && reply.nothingMoreToAsk());
             if (willListen) {
                 ack = said.isBlank() ? GO_ON : said;
+            } else if (wantsToTalkMore) {
+                ack = said.isBlank() ? HEAR_OUT_ACK : said;
             } else {
                 ack = said.isBlank() ? PLAIN_ACK : said;
             }
             question = reply.nothingMoreToAsk() ? null : firstQuestion(withoutVocative(state, reply.question()));
             asksFeeling = reply.questionAsksFeeling();
+            asksForDetail = reply.questionAsksForDetail();
             repeatsEarlierQuestion = reply.questionRepeatsEarlier();
             askedForSide = reply.userAskedForSide();
         } else {
@@ -155,7 +181,9 @@ public class StrategyDiaryChat {
             question = PLAIN_QUESTION;
         }
 
-        ack = notRepeated(state, ack);
+        String unrepeated = notRepeated(state, ack);
+        saidSameBefore = saidSameBefore || !unrepeated.equals(ack);
+        ack = unrepeated;
         // 새 이야기로 넘어갔는지를 먼저 반영한 뒤에, 더 물을 것이 없을 때 어디로 갈지를 정한다.
         // 새 이야기를 꺼냈으면 앞 이야기를 다 듣지 못했어도 그 이야기를 따라간다. 그것은 받아들이지 않은 것이 아니다.
         StrategySignals signals = newTopic ? policy.movedToNewTopic(decision.signals(), strategy.reaction())
@@ -163,10 +191,22 @@ public class StrategyDiaryChat {
         TurnStrategy done = newTopic && policy.gotNoAnswer(strategy) ? strategy.withoutReaction() : strategy;
         signals = policy.observeAnswer(signals, judgment.orElse(null));
         // 모델이 쓴 질문이 앞에서 바바가 이미 한 질문과 같은 것을 묻는다면 버린다 — 같은 내용을 다시 묻지 않는다.
-        if (repeatsEarlierQuestion) {
+        // 기분을 들은 뒤에 물을 것을 다 물었어도 버린다. 다른 기억을 물은 뒤 앞 이야기를 이어 말한 것은 그 이야기를 따라간다.
+        boolean askedEnough = strategy.type() == StrategyType.EXPLORE && !afterOtherMemory
+                && policy.askedEnoughAfterFeeling(signals);
+        if (repeatsEarlierQuestion || askedEnough || asksSelfThoughtAgain(state, signals, question)) {
             question = null;
         }
-        if (askedForSide && strategy.focus() == QuestionFocus.OPEN) {
+        if (wantsToTalkMore) {
+            // 어떤 일을 더 얘기하고 싶다고 했다 — 알겠다고 답하고, 그 이야기가 이어지는 동안 묻지 않고 공감만 한다.
+            question = null;
+            signals = policy.hearingOut(signals);
+            done = done.withFocus(QuestionFocus.NONE);
+        } else if (StrategySignals.HEAR_OUT.equals(signals.explicitMode()) && saidSameBefore) {
+            // 들어 주다가 앞에서 한 말과 같은 말을 하게 됐다 — 되풀이하지 않고 다른 일은 없었는지 묻는다.
+            ack = notRepeated(state, SHORT_ACK);
+            done = policy.whenNothingMoreToAsk(done, signals, afterOtherMemory);
+        } else if (askedForSide && strategy.focus() == QuestionFocus.OPEN) {
             // 「내가 이상해?」처럼 자기 편을 들어 주길 바랐다 — 이 턴은 그 물음에 사용자 편에서 답하는 턴이다. 질문을 붙이지
             // 않고, 답을 피했다고 보아 마무리를 제안하거나 다른 기억으로 넘어가지도 않는다. 다음 턴부터는 평소대로 묻는다.
             question = null;
@@ -179,7 +219,9 @@ public class StrategyDiaryChat {
         }
         // 안전 상한 — 방침이 무엇이든 여기서 정리한다. 이 턴의 방침은 '적용 안 됨'으로 남는다.
         boolean capped = state.diaryTurn() >= maxTurns;
-        state.strategySignals(policy.settle(signals, done));
+        // 무슨 일이었는지 구체적으로 묻는 질문이 나갔으면 이야기마다 센다 — 막연한 답에 한 번만 묻고 기분으로 넘어간다.
+        boolean detailSent = !capped && done.focus() == QuestionFocus.OPEN && question != null && asksForDetail;
+        state.strategySignals(policy.settle(signals, done, detailSent));
         state.logStrategy(done, StrategyPolicy.VERSION, !capped);
         // 열린 질문이 실제로 나간 턴만 센다 — 다른 기억 질문 · 마무리 제안 · 상한으로 끝난 턴은 탐색 질문도, 기분을 물은 것도
         // 아니다. 문장 생성이 실패해 고정 열린 질문으로 대신한 턴도 질문은 나갔다(생성 실패 표시로 가른다).
@@ -219,6 +261,19 @@ public class StrategyDiaryChat {
         }
         String said = last;
         return PLAIN_ACKS.stream().filter(a -> !said.contains(a)).findFirst().orElse(ack);
+    }
+
+    /**
+     * 이 이야기에서 생각을 여는 질문(자기 자신 · 지켜본 일이면 그 일이나 그 사람)을 이미 물었는데 무슨 생각이 들었는지를 또 묻는가 — 사용자가 그 물음에 사실만 더 말하면
+     * 모델이 상황만 덧붙이거나 「스스로」를 빼고 같은 질문을 다시 썼고, 말이 달라 같은 질문으로 알아보지 못했다.
+     */
+    private static boolean asksSelfThoughtAgain(RetrospectState state, StrategySignals signals, String question) {
+        if (question == null || signals.questionsAfterFeeling() == null || signals.questionsAfterFeeling() < 1
+                || !OPEN_THOUGHT_QUESTION.matcher(question).find()) {
+            return false;
+        }
+        return state.messages().stream().filter(Message::isAssistant)
+                .anyMatch(m -> m.content() != null && THOUGHT_STEP_QUESTION.matcher(m.content()).find());
     }
 
     /** 방금 사용자 발화 바로 앞의 바바의 말이 다른 기억을 묻는 질문이었는가. */
