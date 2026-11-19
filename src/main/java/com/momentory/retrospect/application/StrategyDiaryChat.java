@@ -57,8 +57,13 @@ public class StrategyDiaryChat {
     static final String WRAP_UP_QUESTION = "여기까지 일기로 정리해볼까요?";
     /** 들어 달라고만 하고 받아줄 다른 말이 없을 때의 짧은 말 — 정해 둔 약속 문구(「묻지 않고 들을게요」)는 붙이지 않는다. */
     static final String GO_ON = "편하게 이야기해 주세요.";
-    /** 자기 자신에 대한 생각을 여는 질문 — 「어떤 점에서 부족하다는 생각이 들었어요?」처럼 그 생각을 이어 묻는 질문은 아니다. */
-    private static final Pattern SELF_THOUGHT_QUESTION = Pattern.compile("(스스로|자기 자신|자신|본인).{0,20}어떤 생각");
+    /**
+     * 기분 다음에 생각을 여는 질문 — 겪은 일이면 자기 자신에 대한 생각(「스스로에 대해서는 어떤 생각」), 지켜본 일이면 그 일이나
+     * 그 사람에 대한 생각(「그분에 대해서는 어떤 생각」)이다. 「어떤 점에서 부족하다는 생각이 들었어요?」처럼 그 생각을 이어 묻는
+     * 질문은 아니다.
+     */
+    private static final Pattern THOUGHT_STEP_QUESTION = Pattern.compile(
+            "(스스로|자기 자신|자신|본인).{0,20}어떤 생각|에\\s*대해서?\\s*는?\\s*(어떤|무슨)\\s*생각");
     /** 무슨 생각이 들었는지를 처음부터 다시 여는 질문 — 사용자가 말한 생각을 받아 잇는 질문에는 이 말이 들어가지 않는다. */
     private static final Pattern OPEN_THOUGHT_QUESTION = Pattern.compile("(어떤|무슨)\\s*생각");
 
@@ -254,7 +259,7 @@ public class StrategyDiaryChat {
     }
 
     /**
-     * 이 이야기에서 자기 자신에 대한 생각을 이미 물었는데 무슨 생각이 들었는지를 또 묻는가 — 사용자가 그 물음에 사실만 더 말하면
+     * 이 이야기에서 생각을 여는 질문(자기 자신 · 지켜본 일이면 그 일이나 그 사람)을 이미 물었는데 무슨 생각이 들었는지를 또 묻는가 — 사용자가 그 물음에 사실만 더 말하면
      * 모델이 상황만 덧붙이거나 「스스로」를 빼고 같은 질문을 다시 썼고, 말이 달라 같은 질문으로 알아보지 못했다.
      */
     private static boolean asksSelfThoughtAgain(RetrospectState state, StrategySignals signals, String question) {
@@ -263,7 +268,7 @@ public class StrategyDiaryChat {
             return false;
         }
         return state.messages().stream().filter(Message::isAssistant)
-                .anyMatch(m -> m.content() != null && SELF_THOUGHT_QUESTION.matcher(m.content()).find());
+                .anyMatch(m -> m.content() != null && THOUGHT_STEP_QUESTION.matcher(m.content()).find());
     }
 
     /** 방금 사용자 발화 바로 앞의 바바의 말이 다른 기억을 묻는 질문이었는가. */

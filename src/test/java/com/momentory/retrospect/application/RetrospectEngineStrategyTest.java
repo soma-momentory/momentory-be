@@ -779,6 +779,30 @@ class RetrospectEngineStrategyTest {
     }
 
     @Test
+    void doesNotReopenTheThoughtQuestionAboutSomethingTheUserOnlyWatched() {
+        reply = wrote("놀라셨겠어요.", "그 소식을 듣고 그분에 대해서는 어떤 생각이 들었어요?");
+        say("아는 사람 부고를 들었는데 벙쪘어", heard());
+
+        // 생각을 말하지 않고 사실만 더 말했는데 모델이 같은 것을 다시 물었다.
+        reply = wrote("어제까지 연락하셨군요.", "어제까지 연락했는데 그 소식을 들으니 어떤 생각이 들었어요?");
+        ReplyDto moved = say("어제까지만 해도 연락했었어", plain());
+
+        assertThat(moved.text()).isEqualTo("어제까지 연락하셨군요.\n" + RetrospectEngine.OTHER_MEMORY_QUESTION);
+        assertThat(lastLog().questionSent()).isFalse();
+    }
+
+    @Test
+    void stillFollowsUpOnTheThoughtAboutSomethingTheUserOnlyWatched() {
+        reply = wrote("놀라셨겠어요.", "그 소식을 듣고 그분에 대해서는 어떤 생각이 들었어요?");
+        say("아는 사람 부고를 들었는데 벙쪘어", heard());
+
+        reply = wrote("그 선택이 이해가 안 되셨군요.", "어떤 점에서 비겁하다는 생각이 들었어요?");
+
+        assertThat(say("그런 선택을 한 게 비겁하다고 생각했어", plain()).text())
+                .endsWith("어떤 점에서 비겁하다는 생각이 들었어요?");
+    }
+
+    @Test
     void stillAsksTheFirstOpenThoughtQuestionOfAStory() {
         reply = wrote("속상하셨군요.", "그때 어떤 생각이 들었어요?");
 

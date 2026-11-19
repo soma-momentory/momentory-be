@@ -54,7 +54,7 @@ class StrategyTurnPromptTest {
     @Test
     void asksAboutTheUsersThoughtOfThemselvesAfterTheFeelingInsteadOfTheirHeart() {
         assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
-                .contains("기분을 말했으면 그때 자기 자신에 대해서는 어떤 생각이 들었는지를",
+                .contains("기분을 말했으면 그때 자기 자신에 대해서는(지켜본 일이면 그 일이나 그 사람에 대해서는) 어떤 생각이 들었는지를",
                         "'그때 스스로에 대해서는 어떤 생각이 들었어요?'",
                         "asksFeeling: question 이 그때의 기분을 물으면 true")
                 .doesNotContain("어떤 마음이 들었는지", "자기 마음을 스스로 짚었으면");
@@ -72,9 +72,9 @@ class StrategyTurnPromptTest {
     void tellsTheWriterWhatToAskFromTheServersCount() {
         TurnStrategy known = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false).withFeelingKnown(true);
 
-        assertThat(prompt(known.withAskedAfterFeeling(0))).contains("이번에는 자기 자신에 대한 생각을 묻습니다",
-                "사건이나 다른 사람의 말에 대한 생각이 아니라");
-        assertThat(prompt(known.withAskedAfterFeeling(1))).contains("방금 말한 자기 자신에 대한 생각을 그 말로 받아 한 번 더 묻습니다",
+        assertThat(prompt(known.withAskedAfterFeeling(0))).contains("이번에는 생각을 묻습니다",
+                "직접 겪은 일이면 사건이나 다른 사람의 말에 대한 생각이 아니라 사용자 자신에 대한 생각을 묻습니다");
+        assertThat(prompt(known.withAskedAfterFeeling(1))).contains("방금 말한 그 생각을 그 말로 받아 한 번 더 묻습니다",
                 "사실만 더 말했으면 앞의 질문을 다시 묻지 않습니다", "앞의 질문에 상황만 덧붙여 다시 물은 것도 true");
         assertThat(prompt(known.withAskedAfterFeeling(2))).contains("이 이야기에서 물을 것은 다 물었습니다");
         assertThat(prompt(known.withAskedAfterFeeling(2).withAfterOtherMemory(true)))
@@ -203,6 +203,21 @@ class StrategyTurnPromptTest {
         assertThat(prompts.strategySystem())
                 .doesNotContain("감정만 있으면 계기를", "그 감정이 맞는지 한 번 확인", "\"OO님\"으로 부릅니다")
                 .contains("[이번 턴에 할 일]을 따릅니다", "항상 존댓말", "지어내지 않습니다", "안전 신호");
+    }
+
+    @Test
+    void asksAboutTheEventOrPersonInsteadOfThemselvesForSomethingTheUserOnlyWatched() {
+        TurnStrategy explore = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+
+        assertThat(prompt(explore)).contains("생각을 물을 때는 그 일이 누구의 일인지 먼저 봅니다",
+                "사용자가 지켜보거나 전해 들은 일이면 자기 자신을 묻지 않고", "'그 소식을 듣고 그분에 대해서는 어떤 생각이",
+                "지켜본 일에 '스스로에 대해서는 어떤 생각이 들었어요?'라고 묻지 않습니다");
+        // 서버가 기분 다음 질문 차례를 알릴 때도 지켜본 일의 갈래를 함께 알린다.
+        assertThat(prompt(explore.withFeelingKnown(true).withAskedAfterFeeling(0)))
+                .contains("지켜보거나 전해 들은 일이면 그 일이나 그 사람에 대한 생각을 묻습니다",
+                        "'그분에 대해서는 어떤 생각이 들었어요?'");
+        assertThat(prompt(explore.withFeelingKnown(true).withAskedAfterFeeling(1)))
+                .contains("사용자가 방금 말한 그 생각을 그 말로 받아 한 번 더 묻습니다");
     }
 
     @Test
