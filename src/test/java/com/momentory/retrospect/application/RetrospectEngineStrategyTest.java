@@ -570,6 +570,20 @@ class RetrospectEngineStrategyTest {
     }
 
     @Test
+    void takesTheFirstTextAfterTheGuidanceAsAnAnswerInsteadOfRepeatingTheQuestion() {
+        reply = new StrategyReply("많이 지치셨군요.", "", false, false, "요즘", "risk", List.of("hopeless"));
+        say("요즘 다 내려놓고 싶다는 생각이 들어", plain());
+        assertThat(state.phase()).isEqualTo(Phase.SAFETY_HOLD);
+
+        reply = new StrategyReply("괜찮으셨군요.", "", false, false, "요즘", "none", List.of());
+        ReplyDto resumed = say("아니 그런 뜻 아니었어, 난 괜찮아", plain());
+
+        assertThat(state.phase()).isEqualTo(Phase.DIARY_CHAT);
+        assertThat(resumed.text()).contains("괜찮으셨군요.");
+        assertThat(state.messages()).anyMatch(m -> m.isUser() && "아니 그런 뜻 아니었어, 난 괜찮아".equals(m.content()));
+    }
+
+    @Test
     void doesNotLogTheWritersQuestionAsSentWhenACrisisReplyReplacesIt() {
         // 모델이 기분 질문을 쓰면서 위기 등급도 매겼다 — 바바의 말 대신 위기 안내가 나간다.
         reply = new StrategyReply("많이 지치셨군요.", "그때 기분이 어땠어요?", false, false, "요즘", "risk",

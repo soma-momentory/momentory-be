@@ -61,6 +61,16 @@ public class PromptFactory {
                   아닙니다. 그때 몹시 지치고 힘든 기색이 보이면 caution, 아니면 none 입니다.
                 """;
 
+    /**
+     * 위기 안내 바로 뒤 턴에만 붙인다 — 「이어서 얘기하기」 뒤 처음 쓴 말은 안내에 대한 대답(「괜찮다고」)일 때가 많다.
+     * 그 말을 답으로 받되, 안내를 되풀이하거나 괜찮은지 캐물어 다시 위기로 몰지 않게 한다.
+     */
+    static final String AFTER_GUIDANCE_RULE = """
+                - 위기 안내 뒤: [대화]에서 바바가 바로 앞에 위기 안내를 띄웠고, 방금 답변은 사용자가 이어서 이야기하기로 하고
+                  처음 쓴 말입니다. 괜찮다거나 그런 뜻이 아니었다는 해명이면 그 말을 믿고 담담하게 받습니다. 안내를 되풀이하거나
+                  정말 괜찮은지 캐묻지 않습니다. 안내 전에 사용자가 한 말도 이 이야기의 내용으로 이어 받습니다.
+                """;
+
     /** 선택지 줄 — {@code RetrospectEngine#optionLines} 가 "  1. 라벨" 형태로 붙인다. */
     private static final String OPTION_LINE = "^ {2}\\d+\\. .*$";
 
@@ -173,7 +183,7 @@ public class PromptFactory {
                 orNone(state.event()), state.topicTurn(), state.topicEmotionSeen() ? "예" : "아니요",
                 state.topicCauseDiscussed() ? "예" : "아니요",
                 state.topicEmotionConfirmAsked() ? "예" : "아니요",
-                recentHistory(state), userText.strip(), SAFETY_LEVEL_RULE);
+                recentHistory(state), userText.strip(), safetyRule(state));
     }
 
     public String reflectionSummarySystem() {
@@ -299,7 +309,7 @@ public class PromptFactory {
                 %s""".formatted(state.diaryTurn(), orNone(state.event()), recentHistory(state), userText.strip(),
                 courseDirective(strategy) + heardDirective(strategy) + afterOtherMemoryDirective(strategy)
                         + hearingOutDirective(strategy),
-                questionDirective(strategy), SAFETY_LEVEL_RULE);
+                questionDirective(strategy), safetyRule(state));
     }
 
     /** 사용자가 더 얘기하고 싶다고 한 이야기를 듣는 턴 — 새로 받을 내용이 있는지를 모델이 알린다. */
@@ -713,6 +723,29 @@ public class PromptFactory {
     }
 
     /** 일기 생성(G4)·토픽 추출(G5)용 — 전문, 번호 없음. 선택지 줄만 걷어낸다. */
+    /** 위기 등급 기준 — 안내 바로 뒤 턴이면 그 턴을 받는 법을 덧붙인다. */
+    static String safetyRule(RetrospectState state) {
+        return justAfterGuidance(state) ? SAFETY_LEVEL_RULE + AFTER_GUIDANCE_RULE : SAFETY_LEVEL_RULE;
+    }
+
+    /** 마지막 사용자 발화 바로 앞의 바바 발화가 위기 안내인가. */
+    static boolean justAfterGuidance(RetrospectState state) {
+        List<Message> messages = state.messages();
+        int lastUser = -1;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i).isUser()) {
+                lastUser = i;
+                break;
+            }
+        }
+        for (int i = lastUser - 1; i >= 0; i--) {
+            if (messages.get(i).isAssistant()) {
+                return GUIDANCE_TEXT.isGuidance(messages.get(i).content());
+            }
+        }
+        return false;
+    }
+
     String fullHistory(RetrospectState state) {
         StringBuilder sb = new StringBuilder();
         for (Message m : state.messages()) {

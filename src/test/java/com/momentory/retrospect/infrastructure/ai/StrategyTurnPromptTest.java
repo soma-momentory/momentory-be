@@ -237,6 +237,27 @@ class StrategyTurnPromptTest {
                 .doesNotContain("지금 느끼는 고통이");
     }
 
+    @Test
+    void tellsTheWriterHowToTakeTheFirstAnswerAfterTheGuidanceOnlyOnThatTurn() {
+        SafetyPolicy safety = new SafetyPolicy();
+        RetrospectState state = new RetrospectState("s1");
+        state.addAssistantMessage("그때 스스로에 대해서는 어떤 생각이 들었어요?");
+        state.addUserMessage("그 사람이 자살을 택한 게 이해가 안 돼.");
+        state.addAssistantMessage(safety.guidanceFor(SafetyLevel.IMMINENT).render());
+        state.addUserMessage("아니 나는 괜찮다고");
+        TurnStrategy strategy = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+
+        assertThat(prompts.strategyTurnPrompt(state, "아니 나는 괜찮다고", strategy))
+                .contains("- 위기 안내 뒤:", "그 말을 믿고 담담하게 받습니다", "정말 괜찮은지 캐묻지 않습니다");
+        assertThat(prompts.diaryTurnPrompt(state, "아니 나는 괜찮다고")).contains("- 위기 안내 뒤:");
+
+        // 그다음 턴부터는 붙지 않는다.
+        state.addAssistantMessage("괜찮으셨군요.");
+        state.addUserMessage("응.");
+        assertThat(prompts.strategyTurnPrompt(state, "응.", strategy)).doesNotContain("- 위기 안내 뒤:");
+        assertThat(prompt(strategy)).doesNotContain("- 위기 안내 뒤:");
+    }
+
     @ParameterizedTest
     @EnumSource(StrategyType.class)
     void everyCourseHasADirective(StrategyType type) {

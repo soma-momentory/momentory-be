@@ -1140,6 +1140,38 @@ class RetrospectEngineTest {
     }
 
     @Test
+    @DisplayName("위기 안내 뒤 처음 쓴 말은 버리지 않고 답으로 받는다 — 앱의 「이어서 얘기하기」는 입력창만 연다")
+    void safetyResumeWithTextTreatsItAsTheAnswer() {
+        start();
+        fake.turnQuestion = "그때 마음이 어땠어요?";
+        ReplyDto question = engine.handle(state, TurnCommand.text("발표 준비를 했어요."));
+        engine.handle(state, TurnCommand.text("죽고 싶어요."));
+        int callsAtHold = fake.diaryTurnCalls;
+        fake.turnQuestion = "발표 준비는 어땠어요?";
+
+        ReplyDto resumed = engine.handle(state, TurnCommand.text("아니 그런 뜻 아니었어, 난 괜찮아."));
+
+        assertThat(resumed.phase()).isEqualTo(Phase.DIARY_CHAT.key());
+        assertThat(resumed.text()).isNotEqualTo(question.text());
+        assertThat(fake.diaryTurnCalls).isEqualTo(callsAtHold + 1);
+        assertThat(state.messages()).anyMatch(m -> m.isUser() && "아니 그런 뜻 아니었어, 난 괜찮아.".equals(m.content()));
+        assertThat(state.safety().level()).isEqualTo(com.momentory.retrospect.domain.safety.SafetyLevel.NONE);
+    }
+
+    @Test
+    @DisplayName("위기 안내 뒤 처음 쓴 말에 다시 위기 표현이 있으면 다시 멈춘다")
+    void safetyResumeWithANewCrisisHoldsAgain() {
+        start();
+        engine.handle(state, TurnCommand.text("발표 준비를 했어요."));
+        engine.handle(state, TurnCommand.text("죽고 싶어요."));
+
+        ReplyDto again = engine.handle(state, TurnCommand.text("진짜 죽고 싶다니까"));
+
+        assertThat(again.phase()).isEqualTo(Phase.SAFETY_HOLD.key());
+        assertThat(state.phase()).isEqualTo(Phase.SAFETY_HOLD);
+    }
+
+    @Test
     void routineSchedulesAreHintsAndFallbackDoesNotInventThem() {
         var schedules = List.of(
                 new com.momentory.retrospect.domain.ScheduleItem(10L, "운동", Emotion.JOY, true),
