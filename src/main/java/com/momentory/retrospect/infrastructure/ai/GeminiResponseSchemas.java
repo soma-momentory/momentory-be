@@ -120,16 +120,22 @@ final class GeminiResponseSchemas {
         props.put("question", Map.of("type", "STRING", "description",
                 "이어서 물을 질문 한 문장. 묻지 않는 턴이거나 nothingMoreToAsk 가 true 면 빈 문자열."));
         props.put("asksFeeling", Map.of("type", "BOOLEAN", "description",
-                "question 이 그때의 기분이나 마음을 물으면 true. 사실·이유·생각을 묻거나 질문이 없으면 false."));
+                "question 이 그때의 기분을 물으면 true. 사실·이유·자기 자신에 대한 생각을 묻거나 질문이 없으면 false."));
         props.put("repeatsEarlier", Map.of("type", "BOOLEAN", "description",
-                "question 이 [대화]에서 바바가 이미 한 질문과 같은 것을 물으면 true. 말이 달라도 묻는 내용이 같으면 true."));
+                "question 이 [대화]에서 바바가 이미 한 질문과 같은 것을 물으면 true. 말이 달라도 묻는 내용이 같으면 true. "
+                        + "앞의 질문에 상황만 덧붙여 다시 물은 것도 true. 사용자가 답한 생각을 이어 더 묻는 질문은 false."));
         props.put("askedForSide", Map.of("type", "BOOLEAN", "description",
                 "방금 답변이 「내가 이상해?」처럼 자기 생각이나 마음이 괜찮은지 묻거나 자기 편을 들어 주길 바라면 true."));
+        props.put("wantsToTalkMore", Map.of("type", "BOOLEAN", "description",
+                "방금 답변에서 어떤 일을 더 얘기하고 싶다고 분명히 말했으면 true. 그 일을 이어 말하기만 했으면 false."));
+        props.put("ackRepeatsEarlier", Map.of("type", "BOOLEAN", "description",
+                "ack 가 [대화]에서 바바가 앞서 한 말과 뜻이 같거나, 방금 답변이 앞에서 한 말을 되풀이하거나 강조하기만 해서 "
+                        + "새로 받을 내용이 없으면 true."));
         props.put("safetyLevel", str());
         props.put("safetyFlags", arrayOf(str()));
         return object(props,
                 List.of("newTopic", "nothingMoreToAsk", "ack", "question", "asksFeeling", "repeatsEarlier",
-                        "askedForSide", "safetyLevel"));
+                        "askedForSide", "wantsToTalkMore", "ackRepeatsEarlier", "safetyLevel"));
     }
 
     private static Map<String, Object> diaryDraftSchema() {

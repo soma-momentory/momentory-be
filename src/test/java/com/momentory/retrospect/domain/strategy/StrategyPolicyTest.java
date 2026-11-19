@@ -465,6 +465,61 @@ class StrategyPolicyTest {
         assertThat(d.strategy().asChoices()).isTrue();
     }
 
+    // ── 기분을 들은 뒤의 질문 ──
+
+    @Test
+    void stopsAfterTwoQuestionsFollowingTheFeeling() {
+        StrategySignals heard = StrategySignals.initial().withQuestionsAfterFeeling(1);
+        assertThat(policy.askedEnoughAfterFeeling(StrategySignals.initial())).isFalse();
+        assertThat(policy.askedEnoughAfterFeeling(heard)).isFalse();
+        assertThat(policy.askedEnoughAfterFeeling(heard.withQuestionsAfterFeeling(2))).isTrue();
+    }
+
+    @Test
+    void askingToExploreTogetherAllowsOneMoreQuestion() {
+        StrategySignals done = StrategySignals.initial().withQuestionsAfterFeeling(2);
+
+        StrategyPolicy.Decision d = policy.decide(new J().requested("explore").build(), done, false);
+
+        assertThat(policy.askedEnoughAfterFeeling(d.signals())).isFalse();
+        assertThat(d.signals().questionsAfterFeeling()).isEqualTo(1);
+    }
+
+    // ── 어떤 일을 더 얘기하고 싶다고 했을 때 ──
+
+    @Test
+    void doesNotAskWhileHearingOutAStory() {
+        StrategySignals hearing = policy.hearingOut(StrategySignals.initial());
+
+        assertThat(hearing.explicitMode()).isEqualTo(StrategySignals.HEAR_OUT);
+        assertStrategy(policy.decideWithoutJudgment(hearing, false), StrategyType.REFLECT, QuestionFocus.NONE);
+    }
+
+    @Test
+    void anExplicitRequestToExploreEndsHearingOut() {
+        StrategySignals hearing = policy.hearingOut(StrategySignals.initial());
+
+        assertStrategy(policy.decide(new J().requested("explore").build(), hearing, false), StrategyType.EXPLORE,
+                QuestionFocus.OPEN);
+    }
+
+    @Test
+    void hearingOutEndsWithTheStory() {
+        StrategySignals hearing = policy.hearingOut(StrategySignals.initial());
+
+        assertThat(policy.movedToNewTopic(hearing).explicitMode()).isNull();
+    }
+
+    @Test
+    void aRequestNotToBeAskedOutlivesHearingOut() {
+        StrategySignals listen = StrategySignals.initial().withExplicitMode(StrategySignals.LISTEN);
+
+        StrategySignals hearing = policy.hearingOut(listen);
+
+        assertThat(hearing.explicitMode()).isEqualTo(StrategySignals.LISTEN);
+        assertThat(policy.movedToNewTopic(hearing).explicitMode()).isEqualTo(StrategySignals.LISTEN);
+    }
+
     // ── 판단이 없을 때 ──
 
     @Test

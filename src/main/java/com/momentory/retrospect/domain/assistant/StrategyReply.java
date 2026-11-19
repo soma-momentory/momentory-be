@@ -16,18 +16,28 @@ import com.momentory.retrospect.domain.safety.SafetyLevel;
  * @param nothingMoreToAsk 이 이야기에서 더 물을 것이 없는가 — 이미 충분히 들었거나, 사용자가 더 말하기 어려워한다
  * @param topic            지금 다루는 일의 짧은 이름(일기 대체문에 쓴다). 모르면 null
  * @param safetyLevel      none|caution|risk|imminent
- * @param asksFeeling      이번 질문이 그때의 기분이나 마음을 묻는가 — 감정 강도 성향을 재는 데만 쓴다. 모르면 null
+ * @param asksFeeling      이번 질문이 그때의 기분을 묻는가 — 감정 강도 성향을 재는 데만 쓴다. 모르면 null
  * @param repeatsEarlier   이번 질문이 이 대화에서 바바가 이미 한 질문과 같은 것을 묻는가(말이 달라도) — 그렇다면 서버가
  *                         질문을 버린다. 모르면 null
  * @param askedForSide     방금 답변이 「내가 이상해?」처럼 자기 편을 들어 주길 바라는 물음인가 — 그렇다면 바바는 사용자 편에서
  *                         답하고, 서버는 이 턴의 질문을 뺀다. 모르면 null
+ * @param wantsToTalkMore  방금 답변이 어떤 일을 더 얘기하고 싶다는 말인가 — 그렇다면 서버는 그 이야기가 이어지는 동안 묻지 않는다.
+ *                         모르면 null
+ * @param ackRepeatsEarlier 이번 받아주는 말이 바바가 앞에서 한 말과 뜻이 같거나, 방금 답변에 새로 받을 내용이 없는가. 모르면 null
  */
 public record StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
         String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier,
-        Boolean askedForSide) {
+        Boolean askedForSide, Boolean wantsToTalkMore, Boolean ackRepeatsEarlier) {
 
     public StrategyReply {
         safetyFlags = safetyFlags == null ? List.of() : List.copyOf(safetyFlags);
+    }
+
+    public StrategyReply(String ack, String question, boolean newTopic, boolean nothingMoreToAsk,
+            String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier,
+            Boolean askedForSide) {
+        this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, asksFeeling, repeatsEarlier,
+                askedForSide, null, null);
     }
 
     /** 질문이 기분을 묻는지 알리지 않은 응답. */
@@ -45,6 +55,14 @@ public record StrategyReply(String ack, String question, boolean newTopic, boole
             String topic, String safetyLevel, List<String> safetyFlags, Boolean asksFeeling, Boolean repeatsEarlier) {
         this(ack, question, newTopic, nothingMoreToAsk, topic, safetyLevel, safetyFlags, asksFeeling, repeatsEarlier,
                 null);
+    }
+
+    public boolean userWantsToTalkMore() {
+        return Boolean.TRUE.equals(wantsToTalkMore);
+    }
+
+    public boolean saysTheSameAsEarlier() {
+        return Boolean.TRUE.equals(ackRepeatsEarlier);
     }
 
     public boolean userAskedForSide() {

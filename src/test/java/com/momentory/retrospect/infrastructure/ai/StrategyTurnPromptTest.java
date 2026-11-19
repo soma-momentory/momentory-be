@@ -26,7 +26,7 @@ class StrategyTurnPromptTest {
     void leavesWhatToAskToTheWriterWithOnePrinciple() {
         String prompt = prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false));
 
-        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "방금 짚은", "발표 망쳐서 허무해.",
+        assertThat(prompt).contains("탐색:", "질문: 해도 됩니다.", "한 걸음만 더 안쪽으로", "말한 그 생각을", "발표 망쳐서 허무해.",
                 "이미 말한 것을 다시 묻지 않습니다", "이유를 이미 말했는데 이유를 또 묻지 않습니다",
                 "언제 마무리할지는 서버가 정합니다");
         // 옛 고정 순서나 단계별로 정해 둔 질문은 없다.
@@ -43,10 +43,55 @@ class StrategyTurnPromptTest {
     @Test
     void pointsQuestionsAtHowTheUserFeltRatherThanAtMoreFacts() {
         assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
-                .contains("그 일을 겪은 사용자의 마음", "사실을 더 캐묻지 않고 그때의 기분을 묻습니다",
-                        "'○○ 했을 때 기분이 어땠어요?'", "'어떤 생각이 드셨나요'로 에둘러 묻는 질문은 쓰지 않습니다",
-                        "그때의 마음을 아직 한 번도 묻지 않았고", "일어난 일만 듣고 끝내지 않습니다",
+                .contains("그 일을 겪은 사용자의 기분과 생각", "사실을 더 캐묻지 않고 그때의 기분을 묻습니다",
+                        "'○○ 했을 때 기분이 어땠어요?'", "기분을 물을 차례에 '어떤 생각이 드셨나요'로 에둘러 묻지 않습니다",
+                        "그때의 기분을 아직 한 번도 묻지 않았고", "일어난 일만 듣고 끝내지 않습니다",
                         "같은 것을 다시 묻지 않고 true 로 둡니다", "한 번 물은 것은 한 번으로 끝냅니다");
+    }
+
+    @Test
+    void asksAboutTheUsersThoughtOfThemselvesAfterTheFeelingInsteadOfTheirHeart() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("기분을 말했으면 그때 자기 자신에 대해서는 어떤 생각이 들었는지를",
+                        "'그때 스스로에 대해서는 어떤 생각이 들었어요?'",
+                        "asksFeeling: question 이 그때의 기분을 물으면 true")
+                .doesNotContain("어떤 마음이 들었는지", "자기 마음을 스스로 짚었으면");
+    }
+
+    @Test
+    void keepsAskingOnceMoreAfterTheUserNamesAThoughtAboutThemselves() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("사용자가 방금 그 생각을 처음 말했으면 반드시 false",
+                        "이미 이어 물었고 사용자가 답했으면 true", "말한 그 생각을 사용자가 쓴 말로 받아 한 번 더 묻습니다",
+                        "이어 한 걸음 더 묻는 것은 다시 묻는 것이 아닙니다", "사용자가 답한 생각을 이어 더 묻는 질문은 false");
+    }
+
+    @Test
+    void tellsTheWriterWhatToAskFromTheServersCount() {
+        TurnStrategy known = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false).withFeelingKnown(true);
+
+        assertThat(prompt(known.withAskedAfterFeeling(0))).contains("이번에는 자기 자신에 대한 생각을 묻습니다",
+                "사건이나 다른 사람의 말에 대한 생각이 아니라");
+        assertThat(prompt(known.withAskedAfterFeeling(1))).contains("방금 말한 자기 자신에 대한 생각을 그 말로 받아 한 번 더 묻습니다",
+                "사실만 더 말했으면 앞의 질문을 다시 묻지 않습니다", "앞의 질문에 상황만 덧붙여 다시 물은 것도 true");
+        assertThat(prompt(known.withAskedAfterFeeling(2))).contains("이 이야기에서 물을 것은 다 물었습니다");
+        assertThat(prompt(known.withAskedAfterFeeling(2).withAfterOtherMemory(true)))
+                .doesNotContain("이 이야기에서 물을 것은 다 물었습니다");
+    }
+
+    @Test
+    void tellsTheWriterHowToJudgeNewContentWhileHearingOut() {
+        TurnStrategy quiet = new TurnStrategy(StrategyType.REFLECT, QuestionFocus.NONE, false);
+
+        assertThat(prompt(quiet.withHearingOut(true))).contains("더 얘기하고 싶다고 한 이야기를 듣고 있습니다",
+                "nothingMoreToAsk 와 ackRepeatsEarlier 를 true 로 둡니다");
+        assertThat(prompt(quiet)).doesNotContain("더 얘기하고 싶다고 한 이야기를 듣고 있습니다");
+    }
+
+    @Test
+    void keepsTheWordHeartOutOfQuestions() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("질문에는 '마음'이라는 말을 쓰지 않습니다", "'그때 기분이 어땠어요?'로 묻습니다");
     }
 
     @Test
@@ -128,7 +173,16 @@ class StrategyTurnPromptTest {
                 .contains("[자기 편을 들어 달라는 물음]", "'내가 이상해?'", "사용자 편에서 분명하게",
                         "상대를 나쁘게 말하거나 탓하지는 않습니다", "이 턴에는 질문하지 않습니다",
                         "재해석이어도 이것이 먼저입니다", "askedForSide: 위 [자기 편을 들어 달라는 물음]대로",
-                        "단 하나의 예외", "물음을 되받기만 하는 것은 답이 아닙니다");
+                        "예외: 방금 답변이 자기 편을", "물음을 되받기만 하는 것은 답이 아닙니다");
+    }
+
+    @Test
+    void tellsTheWriterToAgreeAndNotAskWhenTheUserWantsToTalkMore() {
+        assertThat(prompt(new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false)))
+                .contains("[더 얘기하고 싶다는 말]", "어떤 일을 더 얘기하고 싶다고 분명히 말했으면 true",
+                        "이어 말하기만 한 것은 false", "먼저 알겠다고 답합니다", "'네, 그 이야기 더 들을게요.'",
+                        "내용을 짚어 공감하는 문장을 꼭 붙입니다", "ackRepeatsEarlier", "새로 받을 내용이 없으면 true",
+                        "되풀이하거나 강조하기만 하고 새로운 사실·기분·생각이");
     }
 
     @Test

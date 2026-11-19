@@ -61,11 +61,17 @@ import com.momentory.retrospect.domain.judgment.TurnJudgment;
  *     두 번 이어지면 다시 제안한다(v9 에 있다가 v10 에서 뺀 것). 들어 달라고 한 대화에는 적용하지 않는다.
  * <li>v13: 이번 대화의 명시적 요청이 저장된 성향보다 앞선다. 함께 알아보자거나 조언을 구하면 재해석 방침을 풀고, 함께
  *     알아보자 · 조언 · 다른 관점 요청은 쌓인 저항에 따른 드문 질문도 푼다. 요청한 뒤로는 그 대화 끝까지 성향으로 돌아가지 않는다.
+ * <li>v14: 규칙은 그대로이고 문장 생성 지시만 바뀌었다(턴 기록에서 구분하려고 버전을 올린다). 기분 다음 질문을 「자기 자신에
+ *     대한 마음」에서 「자기 자신에 대한 생각」으로 바꿨다 — 사용자가 기분과 마음의 차이를 느끼지 못했다. 그 생각을 말하면
+ *     더 물을 것이 없다고 끝내던 것을 고쳐, 방금 말한 생각을 한 번 더 묻는다. 기분 질문 기록(asksFeeling)은 기분을 물은 턴만 센다.
+ *     어떤 일을 더 얘기하고 싶다고 하면 알겠다고 답한 뒤 그 이야기가 이어지는 동안 묻지 않고 공감만 한다. 앞에서 한 말과
+ *     같은 말을 하게 되면 그 말을 되풀이하지 않고 다른 기억을 묻는다. 모델이 지금 몇 번째 질문인지 가늠하지 못해, 기분을 들은
+ *     뒤의 질문을 서버가 세어 이번에 물을 것을 알리고 두 번(자기 자신에 대한 생각 → 그 생각)을 물으면 그 이야기의 질문을 마친다.
  * </ul>
  */
 public class StrategyPolicy {
 
-    public static final String VERSION = "v13";
+    public static final String VERSION = "v14";
 
     /** 받아들이지 않는 답이 이만큼 연달아 나오면 마무리를 제안한다. */
     static final int YIELD_STREAK_LIMIT = 2;
@@ -73,6 +79,8 @@ public class StrategyPolicy {
     static final int SPARSE_QUESTION_GAP = 2;
     /** 마무리를 제안한 뒤 질문 없는 턴이 이만큼 이어지면 다시 제안한다. */
     static final int REPROPOSE_AFTER_QUIET_TURNS = 2;
+    /** 한 이야기에서 기분을 들은 뒤에 묻는 질문 수 — 자기 자신에 대한 생각, 그리고 그 생각을 한 번 더. */
+    static final int QUESTIONS_AFTER_FEELING = 2;
 
     /** 바바의 직전 말을 받아들이지 않은 반응 — 종류는 달라도 대처는 같다: 물러선다. */
     private static final Set<String> NOT_ACCEPTED = Set.of("correct_interpretation", "argue", "struggle_to_answer",
@@ -140,10 +148,14 @@ public class StrategyPolicy {
         boolean askedForAWay = "explore".equals(requested) || "advice".equals(requested)
                 || "other_view".equals(requested);
         int resistance = before.resistanceCount() + (reaction != null && RESISTANCE.contains(reaction) ? 1 : 0);
+        // 직접 더 알아보자고 했으면 이 이야기의 질문을 다 물었어도 한 번 더 물을 수 있다.
+        Integer afterFeeling = askedForAWay && before.questionsAfterFeeling() != null
+                ? Integer.valueOf(Math.min(before.questionsAfterFeeling(), QUESTIONS_AFTER_FEELING - 1))
+                : before.questionsAfterFeeling();
         StrategySignals now = new StrategySignals(askedForAWay ? 0 : resistance,
                 notAccepted ? before.yieldStreak() + 1 : 0,
                 explicitMode, before.topicNumber(), before.wrapUpProposed(), before.lastType(),
-                before.turnsSinceQuestion(), before.questionsAsked(), before.questionsAfterFeeling(),
+                before.turnsSinceQuestion(), before.questionsAsked(), afterFeeling,
                 before.deepestStage());
         boolean askedToBeHeard = "listen".equals(requested) || "refuse_question".equals(reaction);
         return new Decision(choose(endRequested, notAccepted, reaction, askedToBeHeard, now), now);
@@ -158,8 +170,8 @@ public class StrategyPolicy {
         StrategyType base = notAccepted ? StrategyType.YIELD
                 : StrategySignals.OTHER_VIEW.equals(s.explicitMode()) ? StrategyType.REFRAME
                 : StrategyType.EXPLORE;
-        // ── 2. 들어 달라고 했으면 묻지 않는다 ──
-        if (StrategySignals.LISTEN.equals(s.explicitMode())) {
+        // ── 2. 들어 달라고 했거나 어떤 일을 더 얘기하고 싶다고 했으면 묻지 않는다 ──
+        if (StrategySignals.LISTEN.equals(s.explicitMode()) || StrategySignals.HEAR_OUT.equals(s.explicitMode())) {
             return new TurnStrategy(notAccepted ? StrategyType.YIELD : StrategyType.REFLECT, QuestionFocus.NONE,
                     false, reaction, askedToBeHeard);
         }
@@ -213,11 +225,27 @@ public class StrategyPolicy {
      */
     public StrategySignals movedToNewTopic(StrategySignals now, String reaction) {
         boolean wasTopicChange = TOPIC_CHANGE.equals(reaction);
+        // 더 얘기하고 싶다던 것은 앞 이야기다 — 새 이야기에서는 다시 묻는다.
+        String mode = StrategySignals.HEAR_OUT.equals(now.explicitMode()) ? null : now.explicitMode();
         // 마음을 들은 뒤의 질문 수는 새 이야기에서 다시 센다(8개짜리 생성자가 비워 둔다).
         return new StrategySignals(wasTopicChange ? Math.max(0, now.resistanceCount() - 1) : now.resistanceCount(),
-                wasTopicChange ? 0 : now.yieldStreak(), now.explicitMode(),
+                wasTopicChange ? 0 : now.yieldStreak(), mode,
                 now.topicNumber() + 1, false, now.lastType(), now.turnsSinceQuestion(),
                 now.questionsAsked());
+    }
+
+    /**
+     * 사용자가 어떤 일을 더 얘기하고 싶다고 했다(문장 생성 모델이 알린다) — 그 이야기가 이어지는 동안 묻지 않는다.
+     * 대화 내내 묻지 말라고 한 요청은 더 넓은 요청이므로 그대로 둔다.
+     */
+    public StrategySignals hearingOut(StrategySignals now) {
+        return StrategySignals.LISTEN.equals(now.explicitMode()) ? now
+                : now.withExplicitMode(StrategySignals.HEAR_OUT);
+    }
+
+    /** 이 이야기에서 기분을 들은 뒤에 물을 질문을 다 물었는가. */
+    public boolean askedEnoughAfterFeeling(StrategySignals s) {
+        return s.questionsAfterFeeling() != null && s.questionsAfterFeeling() >= QUESTIONS_AFTER_FEELING;
     }
 
     /** 턴을 마친 뒤의 신호 — 실제로 나간 방침을 반영한다. */
@@ -259,8 +287,8 @@ public class StrategyPolicy {
 
     /**
      * 방금 답변에서 본 것을 신호에 남긴다 — 이 이야기에서 그때의 마음을 들었는지와, 가장 깊었던 체험 깊이.
-     * 둘 다 방침을 고르는 데 쓰지 않는다. 마음을 들었는지는 문장 생성 모델이 들은 기분을 다시 묻지 않게 알리는 데 쓰고,
-     * 깊이는 기록으로만 남는다. 확신이 기준에 못 미치는 판단은 없는 것으로 본다.
+     * 마음을 들었는지는 들은 기분을 다시 묻지 않게 하고 그 뒤의 질문을 세는 데 쓰고, 깊이는 기록으로만 남는다.
+     * 확신이 기준에 못 미치는 판단은 없는 것으로 본다.
      *
      * @param judgment 방금 답변의 판단. 없으면 null
      */

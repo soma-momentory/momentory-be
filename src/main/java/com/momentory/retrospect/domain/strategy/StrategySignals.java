@@ -8,7 +8,7 @@ package com.momentory.retrospect.domain.strategy;
  *
  * @param resistanceCount    바바의 질문·해석 뒤 답하지 않음·화제 전환·반박이 나온 횟수 — 질문 빈도를 줄이는 데 쓴다
  * @param yieldStreak        사용자가 바바의 말을 받아들이지 않은 턴이 지금까지 연달아 이어진 횟수
- * @param explicitMode       가장 최근에 명시적으로 요청한 응답 방식(LISTEN·OTHER_VIEW). 없으면 null
+ * @param explicitMode       가장 최근에 명시적으로 요청한 응답 방식(LISTEN·OTHER_VIEW·HEAR_OUT). 없으면 null
  * @param topicNumber        지금 몇 번째 이야기인가(1부터)
  * @param wrapUpProposed     지금 이야기에서 마무리를 이미 제안했는가
  * @param lastType           직전 턴의 방침. 없으면 null
@@ -23,6 +23,8 @@ public record StrategySignals(int resistanceCount, Integer yieldStreak, String e
 
     public static final String LISTEN = "LISTEN";
     public static final String OTHER_VIEW = "OTHER_VIEW";
+    /** 어떤 일을 더 얘기하고 싶다고 했다 — 그 이야기가 이어지는 동안 묻지 않고 공감만 한다. 새 이야기로 넘어가면 풀린다. */
+    public static final String HEAR_OUT = "HEAR_OUT";
 
     public StrategySignals {
         yieldStreak = yieldStreak == null ? 0 : yieldStreak;
@@ -46,6 +48,11 @@ public record StrategySignals(int resistanceCount, Integer yieldStreak, String e
     public StrategySignals withFollowUp(Integer count, Integer deepest) {
         return new StrategySignals(resistanceCount, yieldStreak, explicitMode, topicNumber, wrapUpProposed, lastType,
                 turnsSinceQuestion, questionsAsked, count, deepest);
+    }
+
+    public StrategySignals withExplicitMode(String mode) {
+        return new StrategySignals(resistanceCount, yieldStreak, mode, topicNumber, wrapUpProposed, lastType,
+                turnsSinceQuestion, questionsAsked, questionsAfterFeeling, deepestStage);
     }
 
     public static StrategySignals initial() {
