@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.momentory.retrospect.domain.Emotion;
 import com.momentory.diary.domain.Diary;
+import com.momentory.diary.domain.DiaryEmotionSelection;
 
 /**
  * 일기 조회 결과 한 벌 — 목록·단건 응답의 재료다. 바람 카드는 그날의 회고
@@ -15,15 +16,15 @@ import com.momentory.diary.domain.Diary;
  * (일기에서 드러난 감정 키 전체 — 저장된 CSV 를 나눈 것). 본문은 {@code original} 하나다.
  */
 public record DiaryView(Long id, Long retrospectId, Emotion primaryEmotion,
-        List<String> emotions, String original, Instant createdAt, String weather) {
+        List<String> emotions, String original, Instant createdAt, String weather, DiaryEmotionSelection emotionSelection, boolean emotionClassificationChanged) {
 
     public DiaryView {
         emotions = emotions == null ? List.of() : List.copyOf(emotions);
     }
 
-    static DiaryView from(Diary diary) {
+    static DiaryView from(Diary diary, DiaryEmotionSelection selection) {
         return new DiaryView(diary.getId(), diary.getRetrospectId(), diary.getPrimaryEmotion(),
-                splitCsv(diary.getEmotions()), diary.getOriginal(), diary.getCreatedAt(), diary.getWeather());
+                splitCsv(diary.getEmotions()), diary.getOriginal(), diary.getCreatedAt(), diary.getWeather(), selection, diary.isEmotionClassificationChanged());
     }
 
     static List<String> splitCsv(String csv) {

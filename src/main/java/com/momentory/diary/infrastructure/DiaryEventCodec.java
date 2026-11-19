@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 
 import com.momentory.diary.domain.DiaryEvent;
+import com.momentory.diary.domain.DiaryEmotionSelection;
 import com.momentory.retrospect.infrastructure.persistence.EmotionJsonModule;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,5 +33,13 @@ public class DiaryEventCodec {
 
     public List<DiaryEvent> deserialize(String json) {
         return json == null ? List.of() : mapper.readValue(json, Snapshot.class).events();
+    }
+
+    public String serializeSelection(DiaryEmotionSelection selection) {
+        return mapper.writeValueAsString(selection);
+    }
+
+    public DiaryEmotionSelection deserializeSelection(String json) {
+        return mapper.readValue(json, DiaryEmotionSelection.class);
     }
 }

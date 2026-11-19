@@ -13,9 +13,12 @@ import com.momentory.actioncard.domain.ActionCard;
 import com.momentory.common.time.DayBoundary;
 import com.momentory.letter.domain.Letter;
 import com.momentory.letter.domain.LetterAction;
+import com.momentory.letter.domain.LetterPicture;
+import com.momentory.letter.domain.LetterPictureStatus;
 import com.momentory.letter.domain.LetterPolicy;
 import com.momentory.letter.domain.LetterStatus;
 import com.momentory.letter.infrastructure.LetterActionRepository;
+import com.momentory.letter.infrastructure.LetterPictureRepository;
 import com.momentory.letter.infrastructure.LetterRepository;
 import com.momentory.retrospect.domain.safety.SafetyPolicy;
 import com.momentory.schedule.infrastructure.ScheduleRepository;
@@ -38,11 +41,14 @@ public class LetterService {
     private final LetterWishCards wishCards;
     /** 꺼져 있으면 지난 편지의 작은 일도 응답에 싣지 않고, 고르기도 받지 않는다(2026-11-17). 저장된 칸은 지우지 않는다. */
     private final boolean actionsEnabled;
+    private final LetterPictureRepository pictureRepository;
+    private final LetterPictureProperties pictureProperties;
 
     public LetterService(LetterRepository letterRepository,
             LetterActionRepository letterActionRepository, LetterGenerator generator,
             ScheduleRepository scheduleRepository, SafetyPolicy safetyPolicy, LetterWishCards wishCards,
-            @Value("${momentory.letter.actions-enabled:true}") boolean actionsEnabled) {
+            @Value("${momentory.letter.actions-enabled:true}") boolean actionsEnabled,
+            LetterPictureRepository pictureRepository, LetterPictureProperties pictureProperties) {
         this.letterRepository = letterRepository;
         this.letterActionRepository = letterActionRepository;
         this.generator = generator;
@@ -50,6 +56,8 @@ public class LetterService {
         this.safetyPolicy = safetyPolicy;
         this.wishCards = wishCards;
         this.actionsEnabled = actionsEnabled;
+        this.pictureRepository = pictureRepository;
+        this.pictureProperties = pictureProperties;
     }
 
     /** 열 수 있는 가장 최근 편지 — 오래된 것이어도 준다. 홈 아이콘의 점은 {@code isNew} 로 판단한다. */
@@ -146,7 +154,7 @@ public class LetterService {
             LetterGenerator.Draft d = unsaved.get();
             return new LetterView(letter.getId(), letter.getLetterDate(), d.status(), d.quote(), d.insight(),
                     d.tonightQuestion(), List.of(), helplines(d.status(), d.policy()), letter.isNewOn(today),
-                    letter.getOpenedAt());
+                    letter.getOpenedAt(), false);
         }
         Letter fresh = letterRepository.findById(letter.getId()).orElseThrow(LetterNotFoundException::new);
         if (recheck && !fresh.getStatus().isDone()) {
@@ -161,7 +169,29 @@ public class LetterService {
                 letter.getInsight(), letter.getTonightQuestion(),
                 actions.stream().map(a -> new LetterView.Action(a.getPosition(), a.getTitle(), a.getSource(),
                         a.isChosen(), a.getWhenLabel(), a.getScheduleId(), a.getRemindAt())).toList(),
-                helplines(letter.getStatus(), letter.getSafetyPolicy()), letter.isNewOn(today), letter.getOpenedAt());
+                helplines(letter.getStatus(), letter.getSafetyPolicy()), letter.isNewOn(today), letter.getOpenedAt(),
+                hasPicture(letter));
+    }
+
+    /**
+     * 그림일기 — 열 수 있는 내 편지의 다 그린 그림만 준다. 아직 열 수 없는 편지(04:00 전)는 편지와 같이 없는 것처럼
+     * 다뤄, 편지보다 그림을 먼저 보는 일이 없게 한다.
+     */
+    @Transactional(readOnly = true)
+    public LetterPictureView picture(Long userId, Long id) {
+        Letter letter = openable(userId, id, DayBoundary.today());
+        if (!pictureProperties.allows(letter.getUserId()) || !letter.allowsPicture()) {
+            throw new LetterPictureNotFoundException();
+        }
+        return pictureRepository.findById(letter.getId())
+                .filter(LetterPicture::isReady)
+                .map(p -> new LetterPictureView(p.getMimeType(), p.getImage()))
+                .orElseThrow(LetterPictureNotFoundException::new);
+    }
+
+    private boolean hasPicture(Letter letter) {
+        return pictureProperties.allows(letter.getUserId()) && letter.allowsPicture()
+                && pictureRepository.existsByLetterIdAndStatus(letter.getId(), LetterPictureStatus.READY);
     }
 
     /** 조용한 편지는 도움받을 곳 전부, 안전 게이트가 조심스럽게(GENTLE) 쓴 편지는 첫 줄(24시간 상담) 하나. */

@@ -40,6 +40,44 @@ class GeminiEmotionExtractorTest {
     }
 
     @Test
+    void emotionalEventsBeatMoreFrequentlyDiscussedNeutralEvents() {
+        var events = List.of(event(1, 1, 2, 3, 4), event(2, 5), event(3, 6));
+        assertThat(GeminiEmotionExtractor.pickForDiary(events, List.of(emotion(2), emotion(3))))
+                .extracting("id").containsExactly(2, 3);
+    }
+
+    @Test
+    void moreUserTurnsWinWhenEventsHaveTheSameEmotionPriority() {
+        var events = List.of(event(1, 1), event(2, 2, 3), event(3, 4, 5, 6));
+        assertThat(GeminiEmotionExtractor.pickForDiary(events, List.of(emotion(1), emotion(2), emotion(3))))
+                .extracting("id").containsExactly(2, 3);
+        assertThat(GeminiEmotionExtractor.pickForDiary(events, List.of()))
+                .extracting("id").containsExactly(2, 3);
+    }
+
+    @Test
+    void earliestEvidenceBreaksTiesInsteadOfTheModelsArrayOrder() {
+        var events = List.of(event(1, 9), event(2, 1), event(3, 4));
+        assertThat(GeminiEmotionExtractor.pickForDiary(events, List.of(emotion(1), emotion(2), emotion(3))))
+                .extracting("id").containsExactly(2, 3);
+    }
+
+    @Test
+    void duplicateEvidenceDoesNotInflateAnEventsTurnCount() {
+        var events = List.of(event(1, 4, 5), event(2, 2, 2, 0, -1), event(3, 3));
+        assertThat(GeminiEmotionExtractor.pickForDiary(events, List.of()))
+                .extracting("id").containsExactly(1, 2);
+    }
+
+    private static com.momentory.retrospect.domain.ExtractedEvent event(int id, Integer... evidence) {
+        return new com.momentory.retrospect.domain.ExtractedEvent(id, "사건" + id, "사건 요약" + id, List.of(evidence));
+    }
+
+    private static com.momentory.retrospect.domain.ExtractedEmotion emotion(int eventId) {
+        return new com.momentory.retrospect.domain.ExtractedEmotion(eventId, "기뻤다", Emotion.JOY, null, null, "기뻤다", List.of());
+    }
+
+    @Test
     @DisplayName("사건·감정을 도메인 타입으로 매핑한다")
     void mapsToDomainTypes() {
         respond(new GeminiExtraction(

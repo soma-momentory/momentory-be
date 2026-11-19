@@ -36,6 +36,89 @@ class GeminiDiaryWriterTest {
     }
 
     @Test
+    void excludedEventInFirstPositionIsFilteredByIdentityBeforeAnyParagraphLimit() {
+        state.events(List.of(new com.momentory.retrospect.domain.ExtractedEvent(1, "발표", "발표했다", List.of(1)),
+                new com.momentory.retrospect.domain.ExtractedEvent(2, "산책", "산책했다", List.of(1))));
+        var result = new DiaryDraft(List.of(
+                new DiaryDraft.Paragraph(3, "간식", List.of("간식을 먹었다.")),
+                new DiaryDraft.Paragraph(1, "발표", List.of("발표했다.", "긴장했다.", "마쳤다.")),
+                new DiaryDraft.Paragraph(2, "산책", List.of("산책했다.", "편안했다."))));
+        when(client.generate(any(), eq(DiaryDraft.class))).thenReturn(Optional.of(result));
+        assertThat(writer.write(state).orElseThrow().diary())
+                .isEqualTo("발표했다.\n긴장했다.\n마쳤다.\n\n산책했다.\n편안했다.")
+                .doesNotContain("간식");
+    }
+
+    @Test
+    void unknownOrMissingSelectedEventsFallBackRatherThanSavingAnUnselectedEvent() {
+        state.events(List.of(new com.momentory.retrospect.domain.ExtractedEvent(1, "발표", "발표했다", List.of(1)),
+                new com.momentory.retrospect.domain.ExtractedEvent(2, "산책", "산책했다", List.of(1))));
+        var result = new DiaryDraft(List.of(new DiaryDraft.Paragraph(3, "간식", List.of("잘못 연결된 다른 사건")),
+                new DiaryDraft.Paragraph(2, "산책", List.of("산책했다."))));
+        when(client.generate(any(), eq(DiaryDraft.class))).thenReturn(Optional.of(result));
+        assertThat(writer.write(state)).isEmpty();
+        verify(client, times(2)).generate(any(), eq(DiaryDraft.class));
+    }
+
+    @Test
+    void aMissingEventIdCannotDuplicateOneParagraphAcrossEventsWithTheSameName() {
+        state.events(List.of(new com.momentory.retrospect.domain.ExtractedEvent(1, "운동", "오전에 운동했다", List.of(1)),
+                new com.momentory.retrospect.domain.ExtractedEvent(2, "운동", "저녁에 운동했다", List.of(2))));
+        var result = new DiaryDraft(List.of(new DiaryDraft.Paragraph("운동", List.of("운동했다."))));
+        when(client.generate(any(), eq(DiaryDraft.class))).thenReturn(Optional.of(result));
+        assertThat(writer.write(state)).isEmpty();
+    }
+
+    @Test
+    void aDifferentEventLabelDoesNotDiscardTheDiaryWhenItsIdMatches() {
+        state.events(List.of(new com.momentory.retrospect.domain.ExtractedEvent(4, "휴식", "집에서 쉬었다", List.of(1, 2))));
+        var result = new DiaryDraft(List.of(new DiaryDraft.Paragraph(4, "집에서 보낸 휴식 시간", List.of(
+                "집에 돌아왔다.", "씻었다.", "편하게 누웠다.", "쉬는 시간이 좋았다.", "마음이 편안했다."))));
+        when(client.generate(any(), eq(DiaryDraft.class))).thenReturn(Optional.of(result));
+        assertThat(writer.write(state).orElseThrow().diary()).isEqualTo(result.text());
+        verify(client).generate(any(), eq(DiaryDraft.class));
+    }
+
+    @Test
+    void aRenumberedOrMissingEventIsRepairedOnceBeforeFallingBackToASummary() {
+        state.events(List.of(new com.momentory.retrospect.domain.ExtractedEvent(4, "휴식", "집에서 쉬었다", List.of(1))));
+        state.addUserMessage("집에서 쉬며 편안했다.");
+        var invalid = new DiaryDraft(List.of(new DiaryDraft.Paragraph(1, "휴식", List.of("누웠다."))));
+        var repaired = new DiaryDraft(List.of(new DiaryDraft.Paragraph(4, "휴식", List.of(
+                "집에 있었다.", "누워 있었다.", "쉬고 싶었다.", "편안했다.", "푹 쉬었다."))));
+        when(client.generate(any(), eq(DiaryDraft.class))).thenReturn(Optional.of(invalid)).thenReturn(Optional.of(repaired));
+        assertThat(writer.write(state).orElseThrow().diary()).isEqualTo(repaired.text());
+        var requests = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(client, times(2)).generate(requests.capture(), eq(DiaryDraft.class));
+        assertThat(requests.getAllValues().get(1).user()).contains("[사건 연결 다시 쓰기]", "[사건 4]", "새로 번호를 매기지 마세요");
+        verify(client).withReadTimeout(GeminiDiaryWriter.REVISION_TIMEOUT);
+    }
+
+    @Test
+    void thirdEventParagraphIsNeverIncludedInTheDiary() {
+        var result = draft(List.of("발표했다.", "긴장했다.", "마쳤다."),
+                List.of("산책했다.", "편안했다."), List.of("선정하지 않은 간식을 먹었다."));
+        when(client.generate(any(), eq(DiaryDraft.class))).thenReturn(Optional.of(result));
+        assertThat(writer.write(state).orElseThrow().diary())
+                .isEqualTo("발표했다.\n긴장했다.\n마쳤다.\n\n산책했다.\n편안했다.");
+        verify(client).generate(any(), eq(DiaryDraft.class));
+    }
+
+    @Test
+    void extraEventCannotFillTheMinimumAndIsAlsoRemovedFromTheRevision() {
+        var first = draft(List.of("발표했다.", "긴장했다."), List.of("산책했다.", "편안했다."),
+                List.of("다른 사건 하나.", "다른 사건 둘."));
+        var revised = draft(List.of("발표했다.", "긴장했다.", "마쳤다."), List.of("산책했다.", "편안했다."),
+                List.of("다른 사건 셋."));
+        when(client.generate(any(), eq(DiaryDraft.class))).thenReturn(Optional.of(first)).thenReturn(Optional.of(revised));
+        assertThat(writer.write(state).orElseThrow().diary()).doesNotContain("다른 사건");
+        verify(client, times(2)).generate(any(), eq(DiaryDraft.class));
+        java.util.Map<?, ?> properties = (java.util.Map<?, ?>) GeminiResponseSchemas.forType(DiaryDraft.class).get("properties");
+        java.util.Map<?, ?> paragraphs = (java.util.Map<?, ?>) properties.get("paragraphs");
+        assertThat(paragraphs.get("maxItems")).isEqualTo(2);
+    }
+
+    @Test
     void sentencesOfOneEventSitOnConsecutiveLinesAndOnlyEventsAreSeparatedByABlankLine() {
         when(client.generate(any(), eq(DiaryDraft.class))).thenReturn(Optional.of(
                 draft(List.of("발표했다.", "긴장했다.", "마쳤다."), List.of("산책했다.", "편안했다."))));

@@ -68,6 +68,14 @@ class RetrospectEngineTest {
         return reply;
     }
 
+    @Test
+    void failedWriterUsesOnlySelectedEventSummariesInsteadOfTheCurrentTopicSlot() {
+        fake.events.add(new ExtractedEvent(1, "발표", "발표를 마쳤다.", List.of(1, 2)));
+        fake.events.add(new ExtractedEvent(2, "산책", "공원을 걸었다.", List.of(3)));
+        fake.failDiary = true;
+        assertThat(toDiaryEnd().diary().diary()).isEqualTo("발표를 마쳤다.\n\n공원을 걸었다.");
+    }
+
     // ── 시작 ─────────────────────────────────────────────────────────────
 
     @Test

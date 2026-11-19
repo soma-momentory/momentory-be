@@ -290,6 +290,29 @@ class PromptFactoryTest {
     }
 
     @Test
+    void diaryWritingReceivesOnlySelectedEventsAndTheirUserEvidence() {
+        var state = new RetrospectState("selected-two");
+        state.addUserMessage("마트에서 간식을 샀다.");
+        state.addAssistantMessage("간식을 더 이야기해 주세요.");
+        state.addUserMessage("발표에서 긴장했지만 끝냈다.");
+        state.addUserMessage(" ");
+        state.addUserMessage("산책하니 편안했다.");
+        state.events(List.of(new ExtractedEvent(2, "발표", "발표를 마쳤다", List.of(2)),
+                new ExtractedEvent(3, "산책", "공원을 걸었다", List.of(3))));
+        assertThat(prompts.diaryPrompt(state)).contains("주요 사건은 최대 2개", "발표에서 긴장했지만 끝냈다.",
+                "산책하니 편안했다.", "[사건 2] 발표: 발표를 마쳤다", "[사건 3] 산책: 공원을 걸었다")
+                .doesNotContain("마트에서 간식을 샀다.", "간식을 더 이야기해 주세요.");
+    }
+
+    @Test
+    void selectedEventsWithoutEvidenceNeverReintroduceTheWholeConversation() {
+        var state = new RetrospectState("no-evidence");
+        state.addUserMessage("선정되지 않은 다른 일");
+        state.events(List.of(new ExtractedEvent(1, "선정 사건", "선정 사건 요약", List.of())));
+        assertThat(prompts.diaryPrompt(state)).contains("선정 사건 요약").doesNotContain("선정되지 않은 다른 일");
+    }
+
+    @Test
     void diaryPromptKeepsEveryUserStatementInAtLeastFiveSentencesWithoutInventingFacts() {
         assertThat(prompts.diaryPrompt(new RetrospectState("diary")))
                 .contains("최소 5문장", "길어도 8문장", "짧게 요약하지 말고", "사용자가 한 말은 하나도 빼지 말고",
