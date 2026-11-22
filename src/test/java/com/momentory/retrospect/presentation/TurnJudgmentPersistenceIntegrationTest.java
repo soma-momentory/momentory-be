@@ -731,4 +731,43 @@ class TurnJudgmentPersistenceIntegrationTest {
         assertThat(observation.isDerivedOtherView()).isTrue();
     }
 
+    @Test
+    void analysisIncludesUnansweredHistorySessionsAndSeparatesLegacyVersions() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        pastConversationWithResistance(user, 1);
+        long unanswered = startSession(user);
+        jdbc.update("update retrospects set created_at = now() - interval '2 days' where id = ?", unanswered);
+        String setup = java.nio.file.Files.readString(java.nio.file.Path.of("eval/strategy-metrics/00_setup.sql"));
+        jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
+            try (var statement = connection.createStatement()) {
+                statement.execute(setup);
+                try (var result = statement.executeQuery("select analysis_target, dropout_status, explore_questions "
+                        + "from sm_session_metrics where retrospect_id = " + unanswered)) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getBoolean(1)).isTrue();
+                    assertThat(result.getString(2)).isEqualTo("DROPOUT");
+                    assertThat(result.getInt(3)).isZero();
+                }
+                for (String script : List.of("10_check_logging.sql", "20_progress.sql", "30_metrics.sql")) {
+                    try {
+                        statement.execute(java.nio.file.Files.readString(java.nio.file.Path.of("eval/strategy-metrics", script)));
+                    } catch (java.io.IOException e) {
+                        throw new IllegalStateException(e);
+                    }
+                }
+                statement.execute("update retrospect_disposition_observations set disposition_version = 'conditional-v1'"
+                        + " where retrospect_id = " + unanswered);
+                try (var result = statement.executeQuery("select count(*) from sm_session_metrics where retrospect_id = "
+                        + unanswered)) {
+                    result.next();
+                    assertThat(result.getInt(1)).isZero();
+                }
+                statement.execute("drop view pg_temp.sm_params cascade");
+            }
+            return null;
+        });
+    }
+
 }

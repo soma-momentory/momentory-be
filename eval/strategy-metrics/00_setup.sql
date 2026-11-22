@@ -11,29 +11,33 @@
 --                 단, 답변이 새 이야기의 시작이었다면(new_topic, V50) 「다른 얘기로 넘어감」은 저항이 아니다(NEW_TOPIC).
 --   확신이 기준(min_confidence) 미만인 반응은 어느 쪽에도 세지 않는다(문서 2장 「신호 제외」).
 
-DROP VIEW IF EXISTS sm_params CASCADE;
+DROP VIEW IF EXISTS pg_temp.sm_params CASCADE;
 
 -- ── 1. 분석 조건 ── 실행 전에 고친다.
 CREATE TEMP VIEW sm_params AS
 SELECT
-    -- 이 시각 이후 시작한 회고만 본다. 재려는 서버에 V50(새 이야기 칸)이 배포된 시각으로 바꾼다 — V48 · V50 기록이 다 있어야 한다.
+    -- 이 시각 이후 시작한 회고만 본다. 재려는 서버에 V55(세 성향 시작값)가 배포된 시각으로 바꾼다.
     TIMESTAMPTZ '2026-11-17 00:00:00+09' AS since,
     -- 이 시각 이전에 시작한 회고만 본다(수집 마감). 열어 두려면 그대로 둔다.
     TIMESTAMPTZ '9999-12-31 00:00:00+09' AS until,
-    0.5::float8 AS min_confidence;
+    0.5::float8 AS min_confidence,
+    'always-v2'::text AS disposition_version;
 
--- ── 2. 처음 조건을 충족한 대화 ── 사용자 · 집단마다 한 줄. 답하기 전에 떠난 대화도 시작할 때 조건을 충족했으면 센다.
+-- ── 2. 처음 완료 회고 이력이 생긴 대화 ── 사용자 · 집단마다 한 줄. 답하기 전에 떠난 대화도 시작할 때 조건을 충족했으면 센다.
 CREATE TEMP VIEW sm_first_conditions AS
 SELECT DISTINCT ON (o.user_id, o.apply_arm)
        o.user_id,
        o.apply_arm AS arm,
        r.created_at AS first_condition_at,
        o.derived_self_led,
-       o.derived_other_view
+       o.derived_other_view,
+       o.derived_listen,
+       o.derived_gentle_emotion
 FROM retrospect_disposition_observations o
 JOIN retrospects r ON r.id = o.retrospect_id
 CROSS JOIN sm_params p
-WHERE (o.derived_self_led OR o.derived_other_view)
+WHERE o.derived_history_sessions > 0
+  AND o.disposition_version = p.disposition_version
   AND r.created_at >= p.since AND r.created_at < p.until
 ORDER BY o.user_id, o.apply_arm, r.created_at, r.id;
 
@@ -61,23 +65,27 @@ base AS (
            r.last_user_turn_at,
            r.resume_count,
            ((r.created_at AT TIME ZONE 'Asia/Seoul') - INTERVAL '4 hours')::date AS start_day,
-           t.logged_turns,
-           t.max_diary_turn,
+           COALESCE(t.logged_turns, 0) AS logged_turns,
+           COALESCE(t.max_diary_turn, 0) AS max_diary_turn,
            t.policy_versions,
            t.questions_versions,
-           t.had_generation_failure,
-           t.had_judge_failure,
+           COALESCE(t.had_generation_failure, FALSE) AS had_generation_failure,
+           COALESCE(t.had_judge_failure, FALSE) AS had_judge_failure,
            COALESCE(o.apply_arm, 'NONE') AS arm,
            o.id IS NOT NULL AS has_observation,
-           -- 과거 성향 반영 조건 충족 — 지난 대화에서 시작 성향이 도출됐다(집단과 무관하게 기록된다).
-           COALESCE(o.derived_self_led OR o.derived_other_view, FALSE) AS condition_met,
+           -- 과거 이력 보유 — 특별한 신호가 없어도 세 차원을 읽어 기본값으로 반영한다(두 군 공통).
+           COALESCE(o.derived_history_sessions > 0, FALSE) AS condition_met,
            COALESCE(o.derived_self_led, FALSE) AS derived_self_led,
-           COALESCE(o.derived_other_view, FALSE) AS derived_other_view
+           COALESCE(o.derived_other_view, FALSE) AS derived_other_view,
+           COALESCE(o.derived_listen, FALSE) AS derived_listen,
+           COALESCE(o.derived_gentle_emotion, FALSE) AS derived_gentle_emotion
     FROM retrospects r
-    JOIN strategy_turns t ON t.retrospect_id = r.id
+    LEFT JOIN strategy_turns t ON t.retrospect_id = r.id
     LEFT JOIN retrospect_disposition_observations o ON o.retrospect_id = r.id
     CROSS JOIN sm_params p
     WHERE r.created_at >= p.since AND r.created_at < p.until
+      AND (o.disposition_version = p.disposition_version OR o.id IS NULL)
+      AND (t.retrospect_id IS NOT NULL OR o.disposition_version = p.disposition_version)
 ),
 dated AS (
     SELECT b.*,
@@ -102,10 +110,11 @@ flagged AS (
 )
 SELECT f.*,
        fc.first_condition_at,
-       -- 분석 대상: 처음 조건을 충족한 세션과 그 뒤의 모든 세션. 세션마다 조건으로 거르면, 처치로 저항이 줄어든 사용자가
+       -- 분석 대상: 처음 완료 회고 이력이 생긴 세션과 그 뒤의 모든 세션. 세션마다 조건으로 거르면, 처치로 저항이 줄어든 사용자가
        -- 분석에서 빠져 집단 비교가 치우친다.
        COALESCE(f.started_at >= fc.first_condition_at, FALSE) AS analysis_target,
        CASE
+           WHEN f.had_generation_failure OR f.had_judge_failure THEN 'EXCLUDED_SYSTEM_ERROR'
            WHEN f.end_reason IN ('ABUSE_STOPPED', 'LEGACY_EXPLORATION') THEN 'EXCLUDED_ABUSE_OR_LEGACY'
            WHEN f.safety_stopped THEN 'EXCLUDED_SAFETY'
            WHEN f.completed_in_day THEN 'COMPLETED'
@@ -171,7 +180,9 @@ WITH q AS (
 s AS (
     SELECT retrospect_id,
            count(*) FILTER (WHERE strategy_type = 'REFRAME') AS reframe_turns,
-           count(*) FILTER (WHERE strategy_type = 'YIELD') AS yield_turns
+           count(*) FILTER (WHERE strategy_type = 'YIELD') AS yield_turns,
+           count(*) FILTER (WHERE asked_feeling) AS feeling_questions,
+           bool_or(strategy_type = 'REFLECT') FILTER (WHERE diary_turn = 1) AS first_turn_listening
     FROM retrospect_turn_judgments
     WHERE retrospect_id IN (SELECT retrospect_id FROM sm_sessions)
     GROUP BY retrospect_id
@@ -193,6 +204,8 @@ SELECT ss.retrospect_id,
        q.first_question_as_choices,
        COALESCE(s.reframe_turns, 0) AS reframe_turns,
        COALESCE(s.yield_turns, 0) AS yield_turns,
+       COALESCE(s.feeling_questions, 0) AS feeling_questions,
+       COALESCE(s.first_turn_listening, FALSE) AS first_turn_listening,
        COALESCE(q.struggle_questions, 0) > 0 AS had_struggle,
        COALESCE(q.resistance_questions, 0) > 0 AS had_resistance,
        ss.dropout_status = 'DROPOUT' AS dropped_out,
