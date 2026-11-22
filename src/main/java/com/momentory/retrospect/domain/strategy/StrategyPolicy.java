@@ -3,6 +3,7 @@ package com.momentory.retrospect.domain.strategy;
 import java.util.Map;
 import java.util.Set;
 
+import com.momentory.retrospect.domain.disposition.StartingDisposition;
 import com.momentory.retrospect.domain.judgment.ItemJudgment;
 import com.momentory.retrospect.domain.judgment.JudgmentItem;
 import com.momentory.retrospect.domain.judgment.TurnJudgment;
@@ -71,11 +72,12 @@ import com.momentory.retrospect.domain.judgment.TurnJudgment;
  *     뉴스 · 남의 일처럼 지켜본 일이면 기분 다음에 자기 자신이 아니라 그 일이나 그 사람에 대한 생각을 묻는다.
  *     남의 일에 자기 처지를 겹쳐 말하면 그 사람이 아니라 사용자 자신의 처지를 묻는다.
  *     이야기를 시작할 때 무슨 일인지 막연하면 기분보다 먼저 그 일을 구체적으로 한 번 묻는다(이야기마다 서버가 센다).
+ * <li>v15: 최근 완료 회고의 세 성향을 매번 시작값으로 적용한다. 경청과 감정 탐색 빈도도 반영하고 현재 요청이 우선한다.
  * </ul>
  */
 public class StrategyPolicy {
 
-    public static final String VERSION = "v14";
+    public static final String VERSION = "v15";
 
     /** 받아들이지 않는 답이 이만큼 연달아 나오면 마무리를 제안한다. */
     static final int YIELD_STREAK_LIMIT = 2;
@@ -126,7 +128,9 @@ public class StrategyPolicy {
     public Decision decide(TurnJudgment judgment, StrategySignals before, boolean noReaction) {
         ItemJudgment end = judgment.of(JudgmentItem.END_INTENT);
         boolean endRequested = "end_request".equals(end.choice()) && end.confidence() >= closeConfidence;
-        return decide(endRequested, noReaction ? null : signal(judgment, JudgmentItem.REACTION),
+        String reaction = signal(judgment, JudgmentItem.REACTION);
+        // 첫 질문/다른 기억 뒤에도 명시적인 질문 거부는 즉시 따른다.
+        return decide(endRequested, noReaction && !"refuse_question".equals(reaction) ? null : reaction,
                 signal(judgment, JudgmentItem.REQUESTED_MODE), before);
     }
 
@@ -162,7 +166,8 @@ public class StrategyPolicy {
                 notAccepted ? before.yieldStreak() + 1 : 0,
                 explicitMode, before.topicNumber(), before.wrapUpProposed(), before.lastType(),
                 before.turnsSinceQuestion(), before.questionsAsked(), afterFeeling,
-                before.deepestStage(), before.detailQuestions());
+                before.deepestStage(), before.detailQuestions(),
+                askedForAWay ? false : before.gentleEmotion(), before.feelingQuestionsAsked());
         boolean askedToBeHeard = "listen".equals(requested) || "refuse_question".equals(reaction);
         return new Decision(choose(endRequested, notAccepted, reaction, askedToBeHeard, now), now);
     }
@@ -237,7 +242,7 @@ public class StrategyPolicy {
         return new StrategySignals(wasTopicChange ? Math.max(0, now.resistanceCount() - 1) : now.resistanceCount(),
                 wasTopicChange ? 0 : now.yieldStreak(), mode,
                 now.topicNumber() + 1, false, now.lastType(), now.turnsSinceQuestion(),
-                now.questionsAsked());
+                now.questionsAsked(), null, null, 0, now.gentleEmotion(), now.feelingQuestionsAsked());
     }
 
     /**
@@ -251,7 +256,8 @@ public class StrategyPolicy {
 
     /** 이 이야기에서 기분을 들은 뒤에 물을 질문을 다 물었는가. */
     public boolean askedEnoughAfterFeeling(StrategySignals s) {
-        return s.questionsAfterFeeling() != null && s.questionsAfterFeeling() >= QUESTIONS_AFTER_FEELING;
+        return s.questionsAfterFeeling() != null
+                && s.questionsAfterFeeling() >= (s.gentleEmotion() ? 1 : QUESTIONS_AFTER_FEELING);
     }
 
     /** 이 이야기에서 무슨 일이었는지 구체적으로 묻는 질문을 다 물었는가 — 그 뒤로는 사실을 더 캐묻지 않는다. */
@@ -261,7 +267,7 @@ public class StrategyPolicy {
 
     /** 턴을 마친 뒤의 신호 — 실제로 나간 방침을 반영한다. */
     public StrategySignals settle(StrategySignals now, TurnStrategy done) {
-        return settle(now, done, false);
+        return settle(now, done, false, false);
     }
 
     /**
@@ -269,6 +275,11 @@ public class StrategyPolicy {
      *                       질문(자기 자신에 대한 생각 → 그 생각)으로는 세지 않는다
      */
     public StrategySignals settle(StrategySignals now, TurnStrategy done, boolean detailQuestion) {
+        return settle(now, done, detailQuestion, false);
+    }
+
+    public StrategySignals settle(StrategySignals now, TurnStrategy done, boolean detailQuestion,
+            boolean feelingQuestion) {
         boolean asked = done.focus() == QuestionFocus.OPEN || done.focus() == QuestionFocus.OTHER_TOPIC;
         // 마무리 제안도 사용자에게 답을 구한 턴이다 — 「질문 없는 턴」은 그 뒤부터 다시 센다.
         boolean sought = asked || done.focus() == QuestionFocus.WRAP_UP;
@@ -281,7 +292,8 @@ public class StrategyPolicy {
         return new StrategySignals(now.resistanceCount(), now.yieldStreak(), now.explicitMode(), now.topicNumber(),
                 now.wrapUpProposed() || done.focus() == QuestionFocus.WRAP_UP, done.type(),
                 sought ? 0 : now.turnsSinceQuestion() + 1, now.questionsAsked() + (asked ? 1 : 0), afterFeeling,
-                now.deepestStage(), now.detailQuestions() + (detailAsked ? 1 : 0));
+                now.deepestStage(), now.detailQuestions() + (detailAsked ? 1 : 0), now.gentleEmotion(),
+                now.feelingQuestionsAsked() + (feelingQuestion && done.focus() == QuestionFocus.OPEN ? 1 : 0));
     }
 
     /** 한 대화 안에서 저항이 이 횟수부터 질문을 줄인다. */
@@ -297,9 +309,20 @@ public class StrategyPolicy {
      * 명시적 요청이 앞선다.
      */
     public StrategySignals startingSignals(boolean selfLed, boolean wantsOtherView) {
-        return new StrategySignals(selfLed ? resistanceThreshold : 0, 0,
-                wantsOtherView ? StrategySignals.OTHER_VIEW : null, 1, false, null,
-                selfLed ? SPARSE_QUESTION_GAP : 0, 0);
+        return startingSignals(new StartingDisposition(selfLed, wantsOtherView));
+    }
+
+    public StrategySignals startingSignals(StartingDisposition disposition) {
+        String mode = disposition.wantsListening() ? StrategySignals.LISTEN
+                : disposition.wantsOtherView() ? StrategySignals.OTHER_VIEW : null;
+        return new StrategySignals(disposition.selfLed() ? resistanceThreshold : 0, 0,
+                mode, 1, false, null, disposition.selfLed() ? SPARSE_QUESTION_GAP : 0, 0,
+                null, null, 0, disposition.gentleEmotion(), 0);
+    }
+
+    /** 감정 회피가 많은 시작값이면 직접 기분 질문은 회고 전체에서 한 번까지. 현재 탐색 요청으로 해제한다. */
+    public boolean allowsFeelingQuestion(StrategySignals signals) {
+        return !signals.gentleEmotion() || signals.feelingQuestionsAsked() == 0;
     }
 
     private static final Map<String, Integer> DEPTH_RANK = Map.of(

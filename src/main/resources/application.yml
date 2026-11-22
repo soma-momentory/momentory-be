@@ -137,11 +137,7 @@ momentory:
     # RANDOM(사용자 id 로 반반). 전략 대화 계정에만 해당하고, 성향 관찰은 어느 값이든 계속 저장한다.
     apply-mode: ${DISPOSITION_APPLY_MODE:OFF}
     apply-user-ids: ${DISPOSITION_APPLY_USER_IDS:}
-    # 첫 실험 대화 날부터 early-days 일 동안은 신호가 한 번만 나와도 반영한다. 그 뒤로는 최근 window 건 안에서 아래 횟수만큼
-    # 나와야 한다 — 주도성은 저항이 되풀이된 대화 수, 다른 관점은 요청한 대화 수다. 근거가 쌓이기 전의 임시값이다.
-    early-days: ${DISPOSITION_EARLY_DAYS:3}
-    self-led-repeat-threshold: ${DISPOSITION_SELF_LED_REPEAT_THRESHOLD:1}
-    other-view-repeat-threshold: ${DISPOSITION_OTHER_VIEW_REPEAT_THRESHOLD:2}
+    # 최근 완료된 회고의 세 성향을 매번 적용한다. 신호가 없는 차원은 기본값을 사용한다.
     window: ${DISPOSITION_WINDOW:5}
   strategy:
     # 판단으로 바바의 응답 방식(전략)까지 바꿀 사용자 id 목록(쉼표 구분). 여기 있으면 턴 판단도 함께 켜진다.

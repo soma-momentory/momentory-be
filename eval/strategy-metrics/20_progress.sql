@@ -28,7 +28,9 @@ SELECT arm,
        -- 선택형 질문 비율(질문 단위)
        round(100.0 * sum(choice_questions) / NULLIF(sum(explore_questions), 0), 1) AS choice_question_pct,
        -- 재해석 방침이 한 번 이상 적용된 세션 비율
-       round(100.0 * count(*) FILTER (WHERE reframe_turns > 0) / count(*), 1) AS reframe_session_pct
+       round(100.0 * count(*) FILTER (WHERE reframe_turns > 0) / count(*), 1) AS reframe_session_pct,
+       round(100.0 * count(*) FILTER (WHERE first_turn_listening) / count(*), 1) AS first_listen_pct,
+       round(avg(feeling_questions), 2) AS feeling_questions_per_session
 FROM sm_session_metrics
 WHERE arm IN ('TREATMENT', 'CONTROL') AND analysis_target
 GROUP BY arm
@@ -38,6 +40,8 @@ ORDER BY arm DESC;
 SELECT arm,
        count(*) FILTER (WHERE derived_self_led) AS derived_self_led,
        count(*) FILTER (WHERE derived_other_view) AS derived_other_view,
+       count(*) FILTER (WHERE derived_listen) AS derived_listen,
+       count(*) FILTER (WHERE derived_gentle_emotion) AS derived_gentle_emotion,
        count(*) AS users_with_condition
 FROM sm_first_conditions
 WHERE arm IN ('TREATMENT', 'CONTROL')

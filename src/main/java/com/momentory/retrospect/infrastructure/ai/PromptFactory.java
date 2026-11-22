@@ -326,7 +326,20 @@ public class PromptFactory {
                 %s""".formatted(state.diaryTurn(), orNone(state.event()), recentHistory(state), userText.strip(),
                 courseDirective(strategy) + heardDirective(strategy) + afterOtherMemoryDirective(strategy)
                         + hearingOutDirective(strategy),
-                questionDirective(strategy), safetyRule(state));
+                questionDirective(strategy) + emotionPreferenceDirective(state), safetyRule(state));
+    }
+
+    private static String emotionPreferenceDirective(RetrospectState state) {
+        var signals = state.strategySignals();
+        if (!signals.gentleEmotion()) {
+            return "";
+        }
+        return "\n[서버의 감정 탐색 제한] 과거 회고에서 감정을 직접 묻는 질문을 피한 반응이 더 많았습니다. "
+                + "감정의 강도를 키우지 않고, 기분을 들은 뒤의 추가 질문은 한 번까지만 합니다. "
+                + (signals.feelingQuestionsAsked() > 0
+                        ? "이 회고에서는 기분을 이미 직접 물었습니다. 새 이야기에서도 기분을 직접 다시 묻지 마세요. "
+                                + "아래 일반 흐름의 기분 질문 의무보다 이 제한이 우선합니다. 질문이 허용되면 사건이나 생각을 묻습니다."
+                        : "기분을 직접 묻는 것은 이 회고 전체에서 한 번까지입니다.");
     }
 
     /** 사용자가 더 얘기하고 싶다고 한 이야기를 듣는 턴 — 새로 받을 내용이 있는지를 모델이 알린다. */

@@ -40,6 +40,7 @@ SELECT arm,
        count(*) FILTER (WHERE dropout_status = 'EXCLUDED_SAFETY') AS excluded_safety,
        count(*) FILTER (WHERE dropout_status = 'EXCLUDED_ABUSE_OR_LEGACY') AS excluded_abuse_or_legacy,
        count(*) FILTER (WHERE dropout_status = 'EXCLUDED_OTHER_DIARY') AS excluded_other_diary,
+       count(*) FILTER (WHERE dropout_status = 'EXCLUDED_SYSTEM_ERROR') AS excluded_system_error,
        count(*) FILTER (WHERE dropout_status = 'PENDING') AS pending_today
 FROM sm_session_metrics
 WHERE arm IN ('TREATMENT', 'CONTROL') AND analysis_target

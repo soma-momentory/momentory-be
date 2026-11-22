@@ -45,6 +45,7 @@ class RetrospectEngineStrategyTest {
     /** 문장 생성 모델이 이번 턴에 돌려줄 것. null 이면 실패. */
     private StrategyReply reply;
     private final List<TurnStrategy> courses = new ArrayList<>();
+    private final List<String> generatedPrompts = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -62,6 +63,9 @@ class RetrospectEngineStrategyTest {
         StrategyDiaryChat chat = new StrategyDiaryChat(judge, new StrategyPolicy(0.5, 0.8, 2, 8),
                 (s, text, course) -> {
                     courses.add(course);
+                    generatedPrompts.add(new com.momentory.retrospect.infrastructure.ai.PromptFactory(2000,
+                            com.momentory.retrospect.infrastructure.ai.EmotionPromptVariant.ZERO_SHOT)
+                            .strategyTurnPrompt(s, text, course));
                     return Optional.ofNullable(reply);
                 }, usage, maxTurns);
         return new RetrospectEngine(new SafetyPolicy(), fake, fake, fake, judge, chat, usage, e -> { }, 1, 3);
@@ -913,4 +917,29 @@ class RetrospectEngineStrategyTest {
         List<TurnJudgmentLog> logs = judgedOnly.drainJudgmentLogs();
         assertThat(logs).singleElement().satisfies(log -> assertThat(log.strategy()).isNull());
     }
+
+    @Test
+    void blocksARepeatedFeelingQuestionAndImmediatelyAcceptsTheCurrentRequestToExplore() {
+        var policy = new StrategyPolicy(0.5, 0.8, 2, 8);
+        state.strategySignals(policy.startingSignals(new com.momentory.retrospect.domain.disposition.StartingDisposition(
+                false, false, false, true, 1)));
+        reply = new StrategyReply("발표를 하셨군요.", "그때 기분이 어땠어요?", false, false,
+                "발표", "none", List.of(), true);
+        say("오늘 발표했어요", plain());
+        assertThat(lastLog().questionSent()).isTrue();
+        assertThat(state.strategySignals().feelingQuestionsAsked()).isEqualTo(1);
+        reply = new StrategyReply("저녁도 드셨군요.", "저녁에는 기분이 어땠어요?", true, false,
+                "저녁", "none", List.of(), true);
+        var blocked = say("저녁도 먹었어요", plain());
+        assertThat(blocked.text()).doesNotContain("저녁에는 기분이 어땠어요?");
+        assertThat(lastLog().questionSent()).isFalse();
+        assertThat(state.strategySignals().gentleEmotion()).isTrue();
+        say("기분도 더 물어봐 줘", judged("continue", "explore", "agree_or_elaborate"));
+        assertThat(lastLog().questionSent()).isTrue();
+        assertThat(generatedPrompts.getLast()).doesNotContain("[서버의 감정 탐색 제한]");
+        assertThat(state.strategySignals().gentleEmotion()).isFalse();
+        say("계속 이야기할게", plain());
+        assertThat(state.strategySignals().gentleEmotion()).isFalse();
+    }
+
 }

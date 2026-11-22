@@ -351,8 +351,8 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
-    @DisplayName("첫 실험 대화 날부터 3일 안에는 다른 관점 요청이 한 번만 있어도 반영한다")
-    void oneOtherViewRequestCountsDuringTheEarlyDays() throws Exception {
+    @DisplayName("다른 관점 요청은 완료 회고 한 건부터 반영한다")
+    void oneOtherViewRequestIsAlwaysReflected() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
         applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
@@ -367,8 +367,8 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
-    @DisplayName("4일째부터 다른 관점은 두 번의 대화에서 요청해야 반영한다")
-    void otherViewMustRepeatAfterTheEarlyDays() throws Exception {
+    @DisplayName("기간과 반복 횟수에 상관없이 매번 과거 성향을 반영한다")
+    void otherViewDoesNotNeedToRepeatAfterTheEarlyDays() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
         applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
@@ -376,8 +376,8 @@ class TurnJudgmentPersistenceIntegrationTest {
 
         long onceAsked = startSession(user);
         assertThat(dispositionObservations.findByRetrospectId(onceAsked).orElseThrow().isDerivedOtherView())
-                .isFalse();
-        assertThat(startedSignals(onceAsked).explicitMode()).isNull();
+                .isTrue();
+        assertThat(startedSignals(onceAsked).explicitMode()).isEqualTo(StrategySignals.OTHER_VIEW);
 
         conversationAskingOtherView(user, DispositionArm.TREATMENT, 4);
         long twiceAsked = startSession(user);
@@ -386,8 +386,8 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
-    @DisplayName("실험 전의 대화는 초반 3일의 시작으로 세지 않는다")
-    void conversationsBeforeTheExperimentDoNotStartTheEarlyDays() throws Exception {
+    @DisplayName("실험 전 완료된 회고도 시작 성향에 반영한다")
+    void completedConversationsBeforeTheExperimentAreAlsoReflected() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
         applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
@@ -399,8 +399,8 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     @Test
-    @DisplayName("대조 집단의 첫 대화도 초반 3일의 시작으로 센다")
-    void aControlConversationStartsTheEarlyDays() throws Exception {
+    @DisplayName("과거 대조군에서 완료한 회고의 관찰도 도출에 사용한다")
+    void aCompletedControlConversationIsAlsoHistory() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
         applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
@@ -408,12 +408,12 @@ class TurnJudgmentPersistenceIntegrationTest {
 
         long sessionId = startSession(user);
 
-        assertThat(dispositionObservations.findByRetrospectId(sessionId).orElseThrow().isDerivedOtherView()).isFalse();
+        assertThat(dispositionObservations.findByRetrospectId(sessionId).orElseThrow().isDerivedOtherView()).isTrue();
     }
 
     @Test
-    @DisplayName("4일째부터도 주도성은 저항이 되풀이된 대화 한 번으로 반영한다")
-    void oneSelfLedConversationStillCountsAfterTheEarlyDays() throws Exception {
+    @DisplayName("주도성과 다른 관점은 함께 반영된다")
+    void initiativeAndOtherViewAreAppliedTogether() throws Exception {
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
         applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
@@ -425,7 +425,7 @@ class TurnJudgmentPersistenceIntegrationTest {
         DispositionObservationRecord observation = dispositionObservations.findByRetrospectId(sessionId)
                 .orElseThrow();
         assertThat(observation.isDerivedSelfLed()).isTrue();
-        assertThat(observation.isDerivedOtherView()).isFalse();
+        assertThat(observation.isDerivedOtherView()).isTrue();
     }
 
     @Test
@@ -650,4 +650,124 @@ class TurnJudgmentPersistenceIntegrationTest {
     private String bearer(User user) {
         return "Bearer " + accessTokenIssuer.issueAccessToken(user.getId(), user.getRole());
     }
+
+    @Test
+    void persistsAllThreeDimensionsAndAcceptsAnImmediateChangeAfterResuming() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        var history = DispositionObservationRecord.start(user.getId(), pastRetrospect(user), 0.5, StrategyPolicy.VERSION);
+        history.add(new TurnObservation(false, false, false, false, false, true), StrategyPolicy.VERSION);
+        history.add(new TurnObservation(true, true, false, false, true, false), StrategyPolicy.VERSION);
+        dispositionObservations.saveAndFlush(history);
+        long session = startSession(user);
+        var observation = dispositionObservations.findByRetrospectId(session).orElseThrow();
+        assertThat(observation.isDerivedSelfLed()).isTrue();
+        assertThat(observation.isDerivedListen()).isTrue();
+        assertThat(observation.isDerivedGentleEmotion()).isTrue();
+        assertThat(observation.getDerivedHistorySessions()).isEqualTo(1);
+        assertThat(observation.isPastDispositionApplied()).isTrue();
+        assertThat(observation.getDispositionVersion()).isEqualTo(StartingDisposition.VERSION);
+        assertThat(startedSignals(session).explicitMode()).isEqualTo(StrategySignals.LISTEN);
+        assertThat(startedSignals(session).gentleEmotion()).isTrue();
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(asking("explore", "none")));
+        when(strategyReplyWriter.write(any(), anyString(), any())).thenReturn(Optional.of(new StrategyReply(
+                "이야기해 볼게요.", "그때 기분이 어땠어요?", false, false, "발표", "none", List.of(), true)));
+        say(user, session, "오늘은 질문해 줘");
+        assertThat(startedSignals(session).explicitMode()).isNull();
+        assertThat(startedSignals(session).gentleEmotion()).isFalse();
+        assertThat(startedSignals(session).resistanceCount()).isZero();
+        when(turnJudge.judge(any(), anyString())).thenReturn(Optional.of(asking("none", "none")));
+        say(user, session, "그 이야기를 계속할게요");
+        assertThat(startedSignals(session).explicitMode()).isNull();
+        assertThat(startedSignals(session).gentleEmotion()).isFalse();
+    }
+
+    @Test
+    void aControlUserAlwaysStartsFreshEvenWithAllThreePastDimensions() throws Exception {
+        User user;
+        var assignment = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of());
+        do {
+            user = userRepository.saveAndFlush(User.create());
+        } while (assignment.armOf(user.getId()) != DispositionArm.CONTROL);
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.RANDOM, Set.of());
+        var history = DispositionObservationRecord.start(user.getId(), pastRetrospect(user), 0.5, StrategyPolicy.VERSION);
+        history.add(new TurnObservation(false, false, false, false, false, true), StrategyPolicy.VERSION);
+        history.add(new TurnObservation(true, true, false, false, true, false), StrategyPolicy.VERSION);
+        dispositionObservations.saveAndFlush(history);
+        for (int i = 0; i < 2; i++) {
+            long session = startSession(user);
+            assertThat(startedSignals(session)).isEqualTo(StrategySignals.initial());
+            var observation = dispositionObservations.findByRetrospectId(session).orElseThrow();
+            assertThat(observation.isDerivedListen()).isTrue();
+            assertThat(observation.isDerivedGentleEmotion()).isTrue();
+            assertThat(observation.isPastDispositionApplied()).isFalse();
+        }
+    }
+
+    @Test
+    void excludesUnfinishedAndSafetyStoppedHistoryAndUsesOnlyTheLatestFiveCompletedConversations() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        pastConversationWithResistance(user, 1);
+        for (int i = 0; i < 5; i++) {
+            conversationAskingOtherView(user, DispositionArm.NONE, 1);
+        }
+        for (var status : List.of(RetrospectStatus.IN_PROGRESS, RetrospectStatus.ENDED)) {
+            var session = retrospectRepository.saveAndFlush(Retrospect.start(user.getId(), status, null, "{}"));
+            var history = DispositionObservationRecord.start(user.getId(), session.getId(), 0.5, StrategyPolicy.VERSION);
+            history.add(new TurnObservation(true, true, false, false, false, false), StrategyPolicy.VERSION);
+            dispositionObservations.saveAndFlush(history);
+        }
+        User other = userRepository.saveAndFlush(User.create());
+        pastConversationWithResistance(other, 3);
+        long session = startSession(user);
+        var observation = dispositionObservations.findByRetrospectId(session).orElseThrow();
+        assertThat(observation.getDerivedHistorySessions()).isEqualTo(5);
+        assertThat(observation.isDerivedSelfLed()).isFalse();
+        assertThat(observation.isDerivedListen()).isFalse();
+        assertThat(observation.isDerivedOtherView()).isTrue();
+    }
+
+    @Test
+    void analysisIncludesUnansweredHistorySessionsAndSeparatesLegacyVersions() throws Exception {
+        User user = userRepository.saveAndFlush(User.create());
+        strategyFor(Set.of(user.getId()));
+        applyDispositionFor(DispositionAssignment.Mode.LISTED, Set.of(user.getId()));
+        pastConversationWithResistance(user, 1);
+        long unanswered = startSession(user);
+        jdbc.update("update retrospects set created_at = now() - interval '2 days' where id = ?", unanswered);
+        String setup = java.nio.file.Files.readString(java.nio.file.Path.of("eval/strategy-metrics/00_setup.sql"));
+        jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
+            try (var statement = connection.createStatement()) {
+                statement.execute(setup);
+                try (var result = statement.executeQuery("select analysis_target, dropout_status, explore_questions "
+                        + "from sm_session_metrics where retrospect_id = " + unanswered)) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getBoolean(1)).isTrue();
+                    assertThat(result.getString(2)).isEqualTo("DROPOUT");
+                    assertThat(result.getInt(3)).isZero();
+                }
+                for (String script : List.of("10_check_logging.sql", "20_progress.sql", "30_metrics.sql")) {
+                    try {
+                        statement.execute(java.nio.file.Files.readString(java.nio.file.Path.of("eval/strategy-metrics", script)));
+                    } catch (java.io.IOException e) {
+                        throw new IllegalStateException(e);
+                    }
+                }
+                statement.execute("update retrospect_disposition_observations set disposition_version = 'conditional-v1'"
+                        + " where retrospect_id = " + unanswered);
+                try (var result = statement.executeQuery("select count(*) from sm_session_metrics where retrospect_id = "
+                        + unanswered)) {
+                    result.next();
+                    assertThat(result.getInt(1)).isZero();
+                }
+                statement.execute("drop view pg_temp.sm_params cascade");
+            }
+            return null;
+        });
+    }
+
 }

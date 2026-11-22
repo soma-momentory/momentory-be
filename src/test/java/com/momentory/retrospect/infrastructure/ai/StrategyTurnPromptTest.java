@@ -308,4 +308,21 @@ class StrategyTurnPromptTest {
     void everyCourseHasADirective(StrategyType type) {
         assertThat(prompt(new TurnStrategy(type, QuestionFocus.NONE, false))).contains("[이번 턴의 방침]");
     }
+
+    @Test
+    void givesTheWriterTheServersEmotionLimitWithoutPassingRawPreferenceCounts() {
+        var state = new RetrospectState("preference");
+        var policy = new com.momentory.retrospect.domain.strategy.StrategyPolicy(0.5, 0.8, 2, 8);
+        var initial = policy.startingSignals(new com.momentory.retrospect.domain.disposition.StartingDisposition(
+                false, false, false, true, 1));
+        var open = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+        state.strategySignals(policy.settle(initial, open, false, true));
+        assertThat(prompts.strategyTurnPrompt(state, "오늘 다른 일도 있었어요", open))
+                .contains("[서버의 감정 탐색 제한]", "새 이야기에서도 기분을 직접 다시 묻지", "기분을 들은 뒤의 추가 질문은 한 번")
+                .doesNotContain("feeling_avoided_count", "resistance_count");
+        state.strategySignals(com.momentory.retrospect.domain.strategy.StrategySignals.initial());
+        assertThat(prompts.strategyTurnPrompt(state, "오늘 다른 일도 있었어요", open))
+                .doesNotContain("[서버의 감정 탐색 제한]");
+    }
+
 }
