@@ -554,4 +554,61 @@ class StrategyPolicyTest {
         assertThat(policy.settle(start, open.withFocus(QuestionFocus.NONE), true).detailQuestions()).isZero();
         assertThat(policy.movedToNewTopic(asked).detailQuestions()).isZero();
     }
+
+    @Test
+    void storedListeningAndEmotionLimitsYieldToTheCurrentRequestPermanently() {
+        var stored = new com.momentory.retrospect.domain.disposition.StartingDisposition(true, false, true, true, 1);
+        var initial = policy.startingSignals(stored);
+        assertStrategy(policy.decide(new J().build(), initial, true), StrategyType.REFLECT, QuestionFocus.NONE);
+        for (String requested : new String[] {"explore", "advice", "other_view"}) {
+            var changed = policy.decide(new J().requested(requested).build(), initial, true);
+            assertThat(changed.strategy().focus()).isEqualTo(QuestionFocus.OPEN);
+            assertThat(changed.strategy().asChoices()).isFalse();
+            assertThat(changed.signals().gentleEmotion()).isFalse();
+            var later = turn(changed.signals(), new J());
+            assertThat(later.strategy().type()).isEqualTo(requested.equals("other_view")
+                    ? StrategyType.REFRAME : StrategyType.EXPLORE);
+            assertThat(later.signals().gentleEmotion()).isFalse();
+            assertThat(policy.movedToNewTopic(later.signals()).gentleEmotion()).isFalse();
+        }
+    }
+
+    @Test
+    void currentListeningOverridesStoredReframingEvenOnTheFirstAnswer() {
+        var initial = policy.startingSignals(new com.momentory.retrospect.domain.disposition.StartingDisposition(
+                false, true, false, false, 1));
+        var changed = policy.decide(new J().requested("listen").build(), initial, true);
+        assertStrategy(changed, StrategyType.REFLECT, QuestionFocus.NONE);
+        assertStrategy(turn(changed.signals(), new J()), StrategyType.REFLECT, QuestionFocus.NONE);
+        var refused = policy.decide(new J().reaction("refuse_question").build(), initial, true);
+        assertThat(refused.strategy().asks()).isFalse();
+        assertThat(refused.signals().explicitMode()).isEqualTo(StrategySignals.LISTEN);
+    }
+
+    @Test
+    void anUncertainRequestDoesNotEraseStoredListeningOrEmotionLimits() {
+        var initial = policy.startingSignals(new com.momentory.retrospect.domain.disposition.StartingDisposition(
+                false, false, true, true, 1));
+        var changed = policy.decide(new J().set(JudgmentItem.REQUESTED_MODE, "explore", 0.4).build(), initial, true);
+        assertStrategy(changed, StrategyType.REFLECT, QuestionFocus.NONE);
+        assertThat(changed.signals().gentleEmotion()).isTrue();
+    }
+
+    @Test
+    void countsOnlySentFeelingQuestionsAndCarriesTheLimitAcrossTopics() {
+        var initial = policy.startingSignals(new com.momentory.retrospect.domain.disposition.StartingDisposition(
+                false, false, false, true, 1));
+        var open = new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false);
+        assertThat(policy.allowsFeelingQuestion(initial)).isTrue();
+        assertThat(policy.settle(initial, open.withFocus(QuestionFocus.NONE), false, true).feelingQuestionsAsked())
+                .isZero();
+        var asked = policy.settle(initial, open, false, true);
+        assertThat(policy.allowsFeelingQuestion(asked)).isFalse();
+        assertThat(policy.allowsFeelingQuestion(policy.movedToNewTopic(asked))).isFalse();
+        assertThat(policy.askedEnoughAfterFeeling(asked.withQuestionsAfterFeeling(1))).isTrue();
+        var changed = policy.decide(new J().requested("explore").build(), asked, false);
+        assertThat(policy.allowsFeelingQuestion(changed.signals())).isTrue();
+        assertThat(policy.askedEnoughAfterFeeling(changed.signals().withQuestionsAfterFeeling(1))).isFalse();
+    }
+
 }

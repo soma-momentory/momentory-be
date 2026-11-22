@@ -16,11 +16,14 @@ package com.momentory.retrospect.domain.strategy;
  * @param questionsAsked     이 대화에서 바바가 한 질문 수(첫 질문은 세지 않는다)
  * @param questionsAfterFeeling 지금 이야기에서 그때의 마음을 들은 뒤로 바바가 한 질문 수. 아직 마음을 듣지 못했으면 null
  * @param deepestStage 지금 이야기에서 가장 깊었던 체험 깊이(1~2단계=1 … 5단계 이상=4). 판단된 적이 없으면 null
+ * @param gentleEmotion 과거 감정 회피에 따른 시작 제한. 현재 탐색 요청으로 해제한다
+ * @param feelingQuestionsAsked 회고 전체에서 실제로 보낸 기분 질문 수(새 이야기에서도 유지)
  * @param detailQuestions 지금 이야기에서 무슨 일이었는지 구체적으로 물은 횟수(없으면 0)
  */
 public record StrategySignals(int resistanceCount, Integer yieldStreak, String explicitMode, Integer topicNumber,
         Boolean wrapUpProposed, StrategyType lastType, int turnsSinceQuestion, Integer questionsAsked,
-        Integer questionsAfterFeeling, Integer deepestStage, Integer detailQuestions) {
+        Integer questionsAfterFeeling, Integer deepestStage, Integer detailQuestions,
+        Boolean gentleEmotion, Integer feelingQuestionsAsked) {
 
     public static final String LISTEN = "LISTEN";
     public static final String OTHER_VIEW = "OTHER_VIEW";
@@ -33,6 +36,16 @@ public record StrategySignals(int resistanceCount, Integer yieldStreak, String e
         wrapUpProposed = wrapUpProposed != null && wrapUpProposed;
         questionsAsked = questionsAsked == null ? 0 : questionsAsked;
         detailQuestions = detailQuestions == null ? 0 : detailQuestions;
+        gentleEmotion = Boolean.TRUE.equals(gentleEmotion);
+        feelingQuestionsAsked = feelingQuestionsAsked == null ? 0 : feelingQuestionsAsked;
+    }
+
+    /** 이전 스냅샷과 호출은 기본 감정 탐색으로 시작한다. */
+    public StrategySignals(int resistanceCount, Integer yieldStreak, String explicitMode, Integer topicNumber,
+            Boolean wrapUpProposed, StrategyType lastType, int turnsSinceQuestion, Integer questionsAsked,
+            Integer questionsAfterFeeling, Integer deepestStage, Integer detailQuestions) {
+        this(resistanceCount, yieldStreak, explicitMode, topicNumber, wrapUpProposed, lastType, turnsSinceQuestion,
+                questionsAsked, questionsAfterFeeling, deepestStage, detailQuestions, false, 0);
     }
 
     public StrategySignals(int resistanceCount, Integer yieldStreak, String explicitMode, Integer topicNumber,
@@ -56,12 +69,14 @@ public record StrategySignals(int resistanceCount, Integer yieldStreak, String e
     /** 지금 이야기에서 마음을 들은 뒤의 질문 수와 가장 깊었던 단계를 바꾼다. */
     public StrategySignals withFollowUp(Integer count, Integer deepest) {
         return new StrategySignals(resistanceCount, yieldStreak, explicitMode, topicNumber, wrapUpProposed, lastType,
-                turnsSinceQuestion, questionsAsked, count, deepest, detailQuestions);
+                turnsSinceQuestion, questionsAsked, count, deepest, detailQuestions,
+                gentleEmotion, feelingQuestionsAsked);
     }
 
     public StrategySignals withExplicitMode(String mode) {
         return new StrategySignals(resistanceCount, yieldStreak, mode, topicNumber, wrapUpProposed, lastType,
-                turnsSinceQuestion, questionsAsked, questionsAfterFeeling, deepestStage, detailQuestions);
+                turnsSinceQuestion, questionsAsked, questionsAfterFeeling, deepestStage, detailQuestions,
+                gentleEmotion, feelingQuestionsAsked);
     }
 
     public static StrategySignals initial() {

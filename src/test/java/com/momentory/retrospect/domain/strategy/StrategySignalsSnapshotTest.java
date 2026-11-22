@@ -62,4 +62,21 @@ class StrategySignalsSnapshotTest {
         assertThat(mapper.readValue("{\"resistanceCount\":0,\"turnsSinceQuestion\":0}", StrategySignals.class)
                 .detailQuestions()).isZero();
     }
+
+    @Test
+    void savesEmotionPreferenceAndDoesNotRestoreItAfterTheUserChangedIt() {
+        var policy = new StrategyPolicy(0.5, 0.8, 2, 8);
+        var signals = policy.startingSignals(new com.momentory.retrospect.domain.disposition.StartingDisposition(
+                false, false, false, true, 1));
+        signals = policy.settle(signals, new TurnStrategy(StrategyType.EXPLORE, QuestionFocus.OPEN, false), false, true);
+        JsonMapper mapper = JsonMapper.builder().build();
+        var restored = mapper.readValue(mapper.writeValueAsString(signals), StrategySignals.class);
+        assertThat(restored.gentleEmotion()).isTrue();
+        assertThat(restored.feelingQuestionsAsked()).isEqualTo(1);
+        assertThat(policy.movedToNewTopic(restored).gentleEmotion()).isTrue();
+        var old = mapper.readValue("{\"resistanceCount\":0,\"turnsSinceQuestion\":0}", StrategySignals.class);
+        assertThat(old.gentleEmotion()).isFalse();
+        assertThat(old.feelingQuestionsAsked()).isZero();
+    }
+
 }

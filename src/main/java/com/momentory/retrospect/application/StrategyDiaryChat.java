@@ -133,6 +133,8 @@ public class StrategyDiaryChat {
             return new Outcome(Kind.CLOSE, null, SafetyLevel.NONE, List.of());
         }
 
+        // 이번 턴의 현재 요청으로 바뀐 설정을 문장 생성에도 즉시 전달한다.
+        state.strategySignals(decision.signals());
         Optional<StrategyReply> written = writer.write(state, content, strategy);
         state.bumpDiaryTurn();
 
@@ -197,6 +199,7 @@ public class StrategyDiaryChat {
         if (repeatsEarlierQuestion || askedEnough || asksSelfThoughtAgain(state, signals, question)) {
             question = null;
         }
+        boolean blockedFeeling = question != null && asksFeeling && !policy.allowsFeelingQuestion(signals);
         if (wantsToTalkMore) {
             // 어떤 일을 더 얘기하고 싶다고 했다 — 알겠다고 답하고, 그 이야기가 이어지는 동안 묻지 않고 공감만 한다.
             question = null;
@@ -211,6 +214,10 @@ public class StrategyDiaryChat {
             // 않고, 답을 피했다고 보아 마무리를 제안하거나 다른 기억으로 넘어가지도 않는다. 다음 턴부터는 평소대로 묻는다.
             question = null;
             done = done.withFocus(QuestionFocus.NONE);
+        } else if (blockedFeeling) {
+            // 생성 모델이 서버의 기분 질문 빈도 제한을 어겨도 질문을 보내지 않는다. 종료/다른 기억으로 오분류하지 않는다.
+            question = null;
+            done = done.withFocus(QuestionFocus.NONE);
         } else if (!newTopic && strategy.focus() == QuestionFocus.OPEN && policy.gotNoAnswer(strategy)) {
             // 답하기 어려워했거나 질문과 맞지 않는 말을 했다 — 더 묻지 않고 여기서 정리할지를 묻는다.
             done = policy.whenNoAnswer(strategy, signals);
@@ -221,7 +228,8 @@ public class StrategyDiaryChat {
         boolean capped = state.diaryTurn() >= maxTurns;
         // 무슨 일이었는지 구체적으로 묻는 질문이 나갔으면 이야기마다 센다 — 막연한 답에 한 번만 묻고 기분으로 넘어간다.
         boolean detailSent = !capped && done.focus() == QuestionFocus.OPEN && question != null && asksForDetail;
-        state.strategySignals(policy.settle(signals, done, detailSent));
+        boolean feelingSent = !capped && done.focus() == QuestionFocus.OPEN && question != null && asksFeeling;
+        state.strategySignals(policy.settle(signals, done, detailSent, feelingSent));
         state.logStrategy(done, StrategyPolicy.VERSION, !capped);
         // 열린 질문이 실제로 나간 턴만 센다 — 다른 기억 질문 · 마무리 제안 · 상한으로 끝난 턴은 탐색 질문도, 기분을 물은 것도
         // 아니다. 문장 생성이 실패해 고정 열린 질문으로 대신한 턴도 질문은 나갔다(생성 실패 표시로 가른다).
