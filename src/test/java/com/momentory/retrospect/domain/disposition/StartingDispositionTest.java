@@ -9,54 +9,52 @@ import org.junit.jupiter.api.Test;
 
 class StartingDispositionTest {
 
-    private static ConversationSignals talk(int resistance, int otherView) {
-        return new ConversationSignals(resistance, otherView);
+    @Test
+    void appliesAllThreeDimensionsTogetherFromOneCompletedConversation() {
+        var derived = StartingDisposition.of(List.of(new ConversationSignals(1, 1, 0, 0, 1)));
+        assertThat(derived).isEqualTo(new StartingDisposition(true, false, true, true, 1));
     }
 
     @Test
-    void afterTheEarlyDaysOneSelfLedConversationIsEnoughButOtherViewMustRepeat() {
-        StartingDisposition selfLed = StartingDisposition.of(List.of(talk(2, 0), talk(0, 0)), 1, 2, 2);
-        StartingDisposition askedOnce = StartingDisposition.of(List.of(talk(0, 3), talk(0, 0)), 1, 2, 2);
-        StartingDisposition askedTwice = StartingDisposition.of(List.of(talk(0, 1), talk(0, 2)), 1, 2, 2);
-
-        assertThat(selfLed).isEqualTo(new StartingDisposition(true, false));
-        assertThat(askedOnce).isEqualTo(StartingDisposition.NONE);
-        assertThat(askedTwice).isEqualTo(new StartingDisposition(false, true));
+    void oneRequestIsEnoughForAnotherViewRegardlessOfExperimentDay() {
+        assertThat(StartingDisposition.of(List.of(new ConversationSignals(0, 0, 1, 1, 0))))
+                .isEqualTo(new StartingDisposition(false, true, false, false, 1));
     }
 
     @Test
-    void duringTheEarlyDaysOneRequestForAnotherViewIsEnough() {
-        assertThat(StartingDisposition.of(List.of(talk(0, 1)), 1, 1, 2))
-                .isEqualTo(new StartingDisposition(false, true));
+    void initiativeAndAnotherViewAreIndependent() {
+        assertThat(StartingDisposition.of(List.of(new ConversationSignals(1, 0, 1, 0, 1))))
+                .isEqualTo(new StartingDisposition(true, true, false, true, 1));
     }
 
     @Test
-    void aConversationWithLessResistanceThanTheInConversationThresholdDoesNotCount() {
-        // 저항이 한 번 나온 대화는 그 대화 안에서도 질문을 줄이지 않았다 — 그런 대화가 여럿이어도 세지 않는다.
-        assertThat(StartingDisposition.of(List.of(talk(1, 0), talk(1, 0), talk(1, 0)), 1, 2, 2).isNone()).isTrue();
-        assertThat(StartingDisposition.of(List.of(), 1, 1, 2).isNone()).isTrue();
+    void balancesSupportRequestsUsingAllRecentConversations() {
+        var derived = StartingDisposition.of(List.of(new ConversationSignals(0, 1, 0, 0, 0),
+                new ConversationSignals(0, 0, 2, 0, 0)));
+        assertThat(derived.wantsOtherView()).isTrue();
+        assertThat(derived.wantsListening()).isFalse();
     }
 
     @Test
-    void whenBothAppearOnlyTheMoreFrequentDispositionIsDerived() {
-        assertThat(StartingDisposition.of(List.of(talk(0, 1), talk(2, 0), talk(3, 0)), 1, 1, 2))
-                .isEqualTo(new StartingDisposition(true, false));
-        assertThat(StartingDisposition.of(List.of(talk(2, 0), talk(0, 1), talk(0, 1)), 1, 1, 2))
-                .isEqualTo(new StartingDisposition(false, true));
+    void aSupportTieFollowsTheMostRecentUnequalConversation() {
+        var derived = StartingDisposition.of(List.of(new ConversationSignals(0, 1, 0, 0, 0),
+                new ConversationSignals(0, 0, 1, 0, 0)));
+        assertThat(derived.wantsListening()).isTrue();
+        assertThat(derived.wantsOtherView()).isFalse();
     }
 
     @Test
-    void aTieGoesToTheMoreRecentDisposition() {
-        assertThat(StartingDisposition.of(List.of(talk(2, 0), talk(0, 1)), 1, 1, 2))
-                .isEqualTo(new StartingDisposition(true, false));
-        assertThat(StartingDisposition.of(List.of(talk(0, 1), talk(2, 0)), 1, 1, 2))
-                .isEqualTo(new StartingDisposition(false, true));
+    void expressionAndAvoidanceAreComparedWithoutTreatingMissingSignalsAsAvoidance() {
+        assertThat(StartingDisposition.of(List.of(new ConversationSignals(0, 0, 0, 2, 1))).gentleEmotion()).isFalse();
+        assertThat(StartingDisposition.of(List.of(new ConversationSignals(0, 0, 0, 1, 2))).gentleEmotion()).isTrue();
+        assertThat(StartingDisposition.of(List.of(new ConversationSignals(0, 0, 0, 1, 1))).gentleEmotion()).isFalse();
     }
 
     @Test
-    void aTieInTheSameConversationGoesToTheExplicitRequest() {
-        assertThat(StartingDisposition.of(List.of(talk(2, 1)), 1, 1, 2))
-                .isEqualTo(new StartingDisposition(false, true));
+    void historyWithoutSpecialSignalsStillCountsAsHistoryAndNoHistoryUsesDefaults() {
+        assertThat(StartingDisposition.of(List.of())).isEqualTo(StartingDisposition.NONE);
+        assertThat(StartingDisposition.of(List.of(new ConversationSignals(0, 0, 0, 0, 0))).historySessions())
+                .isEqualTo(1);
     }
 
     @Test

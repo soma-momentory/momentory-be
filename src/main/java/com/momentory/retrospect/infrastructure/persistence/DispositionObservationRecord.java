@@ -19,8 +19,7 @@ import jakarta.persistence.Table;
 /**
  * 대화 한 건에서 관찰한 성향 신호의 횟수 — 회고마다 한 줄이고, 답변이 올 때마다 더해진다(대화를 끝내지 않고 떠나도 남는다).
  *
- * <p>성향 값(어느 쪽인지)은 담지 않는다. 몇 번부터 어느 쪽으로 볼지, 최근 대화에 얼마나 무게를 둘지는 아직 정해지지 않아,
- * 나중에 이 줄들을 읽어 계산한다. 발화 원문은 담지 않는다.
+ * <p>이번 회고의 관찰과 시작할 때 도출한 세 성향, 적용 규칙 버전을 함께 남긴다. 발화 원문은 담지 않는다.
  */
 @Entity
 @Table(name = "retrospect_disposition_observations")
@@ -79,6 +78,21 @@ public class DispositionObservationRecord {
     @Column(name = "derived_other_view", nullable = false)
     private boolean derivedOtherView;
 
+    @Column(name = "derived_listen", nullable = false)
+    private boolean derivedListen;
+
+    @Column(name = "derived_gentle_emotion", nullable = false)
+    private boolean derivedGentleEmotion;
+
+    @Column(name = "derived_history_sessions", nullable = false)
+    private int derivedHistorySessions;
+
+    @Column(name = "disposition_version", nullable = false, length = 30)
+    private String dispositionVersion;
+
+    @Column(name = "past_disposition_applied", nullable = false)
+    private boolean pastDispositionApplied;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -105,6 +119,11 @@ public class DispositionObservationRecord {
         record.applyArm = Objects.requireNonNull(arm, "arm must not be null");
         record.derivedSelfLed = derived.selfLed();
         record.derivedOtherView = derived.wantsOtherView();
+        record.derivedListen = derived.wantsListening();
+        record.derivedGentleEmotion = derived.gentleEmotion();
+        record.derivedHistorySessions = derived.historySessions();
+        record.dispositionVersion = StartingDisposition.VERSION;
+        record.pastDispositionApplied = arm == DispositionArm.TREATMENT && derived.historySessions() > 0;
         record.userId = Objects.requireNonNull(userId, "userId must not be null");
         record.retrospectId = Objects.requireNonNull(retrospectId, "retrospectId must not be null");
         record.minConfidence = minConfidence;
@@ -143,5 +162,10 @@ public class DispositionObservationRecord {
     public DispositionArm getApplyArm() { return applyArm; }
     public boolean isDerivedSelfLed() { return derivedSelfLed; }
     public boolean isDerivedOtherView() { return derivedOtherView; }
+    public boolean isDerivedListen() { return derivedListen; }
+    public boolean isDerivedGentleEmotion() { return derivedGentleEmotion; }
+    public int getDerivedHistorySessions() { return derivedHistorySessions; }
+    public String getDispositionVersion() { return dispositionVersion; }
+    public boolean isPastDispositionApplied() { return pastDispositionApplied; }
     public Instant getCreatedAt() { return createdAt; }
 }
