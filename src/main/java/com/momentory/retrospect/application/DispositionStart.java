@@ -31,6 +31,7 @@ public class DispositionStart {
     public DispositionStart(DispositionObservationRecordRepository observations, StrategyPolicy policy,
             @Value("${momentory.disposition.apply-mode:OFF}") DispositionAssignment.Mode mode,
             @Value("${momentory.disposition.apply-user-ids:}") Set<Long> userIds,
+            @Value("${momentory.disposition.excluded-user-ids:}") Set<Long> excludedUserIds,
             @Value("${momentory.disposition.window:5}") int window,
             @Value("${momentory.strategy.min-confidence:0.5}") double minConfidence) {
         if (window < 1) {
@@ -38,7 +39,7 @@ public class DispositionStart {
         }
         this.observations = observations;
         this.policy = policy;
-        this.assignment = new DispositionAssignment(mode, userIds);
+        this.assignment = new DispositionAssignment(mode, userIds, excludedUserIds);
         this.window = window;
         this.minConfidence = minConfidence;
     }

@@ -137,6 +137,8 @@ momentory:
     # RANDOM(사용자 id 로 반반). 전략 대화 계정에만 해당하고, 성향 관찰은 어느 값이든 계속 저장한다.
     apply-mode: ${DISPOSITION_APPLY_MODE:OFF}
     apply-user-ids: ${DISPOSITION_APPLY_USER_IDS:}
+    # 어느 모드에서든 실험에서 빼는 계정(쉼표 구분, 개발자 계정 등). 집단 없이(NONE) 기본값에서 시작하고 관찰은 계속 저장한다.
+    excluded-user-ids: ${DISPOSITION_EXCLUDED_USER_IDS:}
     # 최근 완료된 회고의 세 성향을 매번 적용한다. 신호가 없는 차원은 기본값을 사용한다.
     window: ${DISPOSITION_WINDOW:5}
   strategy:
