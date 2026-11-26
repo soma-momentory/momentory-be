@@ -40,6 +40,10 @@
           "value": "RANDOM"
         },
         {
+          "name": "DISPOSITION_EXCLUDED_USER_IDS",
+          "value": "1"
+        },
+        {
           "name": "GRAFANA_OTLP_ENABLED",
           "value": "true"
         },

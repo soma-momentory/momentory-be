@@ -8,10 +8,11 @@ import java.util.Set;
 /**
  * 사용자를 실험 집단에 넣는 규칙 — 순수 계산이고 같은 사용자는 늘 같은 집단이다.
  *
- * @param mode    {@link Mode}
- * @param userIds {@code LISTED} 일 때 반영을 켤 사용자 id
+ * @param mode            {@link Mode}
+ * @param userIds         {@code LISTED} 일 때 반영을 켤 사용자 id
+ * @param excludedUserIds 어느 모드에서든 실험에서 빼는 사용자 id(개발자 계정 등) — 집단 없이 기본값에서 시작한다
  */
-public record DispositionAssignment(Mode mode, Set<Long> userIds) {
+public record DispositionAssignment(Mode mode, Set<Long> userIds, Set<Long> excludedUserIds) {
 
     /** 배정을 가르는 실험 이름. 바꾸면 사용자의 집단이 다시 섞이므로 실험 중에는 고정한다. */
     private static final String EXPERIMENT = "disposition-apply-v1";
@@ -27,9 +28,13 @@ public record DispositionAssignment(Mode mode, Set<Long> userIds) {
 
     public DispositionAssignment {
         userIds = userIds == null ? Set.of() : Set.copyOf(userIds);
+        excludedUserIds = excludedUserIds == null ? Set.of() : Set.copyOf(excludedUserIds);
     }
 
     public DispositionArm armOf(long userId) {
+        if (excludedUserIds.contains(userId)) {
+            return DispositionArm.NONE;
+        }
         return switch (mode) {
             case OFF -> DispositionArm.NONE;
             case LISTED -> userIds.contains(userId) ? DispositionArm.TREATMENT : DispositionArm.NONE;

@@ -336,7 +336,7 @@ class TurnJudgmentPersistenceIntegrationTest {
         User user = userRepository.saveAndFlush(User.create());
         strategyFor(Set.of(user.getId()));
         applyDispositionFor(DispositionAssignment.Mode.RANDOM, Set.of());
-        DispositionArm arm = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of())
+        DispositionArm arm = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of(), Set.of())
                 .armOf(user.getId());
         pastConversationWithResistance(user, 2);
         pastConversationWithResistance(user, 2);
@@ -569,7 +569,7 @@ class TurnJudgmentPersistenceIntegrationTest {
     }
 
     private void applyDispositionFor(DispositionAssignment.Mode mode, Set<Long> userIds) {
-        ReflectionTestUtils.setField(dispositionStart, "assignment", new DispositionAssignment(mode, userIds));
+        ReflectionTestUtils.setField(dispositionStart, "assignment", new DispositionAssignment(mode, userIds, Set.of()));
     }
 
     private Long pastRetrospect(User user) {
@@ -686,7 +686,7 @@ class TurnJudgmentPersistenceIntegrationTest {
     @Test
     void aControlUserAlwaysStartsFreshEvenWithAllThreePastDimensions() throws Exception {
         User user;
-        var assignment = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of());
+        var assignment = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of(), Set.of());
         do {
             user = userRepository.saveAndFlush(User.create());
         } while (assignment.armOf(user.getId()) != DispositionArm.CONTROL);

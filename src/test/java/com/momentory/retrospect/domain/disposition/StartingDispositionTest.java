@@ -59,16 +59,29 @@ class StartingDispositionTest {
 
     @Test
     void assignsNobodyWhenOffAndOnlyListedUsersWhenListed() {
-        assertThat(new DispositionAssignment(DispositionAssignment.Mode.OFF, Set.of(1L)).armOf(1L))
+        assertThat(new DispositionAssignment(DispositionAssignment.Mode.OFF, Set.of(1L), Set.of()).armOf(1L))
                 .isEqualTo(DispositionArm.NONE);
-        DispositionAssignment listed = new DispositionAssignment(DispositionAssignment.Mode.LISTED, Set.of(1L));
+        DispositionAssignment listed = new DispositionAssignment(DispositionAssignment.Mode.LISTED, Set.of(1L), Set.of());
         assertThat(listed.armOf(1L)).isEqualTo(DispositionArm.TREATMENT);
         assertThat(listed.armOf(2L)).isEqualTo(DispositionArm.NONE);
     }
 
     @Test
+    void excludedUsersJoinNoArmInAnyModeWhileOthersKeepTheirs() {
+        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of(), Set.of());
+        DispositionAssignment excluding = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of(), Set.of(1L));
+        assertThat(random.armOf(1L)).isEqualTo(DispositionArm.TREATMENT);
+        assertThat(excluding.armOf(1L)).isEqualTo(DispositionArm.NONE);
+        for (long id = 2; id <= 100; id++) {
+            assertThat(excluding.armOf(id)).isEqualTo(random.armOf(id));
+        }
+        assertThat(new DispositionAssignment(DispositionAssignment.Mode.LISTED, Set.of(1L), Set.of(1L)).armOf(1L))
+                .isEqualTo(DispositionArm.NONE);
+    }
+
+    @Test
     void randomAssignmentIsStablePerUserAndSplitsRoughlyInHalf() {
-        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of());
+        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of(), Set.of());
 
         long treated = 0;
         for (long id = 1; id <= 1000; id++) {
@@ -82,7 +95,7 @@ class StartingDispositionTest {
 
     @Test
     void randomAssignmentKeepsEachUsersArmDuringTheExperiment() {
-        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of());
+        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of(), Set.of());
 
         // 실험 이름이나 해시가 바뀌면 진행 중인 사용자의 집단이 뒤섞인다.
         assertThat(random.armOf(1L)).isEqualTo(DispositionArm.TREATMENT);
@@ -97,7 +110,7 @@ class StartingDispositionTest {
 
     @Test
     void randomAssignmentDoesNotFollowSignupOrder() {
-        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of());
+        DispositionAssignment random = new DispositionAssignment(DispositionAssignment.Mode.RANDOM, Set.of(), Set.of());
 
         // 가까이 가입한 사용자의 집단이 일정한 주기로 되풀이되면 무작위 배정이 아니다.
         for (int gap = 1; gap <= 8; gap++) {
