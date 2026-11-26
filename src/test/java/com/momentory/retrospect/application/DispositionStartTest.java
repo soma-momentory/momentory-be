@@ -29,7 +29,7 @@ class DispositionStartTest {
     private final StrategyPolicy policy = new StrategyPolicy(0.5, 0.8, 2, 8);
 
     private DispositionStart start(DispositionAssignment.Mode mode) {
-        return new DispositionStart(observations, policy, mode, Set.of(1L), 5, 0.5);
+        return new DispositionStart(observations, policy, mode, Set.of(1L), Set.of(), 5, 0.5);
     }
 
     private DispositionObservationRecord history() {
@@ -67,6 +67,21 @@ class DispositionStartTest {
     }
 
     @Test
+    void anExcludedUserStartsFreshWithoutReadingHistoryAndIsLoggedWithoutAnArm() {
+        var start = new DispositionStart(observations, policy, DispositionAssignment.Mode.RANDOM, Set.of(), Set.of(1L), 5,
+                0.5);
+        var plan = start.plan(1L);
+        assertThat(plan.arm()).isEqualTo(DispositionArm.NONE);
+        assertThat(plan.startingSignals()).isEqualTo(StrategySignals.initial());
+        start.open(1L, 20L, plan);
+        var saved = org.mockito.ArgumentCaptor.forClass(DispositionObservationRecord.class);
+        verify(observations).save(saved.capture());
+        verify(observations, org.mockito.Mockito.never()).findCompletedByUserId(any(), any());
+        assertThat(saved.getValue().getApplyArm()).isEqualTo(DispositionArm.NONE);
+        assertThat(saved.getValue().isPastDispositionApplied()).isFalse();
+    }
+
+    @Test
     void aFirstConversationUsesDefaultsEvenInTreatment() {
         when(observations.findCompletedByUserId(eq(1L), any())).thenReturn(List.of());
         assertThat(start(DispositionAssignment.Mode.RANDOM).plan(1L).startingSignals())
@@ -91,6 +106,6 @@ class DispositionStartTest {
     @Test
     void rejectsAnInvalidHistoryWindow() {
         assertThatIllegalArgumentException().isThrownBy(() -> new DispositionStart(observations, policy,
-                DispositionAssignment.Mode.RANDOM, Set.of(), 0, 0.5));
+                DispositionAssignment.Mode.RANDOM, Set.of(), Set.of(), 0, 0.5));
     }
 }
